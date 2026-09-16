@@ -8,4 +8,8 @@
 --shell-gutter:20px;--card-pad:16px;--card-pad-lg:20px;--card-gap:16px;
 --row-h:56px;--row-h-compact:44px;--control-h:36px;--control-h-sm:30px;--control-h-lg:44px;
 --tap-min:44px;--content-max:1440px;
+/* Largura mínima em que a casca de desktop cabe: rail 224 + goteira 20
+   + mínimo de conteúdo 960 + goteira 20. Abaixo disso a casca mobile
+   é a correta, não a degradada. Veja DESIGN.md → Layout. */
+--bp-desktop:1224px; /* @kind spacing */
 }

@@ -1,21 +1,23 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { AdminShell } from '../design-system';
-import { useTheme } from './theme';
+import { Casca } from './casca/Casca';
+import { PILAR_INICIAL } from './casca/navegacao';
 import { Showcase } from './routes/Showcase';
 
-/** The product itself — the desktop admin shell from the design system's patterns. */
-function Admin() {
-  const { theme, setTheme } = useTheme();
-  return <AdminShell theme={theme} onThemeChange={setTheme} />;
-}
-
+/**
+ * As rotas do sistema.
+ *
+ * Cada pilar tem URL própria (`/app/tarefas`), o que o AdminShell nunca teve —
+ * ele roteava por estado local. URL própria é o que permite abrir direto no
+ * telefone, voltar pelo botão do navegador e instalar atalho para uma área.
+ */
 export function App() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/app" replace />} />
-      <Route path="/app" element={<Admin />} />
+      <Route path="/" element={<Navigate to={`/app/${PILAR_INICIAL}`} replace />} />
+      <Route path="/app" element={<Navigate to={`/app/${PILAR_INICIAL}`} replace />} />
+      <Route path="/app/:pilar" element={<Casca />} />
       <Route path="/design-system" element={<Showcase />} />
-      <Route path="*" element={<Navigate to="/app" replace />} />
+      <Route path="*" element={<Navigate to={`/app/${PILAR_INICIAL}`} replace />} />
     </Routes>
   );
 }

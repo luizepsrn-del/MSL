@@ -255,6 +255,13 @@ The sidebar and top bar do not scroll. The promo card is pinned to the bottom of
 rail. On mobile the rail becomes a drawer, the KPI row becomes a snap rail with dots,
 and tables become one card per row with every column present as a labelled field.
 
+**Where the two layouts change over.** The source never states a breakpoint, so
+this one is **derived, not invented**: the desktop shell needs the 224px rail,
+two 20px gutters and its own 960px content minimum — 1224px in total. At or
+above `--bp-desktop` (1224px) the desktop shell fits; below it, it cannot, and
+the mobile layout is the correct one rather than a degraded one. Nothing is lost
+in the swap: the mobile kit keeps every feature, only re-laid out.
+
 ### Backgrounds and imagery
 
 Flat dark fills, no page-level gradient, no texture, no noise, no pattern. Two

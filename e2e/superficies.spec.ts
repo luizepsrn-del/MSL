@@ -10,39 +10,73 @@ import { test, expect } from '@playwright/test';
  * Toda asserção aqui é sobre comportamento observável, não sobre aparência.
  */
 
-test('a rota /app renderiza o shell da aplicação', async ({ page }) => {
+test('a rota /app renderiza a casca', async ({ page }) => {
   const erros: string[] = [];
   page.on('pageerror', (e) => erros.push(String(e)));
 
   await page.goto('/app');
 
-  await expect(page.locator('h1')).toHaveCount(1);
+  // /app redireciona para o primeiro pilar, que tem URL própria.
+  await expect(page).toHaveURL(/\/app\/rotina$/);
+  await expect(page.getByRole('heading', { name: 'Rotina', level: 1 })).toBeVisible();
   expect(erros, 'nenhum erro de JavaScript').toEqual([]);
 });
 
-test('a rota /app serve o iPhone', async ({ page }, info) => {
+test('a casca serve o iPhone', async ({ page }, info) => {
   test.skip(info.project.name !== 'iphone', 'só interessa no iPhone');
-  test.fixme(true, 'DEFEITO CONHECIDO — /app não tem caminho para o mobile');
 
-  // Medido no iPhone 15 (393x659): /app renderiza AdminShell sem condição
-  // nenhuma, então o telefone recebe o shell de desktop inteiro —
-  //   · o rail de 224px ocupa mais da metade da largura
-  //   · o <h1> do título fica com 0px de largura, espremido em x=244
-  //   · o documento tem 695px contra 393 de viewport: 302px vazando de lado
-  //
-  // MobileShell existe em design-system/patterns/mobile/ e funciona, mas nada
-  // roteia para ele — só é alcançável dentro da aba Patterns do showcase.
-  //
-  // Este teste fica como fixme de propósito: no dia em que /app servir o
-  // telefone, o Playwright acusa "passou quando era esperado falhar" e obriga
-  // a remover a marca. É o oposto de esconder o defeito.
+  // Era DEFEITO CONHECIDO até a casca existir: /app renderizava AdminShell sem
+  // condição, o telefone recebia o rail de 224px, o h1 ficava com 0px de
+  // largura e o documento vazava 302px de lado. A marca fixme saiu junto com
+  // o defeito.
   await page.goto('/app');
 
   const vazamento = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,
   );
   expect(vazamento, 'sem rolagem horizontal').toBeLessThanOrEqual(0);
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+  const titulo = page.getByRole('heading', { name: 'Rotina', level: 1 });
+  await expect(titulo).toBeVisible();
+
+  const caixa = (await titulo.boundingBox())!;
+  expect(caixa.width, 'o título tem largura de verdade').toBeGreaterThan(40);
+
+  // O rail de desktop não pode estar na tela do telefone.
+  await expect(page.getByRole('navigation')).toBeHidden();
+});
+
+test('a gaveta do iPhone abre, navega e fecha', async ({ page }, info) => {
+  test.skip(info.project.name !== 'iphone', 'só interessa no iPhone');
+
+  await page.goto('/app');
+  await expect(page.getByRole('navigation')).toBeHidden();
+
+  await page.getByRole('button', { name: 'Abrir menu' }).tap();
+  await expect(page.getByRole('navigation')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Financeiro' }).tap();
+  await expect(page).toHaveURL(/\/app\/financeiro$/);
+  await expect(page.getByRole('heading', { name: 'Financeiro', level: 1 })).toBeVisible();
+  await expect(page.getByRole('navigation')).toBeHidden();
+});
+
+test('todo pilar tem URL própria e abre direto', async ({ page }) => {
+  const pilares = ['rotina', 'tarefas', 'calendario', 'projetos', 'financeiro', 'pedir', 'ajustes'];
+
+  for (const id of pilares) {
+    await page.goto(`/app/${id}`);
+    await expect(page.locator('h1'), `pilar "${id}"`).toBeVisible();
+  }
+});
+
+test('alvos de toque respeitam o mínimo de 44px', async ({ page }, info) => {
+  test.skip(info.project.name !== 'iphone', 'só interessa no iPhone');
+
+  await page.goto('/app');
+  const menu = (await page.getByRole('button', { name: 'Abrir menu' }).boundingBox())!;
+  expect(Math.round(menu.width)).toBeGreaterThanOrEqual(44);
+  expect(Math.round(menu.height)).toBeGreaterThanOrEqual(44);
 });
 
 test('o showcase renderiza a biblioteca', async ({ page }) => {
