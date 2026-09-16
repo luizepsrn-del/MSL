@@ -114,6 +114,17 @@ Nothing else was invented. There is no Tooltip, Toast, Accordion, Breadcrumb or
 Tabs component because the product has none — confirmation is a centred dialog
 (`SuccessDialog`), not a toast.
 
+#### Later additions
+
+Entries added after the reconstruction, as the system moved from a logistics
+dashboard to a personal management product. Each is recorded here **before** it
+was built, and each is marked so the line between *what the source defines* and
+*what was added* never blurs.
+
+- **`Field` and `TextInput`** — free text entry. See *Form fields* below.
+
+A light theme was also added; see *Colour*.
+
 ---
 
 ## CONTENT FUNDAMENTALS
@@ -295,6 +306,47 @@ purple halo. Use glow for focus and importance; use shadow only for layering.
   plus the accent hairline; select menu items take `--accent-soft` with a trailing tick;
   the active nav item takes the full gradient plus its edge tab.
 - **Disabled** — 42% opacity, `not-allowed` cursor, no other change.
+
+### Form fields
+
+**Addition, not from the source.** The source is a dashboard: it filters tables,
+it never captures free text. The `forms/` group it produced reflects that —
+`SearchInput` (a search field, with a fixed magnifier and no label), `Checkbox`,
+`Switch`, `Radio`, `Select`. There is no labelled text field, no text area, no
+date, time or money input, and no way to group inputs into a form.
+
+A personal management product is largely data entry, so two components were
+added. **They introduce no new design value** — every measurement below already
+existed in the tokens, and `SearchInput` is the proof that the combination
+works.
+
+**`Field`** is the wrapper: label above, control in the middle, help or error
+message below. It owns the states the source never needed.
+
+**`TextInput`** is the control, with `type` covering text, multi-line, number,
+date, time and money. Date and money are not separate components; they are the
+same control with a pt-BR mask, which keeps the surface small.
+
+Measurements, all existing tokens:
+
+- Height `--control-h` (36px), `--control-h-lg` (44px) on touch surfaces.
+- Radius `--r-control` (8px) — the same as buttons and `SearchInput`.
+- Fill `--surface-input`, hairline `--border-default`.
+- **Focus** swaps the hairline to `--border-focus`, with no glow. This follows
+  the rule in *Interaction states*: inputs take a border, not a ring.
+- **Error** takes `--status-danger-bd` on the hairline and `--status-danger-fg`
+  on the message. The danger tone already exists in the tokens; until now it had
+  no label in the product.
+- **Disabled** is 42% opacity and `not-allowed`, exactly like every other
+  control.
+- Label is `--type-label`, message is `--fs-xs`.
+
+**Multi-line grows with its content** rather than scrolling inside a fixed box —
+a note or a description is read whole, not through a slot.
+
+**The label is always present.** No placeholder-as-label: the placeholder
+disappears the moment you type, which takes the question away exactly when you
+need it.
 
 ### Motion
 
