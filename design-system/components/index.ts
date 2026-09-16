@@ -43,6 +43,10 @@ export { Radio } from './forms/Radio';
 export type { RadioProps, RadioOption } from './forms/Radio';
 export { Select } from './forms/Select';
 export type { SelectProps, SelectOption } from './forms/Select';
+export { Field } from './forms/Field';
+export type { FieldProps } from './forms/Field';
+export { TextInput } from './forms/TextInput';
+export type { TextInputProps, TextInputType } from './forms/TextInput';
 
 /* ── Navigation ───────────────────────────────── */
 export { Sidebar } from './navigation/Sidebar';

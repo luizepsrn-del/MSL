@@ -13,6 +13,8 @@ import {
   Switch,
   Radio,
   Select,
+  Field,
+  TextInput,
   Sidebar,
   TopBar,
   PageHeader,
@@ -225,8 +227,69 @@ export function FormsSection() {
   const [on, setOn] = React.useState(true);
   const [radio, setRadio] = React.useState('last');
   const [sel, setSel] = React.useState('all');
+  const [titulo, setTitulo] = React.useState('');
+  const [nota, setNota] = React.useState('Uma nota que cresce conforme eu escrevo.');
+  const [valor, setValor] = React.useState('1.234,56');
   return (
     <Stack>
+      <Spec
+        name="Field + TextInput"
+        states="6 tipos · vazio · preenchido · foco · erro · desabilitado · multi-linha que cresce"
+      >
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: 'var(--sp-9)',
+            alignItems: 'start',
+          }}
+        >
+          <Field label="Título" htmlFor="sc-titulo" required help="Obrigatório">
+            <TextInput
+              id="sc-titulo"
+              value={titulo}
+              onChange={setTitulo}
+              placeholder="O que precisa ser feito?"
+              fullWidth
+            />
+          </Field>
+
+          <Field label="Valor" htmlFor="sc-valor" help="Aceita 1.234,56 ou R$ 1.234,56">
+            <TextInput id="sc-valor" type="money" value={valor} onChange={setValor} fullWidth />
+          </Field>
+
+          <Field label="Quando" htmlFor="sc-data">
+            <TextInput id="sc-data" type="date" value="2026-01-03" onChange={() => {}} fullWidth />
+          </Field>
+
+          <Field label="Hora" htmlFor="sc-hora">
+            <TextInput id="sc-hora" type="time" value="14:30" onChange={() => {}} fullWidth />
+          </Field>
+
+          <Field label="Com erro" htmlFor="sc-erro" error="Informe um valor válido">
+            <TextInput id="sc-erro" value="abc" invalid onChange={() => {}} fullWidth />
+          </Field>
+
+          <Field label="Desabilitado" htmlFor="sc-off" disabled>
+            <TextInput id="sc-off" value="Não dá para editar" disabled onChange={() => {}} fullWidth />
+          </Field>
+
+          <Field label="Toque (44px)" htmlFor="sc-lg" help="size=lg nas superfícies de toque">
+            <TextInput id="sc-lg" size="lg" value="" onChange={() => {}} fullWidth />
+          </Field>
+        </div>
+
+        <Field label="Nota" htmlFor="sc-nota" help="Cresce com o conteúdo, não rola numa caixa fixa">
+          <TextInput id="sc-nota" type="multiline" value={nota} onChange={setNota} fullWidth />
+        </Field>
+
+        <Note>
+          Adição declarada, não vem da fonte — veja DESIGN.md, seção Form fields. Nenhum valor
+          de design novo: altura, raio, fio, foco sem brilho e o tom de erro já existiam nos
+          tokens. Clique num campo para ver o fio virar roxo; o campo com erro usa o fio
+          vermelho e anuncia a mensagem com role=alert.
+        </Note>
+      </Spec>
       <Spec name="SearchInput" states="3 sizes · empty · filled · focus · with shortcut chip">
         <Stack gap="var(--sp-6)" style={{ maxWidth: 380 }}>
           <SearchInput size="sm" placeholder="Small" fullWidth />

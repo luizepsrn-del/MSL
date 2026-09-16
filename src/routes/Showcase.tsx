@@ -34,7 +34,7 @@ type Tab =
 const TABS: { id: Tab; label: string; count?: number }[] = [
   { id: 'tokens', label: 'Tokens' },
   { id: 'core', label: 'Core', count: 8 },
-  { id: 'forms', label: 'Forms', count: 5 },
+  { id: 'forms', label: 'Forms', count: 7 },
   { id: 'navigation', label: 'Navigation', count: 4 },
   { id: 'data', label: 'Data', count: 8 },
   { id: 'messaging', label: 'Messaging', count: 3 },
@@ -197,7 +197,7 @@ export function Showcase() {
               Design system
             </h1>
             <p style={{ font: 'var(--type-page-subtitle)', color: 'var(--text-muted)' }}>
-              34 components · 2 UI kits · the tokens they are built from
+              36 componentes · 2 UI kits · os tokens de que são feitos
             </p>
           </div>
 
