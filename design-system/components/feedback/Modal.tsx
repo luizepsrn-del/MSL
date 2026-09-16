@@ -12,6 +12,8 @@ export interface ModalProps {
   /** button row at the bottom */
   footer?: React.ReactNode;
   align?: 'left' | 'center';
+  /** accessible name for the close button */
+  closeLabel?: string;
   style?: React.CSSProperties;
 }
 
@@ -23,6 +25,7 @@ export function Modal({
   header,
   footer,
   align = 'left',
+  closeLabel = 'Close',
   style,
 }: ModalProps) {
   React.useEffect(() => {
@@ -72,7 +75,7 @@ export function Modal({
         {onClose && (
           <button
             type="button"
-            aria-label="Close"
+            aria-label={closeLabel}
             onClick={onClose}
             style={{
               position: 'absolute',

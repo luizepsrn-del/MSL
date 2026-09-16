@@ -15,6 +15,8 @@ export interface CardProps {
   flush?: boolean;
   /** renders a ⋮ menu button in the header */
   onMenuClick?: () => void;
+  /** accessible name for the ⋮ button */
+  menuLabel?: string;
   style?: React.CSSProperties;
   bodyStyle?: React.CSSProperties;
 }
@@ -30,6 +32,7 @@ export function Card({
   style,
   bodyStyle,
   onMenuClick,
+  menuLabel = 'Card menu',
 }: CardProps) {
   const pad = padding ?? 'var(--card-pad-lg)';
   return (
@@ -93,7 +96,7 @@ export function Card({
             {onMenuClick && (
               <button
                 type="button"
-                aria-label="Card menu"
+                aria-label={menuLabel}
                 onClick={onMenuClick}
                 style={{
                   background: 'none',

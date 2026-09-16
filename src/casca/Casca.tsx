@@ -77,6 +77,7 @@ function CascaDesktop({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: stri
         subtitle={pilar.subtitulo}
         theme={theme}
         onThemeChange={setTheme}
+        themeLabel={(m) => (m === 'light' ? 'Tema claro' : 'Tema escuro')}
         user={{ name: 'Luiz Eduardo', role: 'Pessoal e profissional' }}
       />
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
@@ -84,6 +85,7 @@ function CascaDesktop({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: stri
           sections={SECOES}
           active={pilar.id}
           onSelect={aoNavegar}
+          searchPlaceholder="Buscar"
           style={{ paddingTop: 'var(--sp-9)' }}
         />
         <main

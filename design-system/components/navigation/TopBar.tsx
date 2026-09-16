@@ -27,6 +27,12 @@ export interface TopBarProps {
   onUserClick?: () => void;
   /** slot before the brand — the mobile hamburger */
   leading?: React.ReactNode;
+  /**
+   * Accessible name for each theme button, given the theme. The English
+   * default keeps the logistics kit unchanged; a localized product passes
+   * its own.
+   */
+  themeLabel?: (theme: ThemeName) => string;
   style?: React.CSSProperties;
 }
 
@@ -63,6 +69,7 @@ export function TopBar({
   user,
   onUserClick,
   leading,
+  themeLabel = (m) => `${m} theme`,
   style,
 }: TopBarProps) {
   return (
@@ -112,7 +119,7 @@ export function TopBar({
               <button
                 key={m}
                 type="button"
-                aria-label={`${m} theme`}
+                aria-label={themeLabel(m)}
                 aria-pressed={theme === m}
                 onClick={() => onThemeChange(m)}
                 style={{

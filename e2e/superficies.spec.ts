@@ -61,6 +61,28 @@ test('a gaveta do iPhone abre, navega e fecha', async ({ page }, info) => {
   await expect(page.getByRole('navigation')).toBeHidden();
 });
 
+test('a casca não vaza inglês na interface', async ({ page }) => {
+  await page.goto('/app');
+
+  // O campo de busca vinha com "Search" embutido dentro do Sidebar — string
+  // visível presa na biblioteca, que nenhum teste pegava porque nenhum olhava.
+  await expect(page.getByPlaceholder('Buscar')).toBeVisible();
+  await expect(page.getByPlaceholder('Search')).toHaveCount(0);
+
+  const textoVisivel = await page.evaluate(() => document.body.innerText);
+  for (const palavra of ['Search', 'Overview', 'Orders', 'Carriers', 'Go Premium']) {
+    expect(textoVisivel, `"${palavra}" não aparece na interface`).not.toContain(palavra);
+  }
+});
+
+test('os rótulos de acessibilidade estão em português', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mac', 'o segmento de tema só existe no desktop');
+
+  await page.goto('/app');
+  await expect(page.getByRole('button', { name: 'Tema claro' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Tema escuro' })).toBeVisible();
+});
+
 test('todo pilar tem URL própria e abre direto', async ({ page }) => {
   const pilares = ['rotina', 'tarefas', 'calendario', 'projetos', 'financeiro', 'pedir', 'ajustes'];
 

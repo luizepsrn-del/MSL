@@ -23,6 +23,11 @@ export interface SidebarProps {
   onSelect?: (id: string) => void;
   /** show the search field, default true */
   search?: boolean;
+  /**
+   * Placeholder for the search field. The English default keeps the logistics
+   * kit unchanged; a localized product passes its own.
+   */
+  searchPlaceholder?: string;
   /** bottom slot — usually a PromoCard */
   footer?: React.ReactNode;
   width?: string;
@@ -125,6 +130,7 @@ export function Sidebar({
   active,
   onSelect,
   search = true,
+  searchPlaceholder = 'Search',
   footer,
   width,
   style,
@@ -146,7 +152,7 @@ export function Sidebar({
         ...style,
       }}
     >
-      {search && <SearchInput placeholder="Search" shortcut="F" fullWidth />}
+      {search && <SearchInput placeholder={searchPlaceholder} shortcut="F" fullWidth />}
       <div
         style={{
           display: 'flex',

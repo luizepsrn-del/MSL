@@ -50,7 +50,7 @@
       "message": "<Button> type must be one of 'button' | 'submit'."
     },
     {
-      "selector": "JSXOpeningElement[name.name='Card'] > JSXAttribute > JSXIdentifier[name!=/^(?:title|subtitle|action|children|padding|glow|flush|onMenuClick|style|bodyStyle|key|ref|className|style|children)$/]",
+      "selector": "JSXOpeningElement[name.name='Card'] > JSXAttribute > JSXIdentifier[name!=/^(?:title|subtitle|action|children|padding|glow|flush|onMenuClick|menuLabel|style|bodyStyle|key|ref|className|style|children)$/]",
       "message": "<Card> doesn't accept that prop. Declared props: title, subtitle, action, children, padding, glow, flush, onMenuClick, style, bodyStyle."
     },
     {
@@ -110,7 +110,7 @@
       "message": "<MetricBarItem> tone must be one of 'purple' | 'green' | 'orange' | 'neutral'."
     },
     {
-      "selector": "JSXOpeningElement[name.name='Modal'] > JSXAttribute > JSXIdentifier[name!=/^(?:open|onClose|width|children|header|footer|align|style|key|ref|className|style|children)$/]",
+      "selector": "JSXOpeningElement[name.name='Modal'] > JSXAttribute > JSXIdentifier[name!=/^(?:open|onClose|width|children|header|footer|align|closeLabel|style|key|ref|className|style|children)$/]",
       "message": "<Modal> doesn't accept that prop. Declared props: open, onClose, width, children, header, footer, align, style."
     },
     {
