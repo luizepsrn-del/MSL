@@ -1,0 +1,4 @@
+/* The reference pages resolve "../styles.css" and "../../styles.css" to this
+   file. It forwards to the real design-system entry point one level up, so the
+   specimens always render the live tokens — never a stale copy. */
+@import url("../styles.css");

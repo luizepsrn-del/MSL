@@ -1,0 +1,95 @@
+# AGENTS.md
+
+My System Life — a logistics management admin dashboard. React 19 + TypeScript,
+built with Vite. Everything visual comes from the design system in
+`design-system/`.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Dev server on :5173 |
+| `npm run build` | Typecheck, build, and copy the reference pages into `dist/` |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint, including the design-system adherence rules |
+| `npm run preview` | Serve the production build |
+
+Run `npm run lint && npm run typecheck && npm run build` before calling work done.
+
+## Layout
+
+```
+DESIGN.md              the visual contract — token source of truth
+design-system/         the component library (see its README for the map)
+src/                   the application
+  routes/Showcase.tsx  the /design-system showcase page
+adherence.rules.json   the design-system lint rules, from the original export
+```
+
+Routes: `/app` is the product, `/design-system` is the library showcase.
+
+## Design system rules
+
+These are not style preferences. `npm run lint` fails on them.
+
+1. **`DESIGN.md` at the root is the visual contract and the source of truth for
+   the tokens.** It is versioned. If a value in the code disagrees with it, the
+   code is the bug. Change `DESIGN.md` before changing a token.
+
+2. **New components are created in `design-system/`**, not next to the screen
+   that needed them. There are 34 already — check
+   `design-system/components/*/*.prompt.md` before adding a 35th, and check that
+   `DESIGN.md` actually defines the thing. The library deliberately has no
+   Tooltip, Toast, Accordion, Breadcrumb or Tabs, because the product has none.
+   `design-system/README.md` has the step-by-step procedure.
+
+3. **No colour, font, spacing or radius value is ever hardcoded.** Use the
+   tokens: `var(--purple-500)`, `var(--sp-8)`, `var(--r-card)`,
+   `var(--type-body)`. Never `#682EC7`, `16px`, or a font stack. If a value you
+   need does not exist as a token, add it to `design-system/tokens/` and record
+   it in `DESIGN.md` — do not inline it.
+
+4. **Import from the barrel**, never from a component file:
+   `import { Button, Card } from '../design-system'` — not
+   `from '../design-system/components/core/Button'`.
+
+5. **Do not invent design values.** The system was reconstructed from screenshots
+   and `DESIGN.md` records exactly what the source defines and what it does not.
+   Where it says a thing does not exist — no light-mode screens, no loading
+   state on `Button`, no logo — that is a finding, not a gap to fill. Ask first.
+
+The library itself is exempt from rule 3: `design-system/` is where tokens are
+defined and where raw geometry (icon sizes, 1px hairlines, grid tracks) is
+legitimate. Everything outside it is held to the full rule set.
+
+## The library map
+
+- `design-system/tokens/` — every value, in nine CSS files.
+- `design-system/components/` — the 34 primitives, in six groups: `core`,
+  `forms`, `navigation`, `data`, `messaging`, `feedback`. Each has a sibling
+  `.prompt.md` saying when to use it.
+- `design-system/patterns/` — the assembled shells and screens. Start a new
+  screen from one of these rather than from an empty file.
+- `design-system/assets/img/` — the two images in the system. Import them from
+  the barrel; never write an asset path by hand.
+- `design-system/reference/` — **the visual reference pages.** The original
+  static specimens: 21 foundation cards, 6 component cards, both UI kits. Open
+  them at `/design-system/reference/index.html` with the dev server running —
+  they need a server, not `file://`.
+- `/design-system` route — the live showcase: every component, every state, both
+  themes side by side.
+
+`design-system/README.md` is the full map and the procedure for adding a
+component or a token.
+
+## Theming
+
+Dark is the canonical theme and the default. A light theme was added on top as a
+mechanical derivation of the ink ramp — brand hues are identical in both. The
+theme lives on `<html data-theme>`, owned by `src/theme.tsx`. A subtree can be
+pinned to a theme with `data-theme`, which is how the showcase renders both at
+once.
+
+Adding a token that resolves into the ink ramp means declaring it in **both**
+blocks of `design-system/tokens/themes.css` — a `var()` alias left only on
+`:root` resolves against `:root` and silently ignores the scoped override.

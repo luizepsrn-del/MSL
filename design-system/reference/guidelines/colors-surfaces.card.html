@@ -1,0 +1,15 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Surfaces" subtitle="Three levels only: canvas, card, raised" -->
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Surfaces</title><link rel="stylesheet" href="../styles.css">
+<style>body{padding:18px;background:var(--surface-app);font:var(--type-body)}
+.g{display:grid;gap:10px}.r{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.sw{display:flex;flex-direction:column;gap:6px;min-width:0}
+.chip{height:52px;border-radius:var(--r-md);border:1px solid var(--border-hairline)}
+.n{font:var(--fw-medium) 11px/1.3 var(--font-core);color:var(--text-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v{font:var(--fw-regular) 10px/1.3 var(--font-core);color:var(--text-subtle);white-space:nowrap}
+.tok{font:var(--fw-regular) 10px/1.3 var(--font-mono);color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+</style></head><body><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+<div class="sw"><div class="chip" style="height:74px;background:var(--surface-app)"></div><span class="n">Canvas</span><span class="tok">--surface-app</span></div>
+<div class="sw"><div class="chip" style="height:74px;background:var(--surface-card)"></div><span class="n">Card</span><span class="tok">--surface-card</span></div>
+<div class="sw"><div class="chip" style="height:74px;background:var(--surface-raised)"></div><span class="n">Raised</span><span class="tok">--surface-raised</span></div>
+<div class="sw"><div class="chip" style="height:74px;background:var(--surface-glass);backdrop-filter:var(--blur-glass)"></div><span class="n">Glass</span><span class="tok">--surface-glass</span></div>
+</div></body></html>

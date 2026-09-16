@@ -1,0 +1,15 @@
+:root{
+--shadow-none:none;
+--shadow-card:0 1px 2px rgba(0,0,0,.36);
+--shadow-raised:0 6px 18px -6px rgba(0,0,0,.55);
+--shadow-pop:0 16px 40px -12px rgba(0,0,0,.65);
+--shadow-modal:0 32px 80px -24px rgba(0,0,0,.8);
+--glow-accent:0 0 0 1px rgba(104,46,199,.4),0 8px 28px -8px rgba(104,46,199,.55);
+--glow-accent-strong:0 0 24px rgba(104,46,199,.55);
+--glow-success:0 0 20px rgba(125,226,96,.35);
+--glow-danger:0 0 20px rgba(254,92,93,.35);
+--inset-top-sheen:inset 0 1px 0 rgba(255,255,255,.12);
+--ring-focus:0 0 0 2px rgba(104,46,199,.55);
+--blur-glass:blur(18px); /* @kind other */
+--blur-scrim:blur(4px); /* @kind other */
+}

@@ -1,0 +1,50 @@
+<!-- @dsCard group="Components" viewport="700x190" name="Core" subtitle="Buttons, icon buttons, badges, tags, avatars, progress" -->
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Core</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{padding:20px;background:var(--surface-app)}.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.col{display:flex;flex-direction:column;gap:14px}.lbl{font:var(--fw-regular) 10px/1 var(--font-core);color:var(--text-subtle);letter-spacing:var(--ls-caps);text-transform:uppercase}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const { Button, IconButton, Badge, Tag, Avatar, ProgressBar } = window.MySystemLifeDesignSystem_265e57;
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <div className="col">
+    <div className="row">
+      <Button variant="primary">View Plans</Button>
+      <Button variant="secondary">Send Invoice</Button>
+      <Button variant="outline" size="sm">Thank you!</Button>
+      <Button variant="ghost" size="sm">Dismiss</Button>
+      <Button variant="danger" size="sm">Delete</Button>
+      <Button variant="primary" size="sm" iconRight="plus">Create New Order</Button>
+      <Button variant="secondary" size="sm" disabled>Disabled</Button>
+    </div>
+    <div className="row">
+      <IconButton icon="phone" label="Call" />
+      <IconButton icon="video" label="Video" />
+      <IconButton icon="send" label="Send" variant="accent" />
+      <IconButton icon="sun" label="Light" active size={32} />
+      <IconButton icon="more-vertical" label="Actions" variant="ghost" size={30} />
+      <span style={{width:1,height:24,background:'var(--border-default)'}} />
+      <Badge tone="delay">Delay</Badge>
+      <Badge tone="ontime">On Time</Badge>
+      <Badge tone="delivered">Delivered</Badge>
+      <Badge tone="solid" dot={false}>2 New</Badge>
+      <Badge tone="neutral">Draft</Badge>
+    </div>
+    <div className="row">
+      <Tag tone="order" count={17}>Order</Tag>
+      <Tag tone="invoice" count={8}>Invoice</Tag>
+      <Tag tone="carrier" count={14}>Carrier</Tag>
+      <Tag tone="role">Carrier</Tag>
+      <Tag tone="driver">Driver</Tag>
+      <span style={{width:1,height:24,background:'var(--border-default)'}} />
+      <Avatar name="Ronald Richards" size={32} />
+      <Avatar name="Harrold Tafoya" size={32} status="online" />
+      <Avatar name="Shannon Kile" size={32} ring="online" />
+      <div style={{flex:1,minWidth:200}}><ProgressBar label="Trucks" value={57} valueLabel="57%" tone="purple" /></div>
+    </div>
+  </div>
+);
+</script></body></html>

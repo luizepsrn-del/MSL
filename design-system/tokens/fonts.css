@@ -1,0 +1,4 @@
+/* Rubik — the typeface named in the source design system sheet.
+   Served from Google Fonts; no binaries were supplied with the source files. */
+@import url("https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,300..700;1,300..700&display=swap");
+:root{--font-core:"Rubik","Helvetica Neue",Arial,sans-serif;--font-mono:ui-monospace,"SFMono-Regular",Menlo,monospace}

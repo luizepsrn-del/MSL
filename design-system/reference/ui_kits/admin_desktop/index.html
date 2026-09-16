@@ -1,0 +1,82 @@
+<!-- @dsCard group="Admin Dashboard" viewport="1440x900" name="Desktop dashboard" subtitle="Click-through recreation — Overview, Orders, Automations, Analytics, Messages" -->
+<!-- @startingPoint section="Admin Dashboard" subtitle="Full desktop dashboard shell with five working views" viewport="1440x900" -->
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My System Life — Admin Dashboard</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="data.js"></script>
+<style>html,body{height:100%}body{margin:0;overflow:hidden}#root{height:100vh}</style>
+</head><body><div id="root"></div>
+<script type="text/babel" src="Brand.jsx"></script>
+<script type="text/babel" src="OverviewScreen.jsx"></script>
+<script type="text/babel" src="AnalyticsScreen.jsx"></script>
+<script type="text/babel" src="OrdersScreen.jsx"></script>
+<script type="text/babel" src="AutomationsScreen.jsx"></script>
+<script type="text/babel" src="MessagesScreen.jsx"></script>
+<script type="text/babel" src="PlaceholderScreen.jsx"></script>
+<script type="text/babel">
+const { Sidebar, TopBar, PromoCard, Modal, SuccessDialog, StepProgress, OptionCard, Button } = window.MySystemLifeDesignSystem_265e57;
+
+function App() {
+  const D = window.MSL_DATA;
+  const [view, setView] = React.useState('analytics');
+  const [theme, setTheme] = React.useState('dark');
+  const [setup, setSetup] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+  const [pick, setPick] = React.useState('carriers');
+  const [title, subtitle] = D.titles[view] || ['', ''];
+
+  const body = {
+    overview: <window.OverviewScreen />,
+    analytics: <window.AnalyticsScreen onViewPlans={() => setSetup(true)} />,
+    orders: <window.OrdersScreen onEdit={() => setDone(true)} />,
+    automations: <window.AutomationsScreen />,
+    messages: <window.MessagesScreen />,
+  }[view] || <window.PlaceholderScreen name={title} />;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--surface-app)' }}>
+      <TopBar brand={<window.Brand />} title={title} subtitle={subtitle}
+        theme={theme} onThemeChange={setTheme} credits={40} notifications={2}
+        user={{ name: 'Ronald R.', role: 'Broker', rating: 4.8 }} onUserClick={() => setSetup(true)} />
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        <Sidebar sections={D.nav} active={view} onSelect={setView} style={{ paddingTop: 'var(--sp-9)' }}
+          footer={<PromoCard image="../../../assets/img/promo-rocket.png" body="Get special offers up to 12 months" onAction={() => setSetup(true)} />} />
+        <main style={{
+          flex: 1, minWidth: 0, minHeight: 0, overflowX: 'auto',
+          overflowY: view === 'messages' ? 'hidden' : 'auto',
+          padding: 'var(--shell-gutter)', display: 'flex', flexDirection: 'column',
+        }}>
+          <div style={{ flex: view === 'messages' ? 1 : 'none', minWidth: 960, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{body}</div>
+        </main>
+      </div>
+
+      <Modal open={setup} onClose={() => setSetup(false)} width={860}
+        header={<StepProgress step={7} total={8} title="Account Set Up" subtitle="What Do You Want To Do First?" />}
+        footer={<>
+          <Button variant="secondary" size="lg" fullWidth onClick={() => setSetup(false)}>Skip</Button>
+          <Button variant="primary" size="lg" fullWidth onClick={() => { setSetup(false); setDone(true); }}>Continue</Button>
+        </>}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-8)', maxWidth: 520, margin: '0 auto' }}>
+          <OptionCard icon="wallet" title="Find Orders Manually" selected={pick === 'orders'} onClick={() => setPick('orders')}
+            description="Manual Orders With Allow You To Analyze Every Order In More Details." />
+          <OptionCard icon="truck" title="Add New Carriers" selected={pick === 'carriers'} onClick={() => setPick('carriers')}
+            description="New Carriers Increase Orders Circulation And The Number Of Deals." />
+          <OptionCard icon="audio-lines" title="Create Automation" selected={pick === 'auto'} onClick={() => setPick('auto')}
+            description="Automated Campaigns Save Your Time In Making Super-Fast Deals" />
+        </div>
+      </Modal>
+
+      <SuccessDialog open={done} onClose={() => setDone(false)} title="Order updated!"
+        message="Your changes have been successfully applied" />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script></body></html>

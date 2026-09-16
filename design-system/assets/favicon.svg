@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The brand device from DESIGN.md → Brand mark: no logo was supplied, so the
+     mark is a single glowing purple dot on the canvas. Values are the source
+     sheet's own: #682EC7 on #06071A. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="7" fill="#06071A"/>
+  <circle cx="16" cy="16" r="11" fill="#682EC7" opacity=".22"/>
+  <circle cx="16" cy="16" r="6.5" fill="#682EC7"/>
+</svg>

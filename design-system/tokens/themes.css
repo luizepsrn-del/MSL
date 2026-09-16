@@ -1,0 +1,144 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Themes.
+
+   DARK IS CANONICAL. colors.css defines it on :root and that is the theme the
+   source material actually specifies — every screen, the design-system sheet
+   and all eleven case-study images are dark.
+
+   LIGHT IS AN ADDITION, not from the source. The top bar's sun/moon segment
+   exists in the source but only the moon is ever active, so no light palette
+   was ever drawn. This file adds one because the product needs a working
+   light mode. It is a mechanical derivation, not a new design decision:
+
+     · the ink ramp is mirrored — the surface end (1000…700) becomes light and
+       the text end (400…100) becomes dark, so the semantic aliases keep their
+       meaning and not one component needed editing;
+     · brand purple, green, orange and red keep their EXACT source values —
+       #682EC7 is #682EC7 in both themes;
+     · white-alpha hairlines and hover fills become ink-alpha, because white
+       on white is invisible.
+
+   If a light-mode screen is ever designed for My System Life, these are the
+   values to replace.
+
+   Both blocks are scoped to [data-theme] rather than :root so a subtree can
+   be forced into a theme — that is how /design-system shows both at once.
+   The dark block mirrors the :root defaults in colors.css and elevation.css;
+   if you change a token there, change it here too.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+[data-theme="dark"] {
+  /* ── Ink ramp — source sheet values ───────────── */
+  --ink-1000: #06071A;
+  --ink-900: #0B0C1E;
+  --ink-850: #101123;
+  --ink-800: #191A30;
+  --ink-700: #282939;
+  --ink-600: #3A3B4E;
+  --ink-500: #4E5068;
+  --ink-400: #74769A;
+  --ink-300: #9A9CB8;
+  --ink-200: #C3C4D6;
+  --ink-100: #E0E1EE;
+
+  /* Aliases that resolve INTO the ramp must be redeclared in the same block as
+     the ramp. A custom property containing var() is substituted in the scope
+     where it is DECLARED, so the copies on :root in colors.css would always
+     resolve against :root's ramp and ignore a scoped override. These ten are
+     the only aliases that point at the ink ramp; everything else points at the
+     brand or status hues, which are identical in both themes. */
+  --surface-app: var(--ink-1000);
+  --surface-card: var(--ink-850);
+  --surface-raised: var(--ink-800);
+  --surface-input: var(--ink-850);
+  --text-body: var(--ink-100);
+  --text-muted: var(--ink-400);
+  --text-subtle: var(--ink-500);
+  --chart-4: var(--ink-100);
+  --chart-5: var(--ink-400);
+  --chart-axis: var(--ink-400);
+
+  --text-heading: var(--white);
+  --text-link: var(--purple-300);
+  --text-link-hover: var(--purple-200);
+
+  --surface-hover: rgba(224, 225, 238, .04);
+  --surface-active: rgba(224, 225, 238, .07);
+  --surface-glass: rgba(16, 17, 35, .72);
+
+  --border-hairline: rgba(224, 225, 238, .07);
+  --border-default: rgba(224, 225, 238, .11);
+  --border-strong: rgba(224, 225, 238, .18);
+
+  --gradient-promo: linear-gradient(180deg, #1B1533 0%, #100F24 100%); /* @kind color */
+
+  --chart-grid: rgba(224, 225, 238, .07);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .36);
+  --shadow-raised: 0 6px 18px -6px rgba(0, 0, 0, .55);
+  --shadow-pop: 0 16px 40px -12px rgba(0, 0, 0, .65);
+  --shadow-modal: 0 32px 80px -24px rgba(0, 0, 0, .8);
+}
+
+[data-theme="light"] {
+  /* ── Ink ramp, mirrored ───────────────────────── */
+  --ink-1000: #F7F7FB;   /* app canvas */
+  --ink-900: #FFFFFF;
+  --ink-850: #FFFFFF;    /* surface */
+  --ink-800: #EFEFF5;
+  --ink-700: #DFE0EA;
+  --ink-600: #C6C7D6;
+  --ink-500: #6C6E88;
+  --ink-400: #5A5C78;    /* muted text */
+  --ink-300: #3A3B52;
+  --ink-200: #1E1F33;
+  --ink-100: #12131F;    /* primary text */
+
+  /* Aliases that resolve INTO the ramp must be redeclared in the same block as
+     the ramp. A custom property containing var() is substituted in the scope
+     where it is DECLARED, so the copies on :root in colors.css would always
+     resolve against :root's ramp and ignore a scoped override. These ten are
+     the only aliases that point at the ink ramp; everything else points at the
+     brand or status hues, which are identical in both themes. */
+  --surface-app: var(--ink-1000);
+  --surface-card: var(--ink-850);
+  --surface-raised: var(--ink-800);
+  --surface-input: var(--ink-850);
+  --text-body: var(--ink-100);
+  --text-muted: var(--ink-400);
+  --text-subtle: var(--ink-500);
+  --chart-4: var(--ink-100);
+  --chart-5: var(--ink-400);
+  --chart-axis: var(--ink-400);
+
+  /* --text-heading is var(--white) in dark; on a white card that is
+     invisible, so it is pinned to the darkest ink instead. */
+  --text-heading: #06071A;
+  --text-link: var(--purple-600);
+  --text-link-hover: var(--purple-500);
+
+  --surface-hover: rgba(6, 7, 26, .04);
+  --surface-active: rgba(6, 7, 26, .07);
+  --surface-glass: rgba(255, 255, 255, .72);
+
+  --border-hairline: rgba(6, 7, 26, .09);
+  --border-default: rgba(6, 7, 26, .13);
+  --border-strong: rgba(6, 7, 26, .22);
+
+  --gradient-promo: linear-gradient(180deg, #EFE9FB 0%, #F7F4FE 100%); /* @kind color */
+
+  --chart-grid: rgba(6, 7, 26, .09);
+
+  /* Black at lower alpha on a light ground. */
+  --shadow-card: 0 1px 2px rgba(6, 7, 26, .08);
+  --shadow-raised: 0 6px 18px -6px rgba(6, 7, 26, .16);
+  --shadow-pop: 0 16px 40px -12px rgba(6, 7, 26, .22);
+  --shadow-modal: 0 32px 80px -24px rgba(6, 7, 26, .28);
+}
+
+/* A themed subtree paints its own canvas and text, so a light island inside a
+   dark page (and the reverse) reads correctly on its own. */
+[data-theme] {
+  background: var(--surface-app);
+  color: var(--text-body);
+}

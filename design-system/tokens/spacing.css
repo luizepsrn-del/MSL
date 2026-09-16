@@ -1,0 +1,11 @@
+:root{
+--sp-0:0px; /* @kind spacing */
+--sp-1:2px;--sp-2:4px;--sp-3:6px;--sp-4:8px;--sp-5:10px;--sp-6:12px;
+--sp-7:14px;--sp-8:16px;--sp-9:20px;--sp-10:24px;--sp-11:28px;--sp-12:32px;
+--sp-14:40px;--sp-16:48px;--sp-20:64px;
+/* Layout */
+--sidebar-w:224px;--sidebar-w-collapsed:64px;--topbar-h:72px;
+--shell-gutter:20px;--card-pad:16px;--card-pad-lg:20px;--card-gap:16px;
+--row-h:56px;--row-h-compact:44px;--control-h:36px;--control-h-sm:30px;--control-h-lg:44px;
+--tap-min:44px;--content-max:1440px;
+}

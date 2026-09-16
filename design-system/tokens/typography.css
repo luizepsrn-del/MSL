@@ -1,0 +1,32 @@
+:root{
+/* Sizes — the source sheet pins Heading 24 / Sub-heading 20 / Body 12 */
+--fs-display:40px;--fs-title:32px;--fs-heading:24px;--fs-subheading:20px;
+--fs-lg:16px;--fs-md:14px;--fs-sm:13px;--fs-body:12px;--fs-xs:11px;--fs-micro:10px;
+/* Weights */
+--fw-light:300; /* @kind font */
+--fw-regular:400; /* @kind font */
+--fw-medium:500; /* @kind font */
+--fw-semibold:600; /* @kind font */
+--fw-bold:700; /* @kind font */
+/* Line heights */
+--lh-tight:1.15; /* @kind font */
+--lh-snug:1.3; /* @kind font */
+--lh-normal:1.45; /* @kind font */
+--lh-relaxed:1.6; /* @kind font */
+/* Tracking */
+--ls-tight:-0.02em; /* @kind font */
+--ls-normal:0; /* @kind font */
+--ls-wide:0.02em; /* @kind font */
+--ls-caps:0.08em; /* @kind font */
+/* Roles */
+--type-page-title:var(--fw-semibold) var(--fs-heading)/var(--lh-snug) var(--font-core); /* @kind font */
+--type-page-subtitle:var(--fw-regular) var(--fs-body)/var(--lh-normal) var(--font-core); /* @kind font */
+--type-card-title:var(--fw-medium) var(--fs-lg)/var(--lh-snug) var(--font-core); /* @kind font */
+--type-metric:var(--fw-medium) var(--fs-heading)/var(--lh-tight) var(--font-core); /* @kind font */
+--type-metric-lg:var(--fw-medium) var(--fs-title)/var(--lh-tight) var(--font-core); /* @kind font */
+--type-body:var(--fw-regular) var(--fs-body)/var(--lh-normal) var(--font-core); /* @kind font */
+--type-nav:var(--fw-regular) var(--fs-md)/1 var(--font-core); /* @kind font */
+--type-label:var(--fw-regular) var(--fs-body)/1 var(--font-core); /* @kind font */
+--type-eyebrow:var(--fw-regular) var(--fs-body)/1 var(--font-core); /* @kind font */
+--type-badge:var(--fw-medium) var(--fs-micro)/1 var(--font-core); /* @kind font */
+}
