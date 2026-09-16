@@ -27,7 +27,13 @@ npm run dev
 | `npm run build` | Typecheck, build to `dist/`, and copy the reference pages across |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint, including the design-system adherence rules |
+| `npm test` | Vitest — domain logic |
+| `npm run test:e2e` | Playwright — Mac and iPhone |
+| `npm run verificar` | lint + typecheck + test (roda no pre-commit) |
 | `npm run preview` | Serve the production build |
+
+Depois de clonar, ative o portão de commit uma vez:
+`git config core.hooksPath .githooks`
 
 ## Layout
 

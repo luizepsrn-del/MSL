@@ -21,6 +21,14 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "design-system", "vite.config.ts", "scripts"],
+  "include": [
+    "src",
+    "design-system",
+    "e2e",
+    "scripts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ],
   "exclude": ["design-system/reference", "dist", "node_modules"]
 }

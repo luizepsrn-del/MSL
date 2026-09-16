@@ -102,8 +102,17 @@ export default tseslint.config(
   },
 
   {
+    // Arquivos de teste asseveram sobre valores de design literais — é o
+    // trabalho deles. Um teste que garante que #682EC7 é a marca precisa
+    // escrever #682EC7. As regras de valor cru continuam valendo para todo
+    // o resto de src/.
+    files: ['**/*.{test,spec}.ts', 'e2e/**'],
+    rules: { 'no-restricted-syntax': 'off' },
+  },
+
+  {
     // Build scripts run in Node, not the browser.
-    files: ['scripts/**', '*.config.js', '*.config.ts'],
+    files: ['scripts/**', 'e2e/**', '*.config.js', '*.config.ts'],
     languageOptions: { globals: { console: 'readonly', process: 'readonly' } },
   },
 );

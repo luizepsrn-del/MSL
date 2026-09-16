@@ -1,0 +1,17 @@
+#!/bin/sh
+# Portão de commit: lint, typecheck e testes de domínio.
+#
+# O ponta a ponta NÃO roda aqui de propósito — ele sobe um servidor e leva
+# dezenas de segundos, o que mataria o hábito de commit pequeno. Rode-o nos
+# portões, com `npm run test:e2e`.
+#
+# Para pular num commit específico (rascunho, WIP):  git commit --no-verify
+
+set -e
+echo "→ lint"
+npm run --silent lint
+echo "→ typecheck"
+npm run --silent typecheck
+echo "→ testes de domínio"
+npm run --silent test
+echo "✓ portão liberado"

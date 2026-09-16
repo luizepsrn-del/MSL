@@ -12,9 +12,30 @@ built with Vite. Everything visual comes from the design system in
 | `npm run build` | Typecheck, build, and copy the reference pages into `dist/` |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint, including the design-system adherence rules |
+| `npm test` | Vitest — domain logic, Node environment |
+| `npm run test:e2e` | Playwright — `mac` (Chromium) and `iphone` (WebKit) |
+| `npm run verificar` | lint + typecheck + test, the pre-commit gate |
 | `npm run preview` | Serve the production build |
 
-Run `npm run lint && npm run typecheck && npm run build` before calling work done.
+Run `npm run verificar && npm run build` before calling work done, and
+`npm run test:e2e` at any gate that touches a surface.
+
+**Test layout.** Domain logic is tested next to the code it covers
+(`**/*.test.ts`, Node environment — recurrence, balance, deadlines, schema
+migration). End-to-end specs live in `e2e/` and run against both real clients:
+the iPhone project uses WebKit, not Chromium, because that is what the phone
+actually runs.
+
+**Pre-commit gate.** `.githooks/pre-commit` runs lint + typecheck + domain
+tests. A fresh clone must opt in once:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+End-to-end is deliberately not in the hook — it boots a server and would kill
+the habit of small commits. `git commit --no-verify` skips the gate for a
+draft.
 
 ## Layout
 
