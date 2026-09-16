@@ -1,8 +1,17 @@
 # AGENTS.md
 
-My System Life — a logistics management admin dashboard. React 19 + TypeScript,
-built with Vite. Everything visual comes from the design system in
-`design-system/`.
+My System Life — a personal and professional life-management system: routine,
+tasks, projects, finances and calendar. React 19 + TypeScript, built with Vite.
+Everything visual comes from the design system in `design-system/`.
+
+**The product is in Portuguese (pt-BR); the design system's API is in English.**
+That split is deliberate and load-bearing — see *Language* below.
+
+**The library was reconstructed from a logistics dashboard, and that domain was
+never deleted.** `design-system/patterns/` still holds the working logistics
+kit; it is the library's demonstration, reachable from `/design-system`. The
+product lives in `src/casca/`. Do not confuse the two, and do not delete the
+demonstration to "clean up".
 
 ## Commands
 
@@ -27,7 +36,7 @@ the iPhone project uses WebKit, not Chromium, because that is what the phone
 actually runs.
 
 **Pre-commit gate.** `.githooks/pre-commit` runs lint + typecheck + domain
-tests. A fresh clone must opt in once:
+tests, and it does block. A fresh clone must opt in once:
 
 ```bash
 git config core.hooksPath .githooks
@@ -41,13 +50,31 @@ draft.
 
 ```
 DESIGN.md              the visual contract — token source of truth
+MAPA.md                what the library holds, and what fits the life domain
+DECISOES.md            the structural decisions and why each was taken
 design-system/         the component library (see its README for the map)
-src/                   the application
+src/
+  casca/               the product shell: navigation, desktop and mobile
+  formato/             pt-BR formatting — dates, money, sorting
   routes/Showcase.tsx  the /design-system showcase page
 adherence.rules.json   the design-system lint rules, from the original export
 ```
 
-Routes: `/app` is the product, `/design-system` is the library showcase.
+Routes: `/app/<pilar>` is the product — each pillar has its own URL.
+`/design-system` is the library showcase.
+
+## Language
+
+- **Everything the user sees, and every identifier in `src/`, is pt-BR.**
+- **The design system's API stays in English** — component names, prop names,
+  prop values, token names. It is a library, and it is read by tooling:
+  **49 of the 52 selectors in `adherence.rules.json` match on English component
+  and prop names.** Renaming them does not break those rules, it silences them —
+  they would keep passing while protecting nothing. `reference/_ds_bundle.js` is
+  a compiled artifact with no source here, so the reference pages would break
+  irreparably too.
+- **Never call `Intl` from a screen.** Dates, times, money, numbers and sorting
+  go through `src/formato`. Money is an integer in cents, never a float.
 
 ## Design system rules
 
@@ -102,6 +129,24 @@ legitimate. Everything outside it is held to the full rule set.
 
 `design-system/README.md` is the full map and the procedure for adding a
 component or a token.
+
+## Responsive shell
+
+`src/casca/Casca.tsx` picks the desktop or the mobile layout from the real
+window width, at `--bp-desktop` (1224px). That number is **derived, not
+invented**: rail 224 + gutter 20 + the desktop shell's own 960px content
+minimum + gutter 20. Below it the desktop shell cannot fit, and the mobile
+layout is the correct one, not a degraded one.
+
+`useLarguraDesktop` returns `null` until it can read the token, and the shell
+renders nothing while undecided. In development Vite injects CSS via
+JavaScript, so the token is absent on the first evaluation — reading once and
+giving up picked desktop forever, which is exactly how the iPhone kept getting
+the 224px rail. Do not "simplify" that retry away.
+
+The mobile shell honours `safe-area-inset` on all four sides and uses `100dvh`;
+`index.html` carries `viewport-fit=cover`, without which the inset is always
+zero.
 
 ## Theming
 

@@ -14,7 +14,7 @@ both themes, and the two UI kits. Start `npm run dev` and open it.
 | `styles.css` | The single entry point. `@import` lines only. Imported once, in `src/main.tsx` |
 | `index.ts` | **The barrel.** The only import surface application code may use |
 | `components/core/` | Icon · Button · IconButton · Card · Badge · Tag · Avatar · ProgressBar |
-| `components/forms/` | SearchInput · Checkbox · Switch · Radio · Select |
+| `components/forms/` | SearchInput · Checkbox · Switch · Radio · Select · **Field** · **TextInput** |
 | `components/navigation/` | Sidebar · TopBar · PageHeader · Pagination |
 | `components/data/` | StatCard · DataTable · SelectionToolbar · DonutChart · LineChart · BarChart · MetricBarList · CarrierRow |
 | `components/messaging/` | ChatListItem · MessageBubble · MessageComposer |
@@ -25,10 +25,18 @@ both themes, and the two UI kits. Start `npm run dev` and open it.
 | `adherence-metadata.json` | The prop contracts and token inventory the lint rules were generated from |
 | `SKILL.md` | Agent Skill front matter, for using this system outside the project |
 
-34 components. Every component file has a sibling `.prompt.md` saying when to
+36 components. Every component file has a sibling `.prompt.md` saying when to
 reach for it, with a usage example — read that before using one.
 
-## Patterns
+## Patterns, and what they are for now
+
+`patterns/` holds the **logistics demonstration**, and it is kept on purpose.
+When the product moved to the life domain, nothing here was deleted: the kit is
+the clearest working proof of how the primitives compose, and it is what the
+`/design-system` Patterns tab renders.
+
+The product's own shell is `src/casca/`, not this. Do not add product screens
+here, and do not delete this to tidy up.
 
 `patterns/` is not a second component layer. It holds the assembled screens from
 the source UI kits, and they are the starting point for a new screen:
