@@ -197,7 +197,7 @@ export function Showcase() {
               Design system
             </h1>
             <p style={{ font: 'var(--type-page-subtitle)', color: 'var(--text-muted)' }}>
-              36 componentes · 2 UI kits · os tokens de que são feitos
+              36 components · 2 UI kits · the tokens they are built from
             </p>
           </div>
 

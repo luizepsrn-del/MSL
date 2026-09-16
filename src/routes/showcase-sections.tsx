@@ -234,7 +234,7 @@ export function FormsSection() {
     <Stack>
       <Spec
         name="Field + TextInput"
-        states="6 tipos · vazio · preenchido · foco · erro · desabilitado · multi-linha que cresce"
+        states="6 types · empty · filled · focus · error · disabled · multiline that grows"
       >
         <div
           style={{
@@ -284,10 +284,10 @@ export function FormsSection() {
         </Field>
 
         <Note>
-          Adição declarada, não vem da fonte — veja DESIGN.md, seção Form fields. Nenhum valor
-          de design novo: altura, raio, fio, foco sem brilho e o tom de erro já existiam nos
-          tokens. Clique num campo para ver o fio virar roxo; o campo com erro usa o fio
-          vermelho e anuncia a mensagem com role=alert.
+          A declared addition, not from the source — see DESIGN.md → Form fields. No new
+          design value: height, radius, hairline, glowless focus and the error tone all
+          existed as tokens already. Click into a field to see the hairline turn purple; the
+          errored field takes the red hairline and announces its message with role=alert.
         </Note>
       </Spec>
       <Spec name="SearchInput" states="3 sizes · empty · filled · focus · with shortcut chip">
