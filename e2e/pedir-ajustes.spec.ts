@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { VERSAO_ESQUEMA } from '../src/dados/esquema';
 
 /** O compositor de pedido e o backup — as duas últimas superfícies. */
 
@@ -137,7 +138,9 @@ test('exportar baixa um arquivo JSON legível com os meus dados', async ({ page 
   const conteudo = readFileSync(caminho, 'utf8');
 
   expect(() => JSON.parse(conteudo)).not.toThrow();
-  expect(JSON.parse(conteudo).versao).toBe(4);
+  // A versão vem do esquema, e não de um número escrito aqui: com o 4 fixo o
+  // teste quebrava a cada migração, e a quebra não dizia nada sobre o backup.
+  expect(JSON.parse(conteudo).versao).toBe(VERSAO_ESQUEMA);
   expect(conteudo).toContain(SEGREDO);
   // Legível: indentado, não minificado numa linha só.
   expect(conteudo.split('\n').length).toBeGreaterThan(10);

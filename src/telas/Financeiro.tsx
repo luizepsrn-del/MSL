@@ -510,9 +510,15 @@ const MESES_CURTOS = [
   'dez',
 ];
 
-/** Três marcas no eixo: o teto, o meio e o zero. */
+/**
+ * Três marcas no eixo: o teto, o meio e o zero.
+ *
+ * O piso é de um real, e não de um centavo: com o teto em R$ 0,01 as três
+ * marcas viravam "R$ 0,01", "R$ 0,01" e "R$ 0,00" — duas iguais, e o React
+ * reclamava de chave repetida num mês sem nenhum lançamento.
+ */
 function ticksDe(pontos: { entradas: number; saidas: number }[]): string[] {
-  const teto = Math.max(...pontos.flatMap((p) => [p.entradas, p.saidas]), 1);
+  const teto = Math.max(...pontos.flatMap((p) => [p.entradas, p.saidas]), 100);
   return [formatarMoeda(teto), formatarMoeda(Math.round(teto / 2)), formatarMoeda(0)];
 }
 
