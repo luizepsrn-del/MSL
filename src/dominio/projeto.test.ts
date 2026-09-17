@@ -8,6 +8,10 @@ import {
   removerProjeto,
   resumoProjetos,
   ROTULO_SITUACAO_PROJETO,
+  painelProjeto,
+  painelDosProjetos,
+  projetosQuePedemAtencao,
+  DIAS_PARA_PARADO,
 } from './projeto';
 import { bancoVazio, type Banco, type Projeto, type Tarefa } from '../dados/esquema';
 
@@ -255,5 +259,170 @@ describe('resumo', () => {
       atrasados: 0,
       concluidos: 0,
     });
+  });
+});
+
+/** Instante que cai naquele dia no fuso desta máquina. */
+function instanteLocal(dia: string, hora = 12): string {
+  const [ano, mes, data] = dia.split('-').map(Number);
+  return new Date(ano, mes - 1, data, hora).toISOString();
+}
+
+describe('o painel do projeto', () => {
+  it('aponta a próxima tarefa, que é a mais urgente pendente', () => {
+    const b = banco(
+      [projeto()],
+      [
+        tarefa({ id: 'depois', projetoId: 'p1', prazo: '2026-02-01' }),
+        tarefa({ id: 'urgente', projetoId: 'p1', prazo: '2026-01-10' }),
+        tarefa({ id: 'feita', projetoId: 'p1', prazo: '2026-01-05', concluidaEm: instanteLocal('2026-01-05') }),
+      ],
+    );
+    const painel = painelProjeto(b, b.projetos[0], HOJE);
+    expect(painel.proxima?.id).toBe('urgente');
+    expect(painel.atrasadas).toBe(1);
+    expect(painel.proximoPrazo).toBe('2026-01-10');
+  });
+
+  it('projeto sem pendência não tem próxima tarefa nem previsão', () => {
+    // Inventar uma data de término para o que já acabou seria ruído.
+    const b = banco(
+      [projeto()],
+      [tarefa({ id: 'a', projetoId: 'p1', concluidaEm: instanteLocal('2026-01-14') })],
+    );
+    const painel = painelProjeto(b, b.projetos[0], HOJE);
+    expect(painel.proxima).toBeUndefined();
+    expect(painel.previsao).toBeUndefined();
+    expect(painel.situacao).toBe('concluido');
+  });
+
+  it('conta o que está declarado como "fazendo"', () => {
+    const b = banco(
+      [projeto()],
+      [
+        tarefa({ id: 'a', projetoId: 'p1', estado: 'fazendo' }),
+        tarefa({ id: 'b', projetoId: 'p1' }),
+      ],
+    );
+    expect(painelProjeto(b, b.projetos[0], HOJE).emAndamento).toBe(1);
+  });
+
+  it('o ritmo é medido, não declarado', () => {
+    // Quatro conclusões em 28 dias é uma por semana.
+    const b = banco(
+      [projeto()],
+      [
+        tarefa({ id: 'a', projetoId: 'p1', concluidaEm: instanteLocal('2026-01-02') }),
+        tarefa({ id: 'b', projetoId: 'p1', concluidaEm: instanteLocal('2026-01-06') }),
+        tarefa({ id: 'c', projetoId: 'p1', concluidaEm: instanteLocal('2026-01-10') }),
+        tarefa({ id: 'd', projetoId: 'p1', concluidaEm: instanteLocal('2026-01-14') }),
+        tarefa({ id: 'e', projetoId: 'p1' }),
+        tarefa({ id: 'f', projetoId: 'p1' }),
+      ],
+    );
+    const painel = painelProjeto(b, b.projetos[0], HOJE);
+    expect(painel.ritmo).toBe(1);
+    // Duas pendentes a uma por semana: duas semanas.
+    expect(painel.previsao).toBe('2026-01-29');
+  });
+
+  it('conclusão velha demais não conta para o ritmo', () => {
+    const b = banco(
+      [projeto()],
+      [
+        tarefa({ id: 'a', projetoId: 'p1', concluidaEm: instanteLocal('2025-10-01') }),
+        tarefa({ id: 'b', projetoId: 'p1' }),
+      ],
+    );
+    expect(painelProjeto(b, b.projetos[0], HOJE).ritmo).toBe(0);
+  });
+
+  it('sem ritmo não há previsão, em vez de uma data inventada', () => {
+    // Dividir por zero daria infinito, e arredondar para "algum dia" seria
+    // pior que dizer que não dá para saber.
+    const b = banco([projeto()], [tarefa({ id: 'a', projetoId: 'p1' })]);
+    expect(painelProjeto(b, b.projetos[0], HOJE).previsao).toBeUndefined();
+  });
+
+  it('a última atividade inclui tarefa criada, e não só concluída', () => {
+    // Um projeto onde acabei de escrever cinco tarefas não está parado.
+    const b = banco(
+      [projeto({ criadoEm: instanteLocal('2025-06-01') })],
+      [tarefa({ id: 'a', projetoId: 'p1', criadoEm: instanteLocal('2026-01-14') })],
+    );
+    const painel = painelProjeto(b, b.projetos[0], HOJE);
+    expect(painel.ultimaAtividade).toBe('2026-01-14');
+    expect(painel.paradoHa).toBe(1);
+    expect(painel.parado).toBe(false);
+  });
+
+  it('projeto sem nada há duas semanas é apontado como parado', () => {
+    const b = banco(
+      [projeto({ criadoEm: instanteLocal('2025-06-01') })],
+      [tarefa({ id: 'a', projetoId: 'p1', criadoEm: instanteLocal('2025-06-01') })],
+    );
+    const painel = painelProjeto(b, b.projetos[0], HOJE);
+    expect(painel.paradoHa).toBeGreaterThanOrEqual(DIAS_PARA_PARADO);
+    expect(painel.parado).toBe(true);
+  });
+
+  it('projeto concluído não está parado, está pronto', () => {
+    const b = banco(
+      [projeto({ criadoEm: instanteLocal('2025-06-01') })],
+      [tarefa({ id: 'a', projetoId: 'p1', criadoEm: instanteLocal('2025-06-01'), concluidaEm: instanteLocal('2025-06-02') })],
+    );
+    expect(painelProjeto(b, b.projetos[0], HOJE).parado).toBe(false);
+  });
+
+  it('projeto vazio fica em 0%, e o painel não quebra', () => {
+    const b = banco([projeto()], []);
+    const painel = painelProjeto(b, b.projetos[0], HOJE);
+    expect(painel.progresso).toEqual({ total: 0, concluidas: 0, fracao: 0 });
+    expect(painel.proxima).toBeUndefined();
+    expect(painel.ritmo).toBe(0);
+  });
+});
+
+describe('o que pede atenção', () => {
+  const b = banco(
+    [
+      projeto({ id: 'atrasado', titulo: 'Atrasado' }),
+      projeto({ id: 'parado', titulo: 'Parado', criadoEm: instanteLocal('2025-06-01') }),
+      projeto({ id: 'perto', titulo: 'Prazo perto', prazo: '2026-01-18' }),
+      projeto({ id: 'calmo', titulo: 'Calmo', prazo: '2026-06-01' }),
+      projeto({ id: 'guardado', titulo: 'Guardado', arquivadoEm: AGORA }),
+    ],
+    [
+      tarefa({ id: 'ta', projetoId: 'atrasado', prazo: '2026-01-01' }),
+      tarefa({ id: 'tp', projetoId: 'parado', criadoEm: instanteLocal('2025-06-01') }),
+      tarefa({ id: 'tperto', projetoId: 'perto', criadoEm: instanteLocal('2026-01-14') }),
+      tarefa({ id: 'tc', projetoId: 'calmo', criadoEm: instanteLocal('2026-01-14') }),
+    ],
+  );
+
+  it('lista o atrasado, o parado e o de prazo próximo — e mais nada', () => {
+    // A ordem é a de `ordenarProjetos`: atrasado primeiro, e entre os dois em
+    // andamento vem antes quem tem prazo marcado.
+    expect(projetosQuePedemAtencao(b, HOJE).map((p) => p.projeto.id)).toEqual([
+      'atrasado',
+      'perto',
+      'parado',
+    ]);
+  });
+
+  it('o projeto calmo fica de fora', () => {
+    expect(projetosQuePedemAtencao(b, HOJE).map((p) => p.projeto.id)).not.toContain('calmo');
+  });
+
+  it('não lista projeto arquivado', () => {
+    // Arquivar é justamente dizer "não me cobre disto".
+    expect(painelDosProjetos(b, HOJE).map((p) => p.projeto.id)).not.toContain('guardado');
+  });
+
+  it('prazo que já passou entra pelo atraso, não pela janela de sete dias', () => {
+    const vencido = banco([projeto({ id: 'v', prazo: '2026-01-01' })], [tarefa({ projetoId: 'v' })]);
+    const atencao = projetosQuePedemAtencao(vencido, HOJE);
+    expect(atencao.map((p) => p.projeto.id)).toEqual(['v']);
+    expect(atencao[0].situacao).toBe('atrasado');
   });
 });

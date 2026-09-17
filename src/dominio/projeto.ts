@@ -1,5 +1,6 @@
 import type { Banco, Projeto, Tarefa } from '../dados/esquema';
-import { situacao } from './tarefa';
+import { situacao, ordenarTarefas, estadoDe } from './tarefa';
+import { diaLocalDe, distanciaEmDias, somarDias } from './rotina';
 
 /**
  * Projeto: trabalho maior que uma tarefa.
@@ -135,4 +136,115 @@ export function resumoProjetos(banco: Banco, hoje: string): ResumoProjetos {
   }
 
   return { ativos, atrasados, concluidos };
+}
+
+/* ── O painel ────────────────────────────────────────────────────────────── */
+
+/** Quantos dias para trás a conta do ritmo olha. */
+const JANELA_DO_RITMO = 28;
+
+/** A partir de quantos dias sem nada o projeto é chamado de parado. */
+export const DIAS_PARA_PARADO = 14;
+
+export interface PainelProjeto {
+  projeto: Projeto;
+  situacao: SituacaoProjeto;
+  progresso: ProgressoProjeto;
+  /** a próxima tarefa a fazer: a mais urgente entre as pendentes */
+  proxima?: Tarefa;
+  /** quantas tarefas do projeto estão declaradas como "fazendo" */
+  emAndamento: number;
+  atrasadas: number;
+  /** o prazo mais próximo entre as tarefas pendentes */
+  proximoPrazo?: string;
+  /** dia da última coisa que aconteceu no projeto */
+  ultimaAtividade: string;
+  /** dias desde essa última atividade */
+  paradoHa: number;
+  parado: boolean;
+  /** tarefas concluídas por semana, medidas nos últimos 28 dias */
+  ritmo: number;
+  /**
+   * Quando o projeto termina, mantido o ritmo atual.
+   *
+   * Ausente quando não dá para saber: sem tarefa pendente não há o que prever,
+   * e com ritmo zero a resposta honesta é "não dá", não uma data distante.
+   */
+  previsao?: string;
+}
+
+/**
+ * Tudo que o projeto sabe dizer sobre si, sem eu preencher nada.
+ *
+ * É o "mais automático" do pilar: ritmo, previsão e parado saem das tarefas
+ * que já existem. Nenhum destes números é gravado — todos envelheceriam.
+ */
+export function painelProjeto(banco: Banco, projeto: Projeto, hoje: string): PainelProjeto {
+  const tarefas = tarefasDoProjeto(banco, projeto.id);
+  const pendentes = tarefas.filter((t) => !t.concluidaEm);
+
+  const prazos = pendentes.map((t) => t.prazo).filter((p): p is string => !!p).sort();
+
+  // A atividade inclui criação de tarefa, e não só conclusão: um projeto onde
+  // acabei de escrever cinco tarefas não está parado há um mês.
+  const marcos = [
+    diaLocalDe(projeto.criadoEm),
+    ...tarefas.map((t) => diaLocalDe(t.criadoEm)),
+    ...tarefas.filter((t) => t.concluidaEm).map((t) => diaLocalDe(t.concluidaEm!)),
+  ];
+  const ultimaAtividade = marcos.reduce((a, b) => (a > b ? a : b));
+  const paradoHa = Math.max(0, distanciaEmDias(ultimaAtividade, hoje));
+
+  const desde = somarDias(hoje, -(JANELA_DO_RITMO - 1));
+  const recentes = tarefas.filter(
+    (t) => t.concluidaEm && diaLocalDe(t.concluidaEm) >= desde && diaLocalDe(t.concluidaEm) <= hoje,
+  ).length;
+  const ritmo = (recentes * 7) / JANELA_DO_RITMO;
+
+  const situacaoAtual = situacaoProjeto(banco, projeto, hoje);
+  const previsao =
+    pendentes.length > 0 && ritmo > 0
+      ? somarDias(hoje, Math.ceil(pendentes.length / ritmo) * 7)
+      : undefined;
+
+  return {
+    projeto,
+    situacao: situacaoAtual,
+    progresso: progressoProjeto(banco, projeto.id),
+    proxima: ordenarTarefas(pendentes, hoje)[0],
+    emAndamento: pendentes.filter((t) => estadoDe(t) === 'fazendo').length,
+    atrasadas: pendentes.filter((t) => situacao(t, hoje) === 'atrasada').length,
+    proximoPrazo: prazos[0],
+    ultimaAtividade,
+    paradoHa,
+    // Concluído e arquivado não estão parados: estão prontos.
+    parado:
+      paradoHa >= DIAS_PARA_PARADO &&
+      situacaoAtual !== 'concluido' &&
+      situacaoAtual !== 'arquivado',
+    ritmo,
+    previsao,
+  };
+}
+
+/** O painel de todos os projetos ativos, na ordem em que eu quero vê-los. */
+export function painelDosProjetos(banco: Banco, hoje: string): PainelProjeto[] {
+  return ordenarProjetos(banco, hoje)
+    .filter((p) => !p.arquivadoEm)
+    .map((p) => painelProjeto(banco, p, hoje));
+}
+
+/**
+ * Os projetos que pedem alguma coisa de mim: atrasados, parados, ou com o
+ * prazo do projeto a menos de uma semana.
+ *
+ * Existe para o Início não listar tudo — lista só o que mudaria a minha
+ * decisão de hoje.
+ */
+export function projetosQuePedemAtencao(banco: Banco, hoje: string): PainelProjeto[] {
+  return painelDosProjetos(banco, hoje).filter((p) => {
+    if (p.situacao === 'atrasado' || p.parado) return true;
+    const prazo = p.projeto.prazo;
+    return !!prazo && distanciaEmDias(hoje, prazo) >= 0 && distanciaEmDias(hoje, prazo) <= 7;
+  });
 }
