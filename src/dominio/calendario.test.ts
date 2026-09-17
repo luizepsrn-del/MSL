@@ -7,9 +7,34 @@ import {
   nomeDoMes,
   anoMesDe,
   CABECALHO_SEMANA,
+  agendaDeIntervalo,
+  inicioDaSemana,
+  semanaDe,
+  nomeDaSemana,
 } from './calendario';
 import { diaDaSemana } from './rotina';
-import { bancoVazio, type Rotina, type Tarefa, type Execucao } from '../dados/esquema';
+import {
+  bancoVazio,
+  type Rotina,
+  type Tarefa,
+  type Execucao,
+  type Lancamento,
+} from '../dados/esquema';
+
+function lancamento(extras: Partial<Lancamento> = {}): Lancamento {
+  return {
+    id: 'l1',
+    criadoEm: '2026-09-01T09:00:00.000Z',
+    alteradoEm: '2026-09-01T09:00:00.000Z',
+    descricao: 'Lançamento',
+    valor: 10000,
+    tipo: 'saida',
+    categoria: 'outros',
+    contexto: 'pessoal',
+    data: '2026-09-10',
+    ...extras,
+  };
+}
 
 function rotina(extras: Partial<Rotina> = {}): Rotina {
   return {
@@ -224,5 +249,108 @@ describe('rótulos', () => {
   it('extrai ano e mês de um dia', () => {
     expect(anoMesDe('2026-09-16')).toEqual([2026, 9]);
     expect(anoMesDe('2027-01-01')).toEqual([2027, 1]);
+  });
+});
+
+describe('a semana', () => {
+  it('começa no domingo da semana em que o dia cai', () => {
+    // 2026-09-16 é uma quarta; o domingo dela é dia 13.
+    expect(inicioDaSemana('2026-09-16')).toBe('2026-09-13');
+  });
+
+  it('domingo é o começo da própria semana, e não da anterior', () => {
+    expect(inicioDaSemana('2026-09-13')).toBe('2026-09-13');
+  });
+
+  it('sábado ainda é da semana que começou no domingo', () => {
+    expect(inicioDaSemana('2026-09-19')).toBe('2026-09-13');
+  });
+
+  it('atravessa o mês e o ano sem tropeçar', () => {
+    expect(semanaDe('2027-01-01')[0]).toBe('2026-12-27');
+    expect(semanaDe('2027-01-01').at(-1)).toBe('2027-01-02');
+  });
+
+  it('tem sete dias, todos seguidos e começando em domingo', () => {
+    const dias = semanaDe('2026-09-16');
+    expect(dias).toHaveLength(7);
+    expect(diaDaSemana(dias[0])).toBe(0);
+    expect(diaDaSemana(dias[6])).toBe(6);
+  });
+
+  it('o título diz o intervalo, e nomeia os dois meses quando ela vira o mês', () => {
+    expect(nomeDaSemana('2026-09-16')).toBe('13 a 19 de setembro');
+    expect(nomeDaSemana('2027-01-01')).toBe('27 de dezembro a 2 de janeiro');
+  });
+});
+
+describe('agenda de um intervalo', () => {
+  const banco = {
+    ...bancoVazio(),
+    rotinas: [rotina({ id: 'diaria', titulo: 'Ler' })],
+    tarefas: [tarefa({ id: 'no-dia', prazo: '2026-09-15' })],
+    lancamentos: [
+      lancamento({ id: 'aluguel', data: '2026-01-10', valor: 250000, recorrencia: { periodo: 'mensal' } }),
+      lancamento({ id: 'salario', data: '2026-09-05', valor: 900000, tipo: 'entrada' }),
+    ],
+  };
+
+  it('devolve um dia para cada dia do intervalo, inclusive as pontas', () => {
+    const agenda = agendaDeIntervalo(banco, '2026-09-13', '2026-09-19');
+    expect(agenda.size).toBe(7);
+    expect([...agenda.keys()][0]).toBe('2026-09-13');
+    expect([...agenda.keys()].at(-1)).toBe('2026-09-19');
+  });
+
+  it('o lançamento recorrente aparece no mês certo sem eu relançar', () => {
+    // Foi lançado em janeiro; em setembro ele continua caindo no dia 10.
+    const agenda = agendaDeIntervalo(banco, '2026-09-01', '2026-09-30');
+    expect(agenda.get('2026-09-10')!.lancamentos.map((o) => o.lancamento.id)).toEqual(['aluguel']);
+    expect(agenda.get('2026-09-10')!.lancamentos[0].repeticao).toBe(true);
+  });
+
+  it('o lançamento avulso aparece só no dia dele', () => {
+    const agenda = agendaDeIntervalo(banco, '2026-09-01', '2026-09-30');
+    expect(agenda.get('2026-09-05')!.lancamentos.map((o) => o.lancamento.id)).toEqual(['salario']);
+    expect(agenda.get('2026-09-06')!.lancamentos).toEqual([]);
+  });
+
+  it('dia sem nada continua no mapa, vazio', () => {
+    const agenda = agendaDeIntervalo(bancoVazio(), '2026-09-13', '2026-09-19');
+    expect(agenda.get('2026-09-17')).toEqual({ rotinas: [], tarefas: [], lancamentos: [] });
+  });
+
+  it('intervalo invertido é vazio, e não um laço infinito', () => {
+    expect(agendaDeIntervalo(banco, '2026-09-19', '2026-09-13').size).toBe(0);
+  });
+
+  it('bate com o que itensDoDia responde dia a dia', () => {
+    // A agenda existe só para não reexpandir a série 42 vezes numa grade de
+    // mês. Se as duas divergissem, a grade mostraria uma coisa e o dia outra.
+    for (const dia of semanaDe('2026-09-16')) {
+      expect(agendaDeIntervalo(banco, dia, dia).get(dia)).toEqual(itensDoDia(banco, dia));
+    }
+  });
+});
+
+describe('resumo do dia, com dinheiro', () => {
+  const banco = {
+    ...bancoVazio(),
+    lancamentos: [
+      lancamento({ id: 'conta', data: '2026-09-15', valor: 30000, tipo: 'saida' }),
+      lancamento({ id: 'receita', data: '2026-09-15', valor: 50000, tipo: 'entrada' }),
+    ],
+  };
+
+  it('soma o dia com o sinal vindo do tipo', () => {
+    const r = resumoDoDia(banco, '2026-09-15', '2026-09-16');
+    expect(r.lancamentos).toBe(2);
+    expect(r.saldo).toBe(20000);
+  });
+
+  it('um dia que só tem dinheiro não é um dia vazio', () => {
+    // Antes o resumo só olhava rotina e tarefa: o dia do aluguel aparecia em
+    // branco na grade.
+    expect(resumoDoDia(banco, '2026-09-15', '2026-09-16').vazio).toBe(false);
   });
 });

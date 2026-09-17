@@ -1,6 +1,14 @@
 import type { Banco, Rotina, Tarefa } from '../dados/esquema';
-import { deveOcorrerEm, diaDaSemana, diasNoMes, somarDias, foiFeita } from './rotina';
+import {
+  deveOcorrerEm,
+  diaDaSemana,
+  diasNoMes,
+  somarDias,
+  foiFeita,
+  distanciaEmDias,
+} from './rotina';
 import { situacao } from './tarefa';
+import { ocorrenciasEntre, efeitoDaOcorrencia, type Ocorrencia } from './financeiro';
 
 /**
  * Calendário.
@@ -64,38 +72,80 @@ export interface ItensDoDia {
   rotinas: { rotina: Rotina; feita: boolean }[];
   /** tarefas cujo prazo cai neste dia */
   tarefas: Tarefa[];
+  /** lançamentos com data neste dia, já incluindo as repetições dos recorrentes */
+  lancamentos: Ocorrencia[];
+}
+
+const DIA_VAZIO = (): ItensDoDia => ({ rotinas: [], tarefas: [], lancamentos: [] });
+
+/**
+ * O que acontece em cada dia de um intervalo, num passo só.
+ *
+ * A grade de um mês tem 42 dias. Perguntar dia a dia obrigaria a reexpandir a
+ * série de cada lançamento recorrente 42 vezes; aqui a expansão acontece uma
+ * vez e cai nos baldes.
+ *
+ * Os dias sem nada continuam no mapa, vazios: quem desenha a grade precisa de
+ * uma resposta para todo dia, não de uma ausência para interpretar.
+ */
+export function agendaDeIntervalo(banco: Banco, de: string, ate: string): Map<string, ItensDoDia> {
+  const mapa = new Map<string, ItensDoDia>();
+  const total = distanciaEmDias(de, ate);
+  if (total < 0) return mapa;
+
+  for (let i = 0; i <= total; i++) {
+    const dia = somarDias(de, i);
+    mapa.set(dia, {
+      rotinas: banco.rotinas
+        .filter((r) => deveOcorrerEm(r, dia))
+        .map((rotina) => ({ rotina, feita: foiFeita(banco.execucoes, rotina.id, dia) })),
+      tarefas: [],
+      lancamentos: [],
+    });
+  }
+
+  for (const t of banco.tarefas) {
+    if (t.prazo) mapa.get(t.prazo)?.tarefas.push(t);
+  }
+  for (const o of ocorrenciasEntre(banco, de, ate)) {
+    mapa.get(o.data)?.lancamentos.push(o);
+  }
+
+  return mapa;
 }
 
 export function itensDoDia(banco: Banco, dia: string): ItensDoDia {
-  return {
-    rotinas: banco.rotinas
-      .filter((r) => deveOcorrerEm(r, dia))
-      .map((rotina) => ({ rotina, feita: foiFeita(banco.execucoes, rotina.id, dia) })),
-    tarefas: banco.tarefas.filter((t) => t.prazo === dia),
-  };
+  return agendaDeIntervalo(banco, dia, dia).get(dia) ?? DIA_VAZIO();
 }
 
 export interface ResumoDoDia {
   rotinas: number;
   rotinasFeitas: number;
   tarefas: number;
+  lancamentos: number;
+  /** soma dos lançamentos do dia, em centavos, com sinal */
+  saldo: number;
   /** alguma tarefa com prazo neste dia continua pendente e o dia já passou */
   temAtraso: boolean;
   vazio: boolean;
 }
 
-export function resumoDoDia(banco: Banco, dia: string, hoje: string): ResumoDoDia {
-  const { rotinas, tarefas } = itensDoDia(banco, dia);
-  const feitas = rotinas.filter((r) => r.feita).length;
-  const temAtraso = tarefas.some((t) => situacao(t, hoje) === 'atrasada');
-
+/** Resume um dia já apurado, sem voltar ao banco. */
+export function resumirDia(itens: ItensDoDia, hoje: string): ResumoDoDia {
+  const { rotinas, tarefas, lancamentos } = itens;
   return {
     rotinas: rotinas.length,
-    rotinasFeitas: feitas,
+    rotinasFeitas: rotinas.filter((r) => r.feita).length,
     tarefas: tarefas.length,
-    temAtraso,
-    vazio: rotinas.length === 0 && tarefas.length === 0,
+    lancamentos: lancamentos.length,
+    saldo: lancamentos.reduce((t, o) => t + efeitoDaOcorrencia(o), 0),
+    temAtraso: tarefas.some((t) => situacao(t, hoje) === 'atrasada'),
+    vazio: rotinas.length === 0 && tarefas.length === 0 && lancamentos.length === 0,
   };
+}
+
+export function resumoDoDia(banco: Banco, dia: string, hoje: string): ResumoDoDia {
+  return resumirDia(itensDoDia(banco, dia), hoje);
 }
 
 /** `2026-09` → `setembro de 2026`, sem passar por Date. */
@@ -125,4 +175,33 @@ export const CABECALHO_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb
 export function anoMesDe(dia: string): [number, number] {
   const [ano, mes] = dia.split('-').map(Number);
   return [ano, mes];
+}
+
+/**
+ * O domingo da semana em que o dia cai.
+ *
+ * Domingo porque é onde a semana começa no calendário brasileiro, e o resto do
+ * sistema já assume isso — `PRIMEIRO_DIA` e `CABECALHO_SEMANA` vêm daqui.
+ */
+export function inicioDaSemana(dia: string): string {
+  return somarDias(dia, -((diaDaSemana(dia) - PRIMEIRO_DIA + 7) % 7));
+}
+
+/** Os sete dias da semana em que o dia cai, de domingo a sábado. */
+export function semanaDe(dia: string): string[] {
+  const inicio = inicioDaSemana(dia);
+  return Array.from({ length: 7 }, (_, i) => somarDias(inicio, i));
+}
+
+/** `1 a 7 de fevereiro` · `26 de jan. a 1 de fev.` — o título da semana. */
+export function nomeDaSemana(dia: string): string {
+  const dias = semanaDe(dia);
+  const primeiro = dias[0];
+  const ultimo = dias[6];
+  const [, mesA] = anoMesDe(primeiro);
+  const [, mesB] = anoMesDe(ultimo);
+  const diaDe = (d: string) => Number(d.slice(8, 10));
+
+  if (mesA === mesB) return `${diaDe(primeiro)} a ${diaDe(ultimo)} de ${MESES[mesA - 1]}`;
+  return `${diaDe(primeiro)} de ${MESES[mesA - 1]} a ${diaDe(ultimo)} de ${MESES[mesB - 1]}`;
 }
