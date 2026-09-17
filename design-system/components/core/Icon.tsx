@@ -21,6 +21,25 @@ export interface IconProps {
   className?: string;
 }
 
+/**
+ * kebab-case → the PascalCase key Lucide registers its icons under.
+ *
+ * Exported so it can be tested without a DOM. It has to handle a segment that
+ * starts with a digit: `trash-2` is `Trash2`, and a conversion that only
+ * uppercases *letters* after a dash yields `Trash-2`, which matches nothing.
+ * The icon then renders as an empty box, silently. Every numbered Lucide icon
+ * hit that.
+ */
+export function lucideKey(name: string): string {
+  return name
+    .split('-')
+    .map((parte) => parte.charAt(0).toUpperCase() + parte.slice(1))
+    .join('');
+}
+
+/** ~2s at 60ms. Past that the name is wrong, not slow. */
+const MAX_TENTATIVAS = 32;
+
 /* Lucide is the closest CDN match to the source kit's thin, rounded outline glyphs.
    Load it once per page: <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.js"></script> */
 export function Icon({
@@ -37,8 +56,7 @@ export function Icon({
     const draw = () => {
       const lib = window.lucide;
       if (!lib || !ref.current) return false;
-      const key = name.replace(/(^|-)([a-z])/g, (_, __, c: string) => c.toUpperCase());
-      const node = (lib.icons && (lib.icons[key] || lib.icons[name])) || null;
+      const node = (lib.icons && (lib.icons[lucideKey(name)] || lib.icons[name])) || null;
       if (!node) return false;
       ref.current.innerHTML = '';
       ref.current.appendChild(lib.createElement(node));
@@ -52,12 +70,23 @@ export function Icon({
       }
       return true;
     };
-    if (!draw()) {
-      const t = setInterval(() => {
-        if (draw()) clearInterval(t);
-      }, 60);
-      return () => clearInterval(t);
-    }
+
+    if (draw()) return;
+
+    // Lucide arrives from a script tag, so the first paint can happen before
+    // it is there. Retry — but bounded: an unknown name used to poll forever
+    // at 60ms, render nothing, and give no way to notice.
+    let tentativas = 0;
+    const t = setInterval(() => {
+      tentativas += 1;
+      if (draw() || tentativas >= MAX_TENTATIVAS) {
+        clearInterval(t);
+        if (tentativas >= MAX_TENTATIVAS && import.meta.env?.DEV) {
+          console.warn(`[Icon] "${name}" (${lucideKey(name)}) não existe no Lucide carregado.`);
+        }
+      }
+    }, 60);
+    return () => clearInterval(t);
   }, [name, size, strokeWidth, color]);
 
   return (

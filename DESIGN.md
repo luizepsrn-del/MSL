@@ -423,6 +423,11 @@ they will replace the CDN set.*
 - **Emoji are never used as icons.** Unicode marks are acceptable only as typography
   (see Content Fundamentals).
 
+**Numbered names.** Lucide registers `trash-2` as `Trash2`. The `Icon`
+component handles that; do not hand-roll the conversion. If an icon renders as
+an empty box, the name is wrong — in development the component now says so in
+the console after ~2s instead of retrying forever in silence.
+
 **Icon vocabulary used by the UI kits** (Lucide names): `layout-dashboard`,
 `clipboard-list`, `truck`, `file-text`, `audio-lines`, `chart-no-axes-combined`,
 `clipboard-check`, `message-square`, `settings`, `shield-question-mark`, `search`,
