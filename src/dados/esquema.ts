@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 3;
+export const VERSAO_ESQUEMA = 4;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -114,6 +114,61 @@ export interface Projeto extends Registro {
   arquivadoEm?: string;
 }
 
+/* ── Financeiro ──────────────────────────────────────────────────────────── */
+
+export type TipoLancamento = 'entrada' | 'saida';
+
+export const CATEGORIAS = [
+  'receita',
+  'moradia',
+  'alimentacao',
+  'transporte',
+  'saude',
+  'educacao',
+  'lazer',
+  'servicos',
+  'impostos',
+  'outros',
+] as const;
+
+export type Categoria = (typeof CATEGORIAS)[number];
+
+export const ROTULO_CATEGORIA: Record<Categoria, string> = {
+  receita: 'Receita',
+  moradia: 'Moradia',
+  alimentacao: 'Alimentação',
+  transporte: 'Transporte',
+  saude: 'Saúde',
+  educacao: 'Educação',
+  lazer: 'Lazer',
+  servicos: 'Serviços',
+  impostos: 'Impostos',
+  outros: 'Outros',
+};
+
+/**
+ * Um lançamento financeiro.
+ *
+ * **`valor` é sempre positivo, em centavos inteiros.** O sinal vem do `tipo`,
+ * nunca do número. Guardar valor negativo abriria a porta para "saída de
+ * -R$ 50", que é entrada escrita errado, e para somas que se cancelam sem
+ * ninguém notar.
+ *
+ * Centavos inteiros e não ponto flutuante pelo motivo já testado em
+ * src/formato: 0.1 + 0.2 não é 0.3, e num sistema que guarda o meu dinheiro
+ * isso não é curiosidade, é erro de saldo.
+ */
+export interface Lancamento extends Registro {
+  descricao: string;
+  /** centavos, sempre > 0 */
+  valor: number;
+  tipo: TipoLancamento;
+  categoria: Categoria;
+  contexto: Contexto;
+  /** data local `AAAA-MM-DD` — pode ser futura, e aí é previsão */
+  data: string;
+}
+
 /* ── O banco ─────────────────────────────────────────────────────────────── */
 
 export interface Banco {
@@ -122,13 +177,21 @@ export interface Banco {
   execucoes: Execucao[];
   tarefas: Tarefa[];
   projetos: Projeto[];
+  lancamentos: Lancamento[];
 }
 
-export const COLECOES = ['rotinas', 'execucoes', 'tarefas', 'projetos'] as const;
+export const COLECOES = ['rotinas', 'execucoes', 'tarefas', 'projetos', 'lancamentos'] as const;
 export type NomeColecao = (typeof COLECOES)[number];
 
 export function bancoVazio(): Banco {
-  return { versao: VERSAO_ESQUEMA, rotinas: [], execucoes: [], tarefas: [], projetos: [] };
+  return {
+    versao: VERSAO_ESQUEMA,
+    rotinas: [],
+    execucoes: [],
+    tarefas: [],
+    projetos: [],
+    lancamentos: [],
+  };
 }
 
 /** Identificador estável e ordenável por criação. */

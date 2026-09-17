@@ -64,6 +64,19 @@ function bancoDeExemplo(): Banco {
         contexto: 'profissional',
       },
     ],
+    lancamentos: [
+      {
+        id: 'l1',
+        criadoEm: '2026-01-05T09:00:00.000Z',
+        alteradoEm: '2026-01-05T09:00:00.000Z',
+        descricao: 'Aluguel',
+        valor: 250000,
+        tipo: 'saida',
+        categoria: 'moradia',
+        contexto: 'pessoal',
+        data: '2026-01-05',
+      },
+    ],
   };
 }
 
@@ -157,6 +170,7 @@ describe('migração', () => {
     // Toda coleção que nasceu depois chega vazia, nunca ausente.
     expect(banco.tarefas).toEqual([]);
     expect(banco.projetos).toEqual([]);
+    expect(banco.lancamentos).toEqual([]);
   });
 
   it('toda versão entre 0 e a atual tem caminho até o topo', () => {
@@ -175,6 +189,7 @@ describe('migração', () => {
     expect(banco.versao).toBe(VERSAO_ESQUEMA);
     expect(banco.tarefas).toEqual([]);
     expect(banco.projetos).toEqual([]);
+    expect(banco.lancamentos).toEqual([]);
   });
 
   it('é idempotente — migrar duas vezes dá o mesmo banco', () => {

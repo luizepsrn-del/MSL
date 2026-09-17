@@ -52,6 +52,13 @@ export const MIGRACOES: Record<number, Migracao> = {
     projetos: Array.isArray(dados.projetos) ? dados.projetos : [],
     versao: 3,
   }),
+
+  /** 3 → 4: entra o pilar Financeiro. Aditiva, como as anteriores. */
+  3: (dados) => ({
+    ...dados,
+    lancamentos: Array.isArray(dados.lancamentos) ? dados.lancamentos : [],
+    versao: 4,
+  }),
 };
 
 export class ErroDeMigracao extends Error {

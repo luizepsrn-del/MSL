@@ -13,6 +13,7 @@ import {
 import { useBanco } from '../dados/BancoContexto';
 import { CONTEXTOS, ROTULO_CONTEXTO, type Contexto } from '../dados/esquema';
 import { tarefasDoDia, resumoTarefas } from '../dominio/tarefa';
+import { resumoProjetos } from '../dominio/projeto';
 import { LinhaTarefa } from './Tarefas';
 import {
   agendaDoDia,
@@ -60,6 +61,7 @@ export function Inicio() {
 
   const tarefas = tarefasDoDia(banco, hoje);
   const resumo = resumoTarefas(banco, hoje);
+  const projetos = resumoProjetos(banco, hoje);
 
   const melhorSequencia = banco.rotinas
     .filter((r) => !r.arquivada)
@@ -79,8 +81,9 @@ export function Inicio() {
 
   const temRotina = banco.rotinas.some((r) => !r.arquivada);
   const temTarefa = banco.tarefas.length > 0;
+  const temProjeto = banco.projetos.length > 0;
 
-  if (!temRotina && !temTarefa) {
+  if (!temRotina && !temTarefa && !temProjeto) {
     return <PrimeiroUso />;
   }
 
@@ -132,7 +135,23 @@ export function Inicio() {
           icon="clipboard-check"
           value={formatarNumero(resumo.pendentes)}
           label="Tarefas pendentes"
-          delta={resumo.atrasadas > 0 ? `${resumo.atrasadas} atrasada${resumo.atrasadas > 1 ? 's' : ''}` : undefined}
+          delta={
+            resumo.atrasadas > 0
+              ? `${resumo.atrasadas} atrasada${resumo.atrasadas > 1 ? 's' : ''}`
+              : undefined
+          }
+          deltaTone="delay"
+        />
+        <StatCard
+          style={ITEM_TRILHO}
+          icon="layers"
+          value={formatarNumero(projetos.ativos)}
+          label={projetos.ativos === 1 ? 'Projeto ativo' : 'Projetos ativos'}
+          delta={
+            projetos.atrasados > 0
+              ? `${projetos.atrasados} atrasado${projetos.atrasados > 1 ? 's' : ''}`
+              : undefined
+          }
           deltaTone="delay"
         />
       </div>
