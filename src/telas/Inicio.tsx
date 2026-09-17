@@ -58,18 +58,24 @@ export function Inicio() {
   const quinzena = Array.from({ length: 14 }, (_, i) => somarDias(hoje, i - 13));
   const serie = quinzena.map((d) => Math.round(progressoDoDia(banco, d) * 100));
 
+  const tarefas = tarefasDoDia(banco, hoje);
+  const resumo = resumoTarefas(banco, hoje);
+
   const melhorSequencia = banco.rotinas
     .filter((r) => !r.arquivada)
     .reduce((maior, r) => Math.max(maior, sequencia(banco, r, hoje)), 0);
 
-  const porContexto = CONTEXTOS.map((c: Contexto) => ({
-    contexto: c,
-    total: itens.filter((i) => i.rotina.contexto === c).length,
-    feitas: itens.filter((i) => i.rotina.contexto === c && i.feita).length,
-  }));
-
-  const tarefas = tarefasDoDia(banco, hoje);
-  const resumo = resumoTarefas(banco, hoje);
+  // Rotinas e tarefas juntas: o donut diz como o dia se divide entre pessoal e
+  // profissional, e um dia com tarefa e sem rotina não pode aparecer vazio.
+  const porContexto = CONTEXTOS.map((c: Contexto) => {
+    const rotinasDoContexto = itens.filter((i) => i.rotina.contexto === c);
+    const tarefasDoContexto = tarefas.filter((t) => t.contexto === c);
+    return {
+      contexto: c,
+      total: rotinasDoContexto.length + tarefasDoContexto.length,
+      feitas: rotinasDoContexto.filter((i) => i.feita).length,
+    };
+  });
 
   const temRotina = banco.rotinas.some((r) => !r.arquivada);
   const temTarefa = banco.tarefas.length > 0;
@@ -265,7 +271,7 @@ export function Inicio() {
           )}
 
           {/* Pessoal x profissional */}
-          <Card title="Pessoal e profissional" subtitle="A divisão de hoje">
+          <Card title="Pessoal e profissional" subtitle="Rotinas e tarefas de hoje">
             <div
               style={{
                 display: 'flex',
@@ -277,7 +283,7 @@ export function Inicio() {
               <DonutChart
                 size={150}
                 thickness={24}
-                centerValue={`${feitas}/${itens.length}`}
+                centerValue={`${feitas}/${itens.length + tarefas.length}`}
                 centerLabel="hoje"
                 segments={porContexto.map((p, i) => ({
                   value: Math.max(p.total, 0.0001),

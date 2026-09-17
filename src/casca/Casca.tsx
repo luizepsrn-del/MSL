@@ -15,6 +15,7 @@ import { TelaEmBranco } from './TelaEmBranco';
 import { Inicio } from '../telas/Inicio';
 import { Rotinas } from '../telas/Rotinas';
 import { Tarefas } from '../telas/Tarefas';
+import { Calendario } from '../telas/Calendario';
 
 /**
  * A casca do produto.
@@ -67,6 +68,8 @@ function Conteudo({ pilar }: { pilar: Pilar }) {
       return <Rotinas />;
     case 'tarefas':
       return <Tarefas />;
+    case 'calendario':
+      return <Calendario />;
     default:
       return <TelaEmBranco pilar={pilar} />;
   }
