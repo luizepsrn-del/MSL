@@ -85,9 +85,41 @@ reading its test is how the system starts lying.
   A test walks every version from 0 to current and fails if a step has no path.
 - **Dates are local `AAAA-MM-DD` strings**, never `Date`, in every domain
   module. Recurrence is a calendar question, not an instant.
+- **An ISO instant's local day is not its first ten characters.** `concluidaEm`
+  is UTC; slicing it puts a task finished at 22:00 in São Paulo on the next
+  day. Use `diaLocalDe` in `src/dominio/rotina.ts`.
+- **`concluidaEm` is the only truth about "done".** The kanban's `estado` only
+  tells `a-fazer` from `fazendo` among pending tasks — two sources for the same
+  answer would diverge. `aoMoverPara` holds the transition so the board and the
+  checkbox can never disagree.
+- **Repetition is derived, never stored.** A recurring entry expands into
+  occurrences in the window being looked at, anchored to its original date.
+  Storing twelve rents would create twelve records that age together. Same
+  principle as the calendar.
+- **A project's rhythm and forecast are measured, not declared.** With no
+  pending task or no rhythm there is no forecast — dividing by zero would put
+  a date on the screen that nothing backs.
 
 Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `pedir`, `ajustes`. Each has its own URL.
 `/design-system` is the library showcase.
+
+## Width traps on the phone, each one measured
+
+- **A grid track written `1fr` has min-content as its floor.** A card whose
+  header holds a button that will not shrink pushes the track past the
+  viewport, and the button is clipped. Measured: 419px in a 393px screen.
+  Always `minmax(0, 1fr)`, including the single-column case.
+- **Scroll snapping ignores the container's padding.** A snap rail bled to the
+  edge with `margin: 0 calc(-1 * var(--shell-gutter))` snaps its first item to
+  the screen edge, out of line with every other card, unless it also carries
+  `scroll-padding-left: var(--shell-gutter)`.
+- **A value bubble over the last point or bar leaves the card.** `BarChart`'s
+  `valueLabel` and `LineChart`'s `tooltip` are centred on the highlighted
+  item; on the last one, half of it lands outside. Put the number in the
+  card's subtitle instead.
+- **The rail is for the phone.** On the desktop it has no scrollbar, so
+  anything past the fold is simply invisible: five tiles of `--grid-min`
+  already did not fit. There, use the reflowing grid DESIGN.md prescribes.
 
 ## Language
 
