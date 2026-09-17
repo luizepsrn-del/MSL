@@ -396,9 +396,22 @@ describe('responder — relatórios saem dos dados, e só', () => {
 
   it('o resumo conta a tarefa que venceu e a que está em andamento', () => {
     const t = textoDe(responder(completo, { tipo: 'resumo', periodo: 'semana' }, HOJE));
-    expect(t).toContain('1 tarefa venceu');
+    expect(t).toContain('1 tarefa venceu e continua aberta');
     expect(t).toContain('1 tarefa está em andamento');
     expect(t).toContain('Entregar o relatório');
+  });
+
+  it('a frase inteira concorda no plural, e não só o começo dela', () => {
+    // "1 tarefa venceu e continuam abertas" é o mesmo erro do "1 concluídos".
+    const duas = banco({
+      tarefas: [
+        tarefa({ id: 'a', titulo: 'Uma', prazo: '2026-09-01' }),
+        tarefa({ id: 'b', titulo: 'Outra', prazo: '2026-09-02' }),
+      ],
+    });
+    const t = textoDe(responder(duas, { tipo: 'resumo', periodo: 'semana' }, HOJE));
+    expect(t).toContain('2 tarefas venceram e continuam abertas');
+    expect(t).not.toContain('venceu e continuam');
   });
 
   it('os atrasos listam tarefa e projeto juntos', () => {

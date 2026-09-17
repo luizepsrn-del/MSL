@@ -894,11 +894,21 @@ function resumo(banco: Banco, periodo: Periodo, hoje: string): Resposta {
   ];
 
   const frases: string[] = [];
+  // A frase inteira concorda, e não só o começo dela: "1 tarefa venceu e
+  // continuam abertas" é o mesmo erro do "1 concluídos" que já apareceu aqui.
   if (tarefas.atrasadas > 0) {
-    frases.push(`${plural(tarefas.atrasadas, 'tarefa venceu', 'tarefas venceram')} e continuam abertas.`);
+    frases.push(
+      tarefas.atrasadas === 1
+        ? '1 tarefa venceu e continua aberta.'
+        : `${tarefas.atrasadas} tarefas venceram e continuam abertas.`,
+    );
   }
   if (emAndamento > 0) {
-    frases.push(`${plural(emAndamento, 'tarefa está', 'tarefas estão')} em andamento no quadro.`);
+    frases.push(
+      emAndamento === 1
+        ? '1 tarefa está em andamento no quadro.'
+        : `${emAndamento} tarefas estão em andamento no quadro.`,
+    );
   }
   if (atencao.length > 0) {
     frases.push(

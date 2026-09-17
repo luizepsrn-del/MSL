@@ -58,11 +58,17 @@ export const PILARES: Pilar[] = [
   },
 ];
 
+/**
+ * O agente.
+ *
+ * A rota continua sendo `/app/pedir`: o endereço é interface, e o que mudou
+ * foi o que a tela faz, não onde ela mora.
+ */
 export const EXTENSAO: Pilar = {
   id: 'pedir',
-  rotulo: 'Pedir ao sistema',
+  rotulo: 'Agente',
   icone: 'sparkles',
-  subtitulo: 'Descreva uma área nova e leve o pedido pronto',
+  subtitulo: 'Pergunte, peça um relatório, mande fazer',
 };
 
 export const AJUSTES: Pilar = {

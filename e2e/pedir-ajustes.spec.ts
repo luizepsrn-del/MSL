@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { VERSAO_ESQUEMA } from '../src/dados/esquema';
 
-/** O compositor de pedido e o backup — as duas últimas superfícies. */
+/** O agente e o backup — as duas últimas superfícies. */
 
 const SEGREDO = 'ZZTOPSECRET-terapia';
 
@@ -38,17 +38,18 @@ async function semear(page: Page) {
   }, banco);
 }
 
-test('o pedido é montado a partir da descrição', async ({ page }) => {
+test('o que o agente não entende vira um pedido pronto', async ({ page }) => {
   const erros: string[] = [];
   page.on('pageerror', (e) => erros.push(String(e)));
 
   await semear(page);
   await page.goto('/app/pedir');
 
-  await page.getByPlaceholder('Quero uma área').fill('Quero registrar leituras');
-  await page.getByPlaceholder('Quero uma área').press('Enter');
+  await page.getByPlaceholder('Pergunte, ou mande fazer').fill('Quero registrar leituras');
+  await page.getByPlaceholder('Pergunte, ou mande fazer').press('Enter');
 
-  await expect(page.getByText('pedido.md')).toBeVisible();
+  // Ele não adivinha: diz que não resolve sozinho e monta o pedido.
+  await expect(page.getByText('Isto eu não resolvo sozinho')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Copiar o pedido' })).toBeVisible();
 
   await page.getByText('Ver o texto inteiro antes de colar').click();
@@ -62,8 +63,8 @@ test('o nível padrão não vaza nada do meu dado', async ({ page }) => {
   await semear(page);
   await page.goto('/app/pedir');
 
-  await page.getByPlaceholder('Quero uma área').fill('um pedido qualquer');
-  await page.getByPlaceholder('Quero uma área').press('Enter');
+  await page.getByPlaceholder('Pergunte, ou mande fazer').fill('um pedido qualquer');
+  await page.getByPlaceholder('Pergunte, ou mande fazer').press('Enter');
   await page.getByText('Ver o texto inteiro antes de colar').click();
 
   // A garantia que justifica o controle existir, verificada no navegador e não
@@ -77,8 +78,8 @@ test('mudar o nível regenera o pedido na hora', async ({ page }) => {
   await semear(page);
   await page.goto('/app/pedir');
 
-  await page.getByPlaceholder('Quero uma área').fill('pedido');
-  await page.getByPlaceholder('Quero uma área').press('Enter');
+  await page.getByPlaceholder('Pergunte, ou mande fazer').fill('pedido');
+  await page.getByPlaceholder('Pergunte, ou mande fazer').press('Enter');
   await page.getByText('Ver o texto inteiro antes de colar').click();
   expect(await page.locator('pre').innerText()).not.toContain(SEGREDO);
 
@@ -93,8 +94,8 @@ test('as regras do projeto vão junto no pedido', async ({ page }) => {
   await semear(page);
   await page.goto('/app/pedir');
 
-  await page.getByPlaceholder('Quero uma área').fill('x');
-  await page.getByPlaceholder('Quero uma área').press('Enter');
+  await page.getByPlaceholder('Pergunte, ou mande fazer').fill('x');
+  await page.getByPlaceholder('Pergunte, ou mande fazer').press('Enter');
   await page.getByText('Ver o texto inteiro antes de colar').click();
 
   const texto = await page.locator('pre').innerText();
@@ -151,8 +152,8 @@ test('as duas telas funcionam no iPhone', async ({ page }, info) => {
 
   await semear(page);
   await page.goto('/app/pedir');
-  await page.getByPlaceholder('Quero uma área').fill('no telefone');
-  await page.getByPlaceholder('Quero uma área').press('Enter');
+  await page.getByPlaceholder('Pergunte, ou mande fazer').fill('no telefone');
+  await page.getByPlaceholder('Pergunte, ou mande fazer').press('Enter');
   await expect(page.getByText('pedido.md')).toBeVisible();
 
   let vazamento = await page.evaluate(

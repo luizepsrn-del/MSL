@@ -58,7 +58,7 @@ export function TelaEmBranco({ pilar }: { pilar: Pilar }) {
         </div>
 
         <Button variant="outline" size="sm" iconLeft="sparkles">
-          Pedir ao sistema
+          Agente
         </Button>
       </div>
     </Card>
