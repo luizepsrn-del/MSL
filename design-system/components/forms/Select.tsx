@@ -7,6 +7,12 @@ export interface SelectOption {
 }
 
 export interface SelectProps {
+  /**
+   * Wire this to the surrounding Field's `htmlFor`. Without it the label is
+   * not associated with any control, and a screen reader announces the
+   * dropdown with no name.
+   */
+  id?: string;
   options: SelectOption[];
   value?: string;
   onChange?: (value: string) => void;
@@ -17,6 +23,7 @@ export interface SelectProps {
 }
 
 export function Select({
+  id,
   options = [],
   value,
   onChange,
@@ -43,7 +50,10 @@ export function Select({
   return (
     <div ref={ref} style={{ position: 'relative', width: fullWidth ? '100%' : undefined, ...style }}>
       <button
+        id={id}
         type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         style={{
           display: 'flex',

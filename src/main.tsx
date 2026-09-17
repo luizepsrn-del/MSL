@@ -6,14 +6,17 @@ import { BrowserRouter } from 'react-router-dom';
 import '../design-system/styles.css';
 
 import { ThemeProvider } from './theme';
+import { ProvedorBanco } from './dados/BancoContexto';
 import { App } from './App';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <ProvedorBanco>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </ProvedorBanco>
     </ThemeProvider>
   </React.StrictMode>,
 );

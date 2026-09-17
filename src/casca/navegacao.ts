@@ -21,6 +21,12 @@ export interface Pilar {
 
 export const PILARES: Pilar[] = [
   {
+    id: 'inicio',
+    rotulo: 'Início',
+    icone: 'layout-dashboard',
+    subtitulo: 'O dia de hoje em uma tela',
+  },
+  {
     id: 'rotina',
     rotulo: 'Rotina',
     icone: 'repeat',

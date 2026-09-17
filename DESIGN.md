@@ -255,6 +255,13 @@ The sidebar and top bar do not scroll. The promo card is pinned to the bottom of
 rail. On mobile the rail becomes a drawer, the KPI row becomes a snap rail with dots,
 and tables become one card per row with every column present as a labelled field.
 
+**Reflowing grids.** Rows of tiles — KPI cards, form fields, option grids —
+use `repeat(auto-fit, minmax(var(--grid-min), 1fr))` rather than a fixed column
+count, so the same markup serves the desktop rail layout and the phone. The
+floor is `--grid-min` (200px), below which a stat tile cannot hold its figure
+and its caption on one line. The source's own four-across KPI row is the
+desktop end of exactly this behaviour.
+
 **Where the two layouts change over.** The source never states a breakpoint, so
 this one is **derived, not invented**: the desktop shell needs the 224px rail,
 two 20px gutters and its own 960px content minimum — 1224px in total. At or

@@ -8,6 +8,10 @@
 --shell-gutter:20px;--card-pad:16px;--card-pad-lg:20px;--card-gap:16px;
 --row-h:56px;--row-h-compact:44px;--control-h:36px;--control-h-sm:30px;--control-h-lg:44px;
 --tap-min:44px;--content-max:1440px;
+/* Largura mínima de uma célula em grade que se reflui — o piso do
+   minmax() em repeat(auto-fit, …). Abaixo disto um cartão de indicador
+   não cabe o número e a legenda na mesma linha. */
+--grid-min:200px; /* @kind spacing */
 /* Largura mínima em que a casca de desktop cabe: rail 224 + goteira 20
    + mínimo de conteúdo 960 + goteira 20. Abaixo disso a casca mobile
    é a correta, não a degradada. Veja DESIGN.md → Layout. */

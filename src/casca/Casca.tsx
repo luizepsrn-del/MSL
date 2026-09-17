@@ -12,6 +12,8 @@ import { useTheme } from '../theme';
 import { useLarguraDesktop } from './useLarguraDesktop';
 import { SECOES, porId, PILAR_INICIAL, type Pilar } from './navegacao';
 import { TelaEmBranco } from './TelaEmBranco';
+import { Inicio } from '../telas/Inicio';
+import { Rotinas } from '../telas/Rotinas';
 
 /**
  * A casca do produto.
@@ -55,8 +57,16 @@ function Marca({ compacta }: { compacta?: boolean }) {
   );
 }
 
+/** O que cada pilar renderiza. O que ainda não existe declara o vazio. */
 function Conteudo({ pilar }: { pilar: Pilar }) {
-  return <TelaEmBranco pilar={pilar} />;
+  switch (pilar.id) {
+    case 'inicio':
+      return <Inicio />;
+    case 'rotina':
+      return <Rotinas />;
+    default:
+      return <TelaEmBranco pilar={pilar} />;
+  }
 }
 
 function CascaDesktop({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: string) => void }) {

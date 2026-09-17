@@ -17,8 +17,8 @@ test('a rota /app renderiza a casca', async ({ page }) => {
   await page.goto('/app');
 
   // /app redireciona para o primeiro pilar, que tem URL própria.
-  await expect(page).toHaveURL(/\/app\/rotina$/);
-  await expect(page.getByRole('heading', { name: 'Rotina', level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/inicio$/);
+  await expect(page.getByRole('heading', { name: 'Início', level: 1 })).toBeVisible();
   expect(erros, 'nenhum erro de JavaScript').toEqual([]);
 });
 
@@ -36,7 +36,7 @@ test('a casca serve o iPhone', async ({ page }, info) => {
   );
   expect(vazamento, 'sem rolagem horizontal').toBeLessThanOrEqual(0);
 
-  const titulo = page.getByRole('heading', { name: 'Rotina', level: 1 });
+  const titulo = page.getByRole('heading', { name: 'Início', level: 1 });
   await expect(titulo).toBeVisible();
 
   const caixa = (await titulo.boundingBox())!;
@@ -84,7 +84,16 @@ test('os rótulos de acessibilidade estão em português', async ({ page }, info
 });
 
 test('todo pilar tem URL própria e abre direto', async ({ page }) => {
-  const pilares = ['rotina', 'tarefas', 'calendario', 'projetos', 'financeiro', 'pedir', 'ajustes'];
+  const pilares = [
+    'inicio',
+    'rotina',
+    'tarefas',
+    'calendario',
+    'projetos',
+    'financeiro',
+    'pedir',
+    'ajustes',
+  ];
 
   for (const id of pilares) {
     await page.goto(`/app/${id}`);
