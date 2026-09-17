@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 4;
+export const VERSAO_ESQUEMA = 5;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -77,6 +77,24 @@ export interface Execucao extends Registro {
  * `prazo` é opcional de propósito: boa parte do que eu preciso fazer não tem
  * data, e obrigar uma inventa urgência falsa.
  */
+/**
+ * A coluna do quadro.
+ *
+ * `concluidaEm` continua sendo a verdade sobre "feito" — todo o domínio já
+ * depende dela. `estado` só distingue o que ainda não terminou: parado ou em
+ * andamento. "Fazendo" é uma declaração minha, não algo derivável do prazo,
+ * e por isso é o único pedaço de situação que fica guardado.
+ */
+export type EstadoTarefa = 'a-fazer' | 'fazendo' | 'feito';
+
+export const ESTADOS_TAREFA: EstadoTarefa[] = ['a-fazer', 'fazendo', 'feito'];
+
+export const ROTULO_ESTADO: Record<EstadoTarefa, string> = {
+  'a-fazer': 'A fazer',
+  fazendo: 'Fazendo',
+  feito: 'Feito',
+};
+
 export interface Tarefa extends Registro {
   titulo: string;
   contexto: Contexto;
@@ -92,6 +110,8 @@ export interface Tarefa extends Registro {
    * editado à mão. O domínio trata isso como tarefa solta em vez de quebrar.
    */
   projetoId?: string;
+  /** coluna do quadro; ausente equivale a 'a-fazer' */
+  estado?: EstadoTarefa;
 }
 
 /* ── Projeto ─────────────────────────────────────────────────────────────── */
@@ -146,6 +166,29 @@ export const ROTULO_CATEGORIA: Record<Categoria, string> = {
   outros: 'Outros',
 };
 
+export type PeriodoRecorrencia = 'semanal' | 'mensal' | 'anual';
+
+export const ROTULO_PERIODO: Record<PeriodoRecorrencia, string> = {
+  semanal: 'Toda semana',
+  mensal: 'Todo mês',
+  anual: 'Todo ano',
+};
+
+/**
+ * Um lançamento que se repete.
+ *
+ * As repetições **não são gravadas**. O lançamento guarda a regra, e as
+ * ocorrências são calculadas quando alguém pergunta — mesmo princípio do
+ * calendário. Gravar doze aluguéis criaria doze registros que envelhecem
+ * juntos: mudar o valor obrigaria a reescrever o passado, e apagar a série
+ * viraria uma operação perigosa.
+ */
+export interface RecorrenciaLancamento {
+  periodo: PeriodoRecorrencia;
+  /** data local `AAAA-MM-DD` do último mês a repetir; ausente = sem fim */
+  ate?: string;
+}
+
 /**
  * Um lançamento financeiro.
  *
@@ -167,6 +210,8 @@ export interface Lancamento extends Registro {
   contexto: Contexto;
   /** data local `AAAA-MM-DD` — pode ser futura, e aí é previsão */
   data: string;
+  /** quando presente, este lançamento se repete a partir de `data` */
+  recorrencia?: RecorrenciaLancamento;
 }
 
 /* ── O banco ─────────────────────────────────────────────────────────────── */

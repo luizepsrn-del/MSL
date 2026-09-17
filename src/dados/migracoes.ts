@@ -59,6 +59,16 @@ export const MIGRACOES: Record<number, Migracao> = {
     lancamentos: Array.isArray(dados.lancamentos) ? dados.lancamentos : [],
     versao: 4,
   }),
+
+  /**
+   * 4 → 5: o quadro de tarefas e os lançamentos recorrentes.
+   *
+   * Nenhum campo novo precisa de valor: tarefa sem `estado` já significa
+   * "a fazer", e lançamento sem `recorrencia` já significa "uma vez só". A
+   * migração só sobe a versão — o formato antigo continua sendo válido no
+   * novo, que é o melhor tipo de mudança de esquema.
+   */
+  4: (dados) => ({ ...dados, versao: 5 }),
 };
 
 export class ErroDeMigracao extends Error {
