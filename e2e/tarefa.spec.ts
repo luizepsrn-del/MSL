@@ -94,9 +94,10 @@ test('concluir tira da lista de pendentes e sobrevive ao recarregar', async ({ p
   await page.reload();
   await expect(page.getByText('0 pendentes')).toBeVisible();
 
-  // E reaparece no filtro de concluídas.
+  // E reaparece no filtro de concluídas. O primeiro clique é no gatilho, que
+  // é um botão; o segundo é na opção, dentro do portal.
   await page.getByRole('button', { name: 'Pendentes' }).click();
-  await page.getByRole('button', { name: 'Concluídas' }).click();
+  await page.getByRole('option', { name: 'Concluídas' }).click();
   await expect(page.getByText('Comprar café')).toBeVisible();
 });
 
@@ -172,7 +173,7 @@ test('tarefas funcionam no iPhone', async ({ page }, info) => {
  */
 async function escolher(page: Page, atual: string, opcao: string) {
   await page.getByRole('button', { name: atual, exact: true }).first().click();
-  await page.getByRole('button', { name: opcao, exact: true }).click();
+  await page.getByRole('option', { name: opcao, exact: true }).click();
 }
 
 test('o quadro move a tarefa entre as três colunas, e "feito" conclui de verdade', async ({
@@ -255,4 +256,20 @@ test('o quadro pode ser cortado por prazo, sem mexer em nenhuma tarefa', async (
   await expect(page.getByText('4 pendentes')).toBeVisible();
 
   expect(erros).toEqual([]);
+});
+
+test('a hora aparece junto do prazo, e não só no calendário', async ({ page }) => {
+  // A hora entrou no esquema com a agenda do dia; se ela só aparecesse lá, eu
+  // marcaria 14:30 e não veria isso na lista onde trabalho.
+  const { hoje } = datas();
+  await comecarLimpo(page);
+  await page.goto('/app/tarefas');
+
+  await page.getByRole('button', { name: 'Nova tarefa' }).click();
+  await page.getByLabel('O que precisa ser feito').fill('Reunião com o cliente');
+  await page.getByLabel('Prazo').fill(hoje);
+  await page.getByLabel('Hora').fill('14:30');
+  await page.getByRole('button', { name: 'Criar tarefa' }).click();
+
+  await expect(page.getByText('Vence hoje às 14:30')).toBeVisible();
 });

@@ -494,3 +494,28 @@ describe('agrupar o quadro por outro eixo', () => {
     expect(doProjeto.flatMap((c) => c.tarefas.map((t) => t.id))).toEqual(['do-projeto']);
   });
 });
+
+describe('a hora no texto do prazo', () => {
+  it('entra no que vence hoje, amanhã e nos próximos dias', () => {
+    expect(descreverPrazo(tarefa({ prazo: HOJE, hora: '14:30' }), HOJE)).toBe(
+      'Vence hoje às 14:30',
+    );
+    expect(descreverPrazo(tarefa({ prazo: '2026-01-16', hora: '09:00' }), HOJE)).toBe(
+      'Vence amanhã às 09:00',
+    );
+    expect(descreverPrazo(tarefa({ prazo: '2026-01-20', hora: '08:15' }), HOJE)).toBe(
+      'Vence em 5 dias às 08:15',
+    );
+  });
+
+  it('não entra no que já venceu', () => {
+    // "Venceu há três dias às 14:30" é ruído; o que importa é que venceu.
+    expect(descreverPrazo(tarefa({ prazo: '2026-01-12', hora: '14:30' }), HOJE)).toBe(
+      'Venceu há 3 dias',
+    );
+  });
+
+  it('sem hora, o texto é o de sempre', () => {
+    expect(descreverPrazo(tarefa({ prazo: HOJE }), HOJE)).toBe('Vence hoje');
+  });
+});

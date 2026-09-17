@@ -41,7 +41,7 @@ async function lancar(
   await page.getByLabel('Valor').fill(valor);
   if (tipo === 'Entrada') {
     await page.getByLabel('Tipo').click();
-    await page.getByRole('button', { name: 'Entrada' }).click();
+    await page.getByRole('option', { name: 'Entrada' }).click();
   }
   if (data) await page.getByLabel('Data').fill(data);
   await page.getByRole('button', { name: 'Lançar' }).click();
@@ -122,7 +122,7 @@ test('as saídas aparecem agrupadas por categoria', async ({ page }) => {
   await page.getByLabel('Descrição').fill('Aluguel');
   await page.getByLabel('Valor').fill('2.000,00');
   await page.getByLabel('Categoria').click();
-  await page.getByRole('button', { name: 'Moradia' }).click();
+  await page.getByRole('option', { name: 'Moradia' }).click();
   await page.getByRole('button', { name: 'Lançar' }).click();
 
   await expect(page.getByText('Para onde foi')).toBeVisible();
@@ -200,7 +200,7 @@ test('um lançamento que se repete aparece no mês seguinte sozinho', async ({ p
   await page.getByLabel('Valor').fill('2.500,00');
   await page.getByLabel('Data').fill(seguro);
   await page.getByLabel('Se repete').click();
-  await page.getByRole('button', { name: 'Todo mês' }).click();
+  await page.getByRole('option', { name: 'Todo mês' }).click();
   await page.getByRole('button', { name: 'Lançar' }).click();
   await expect(page.getByRole('button', { name: 'Lançar' })).toHaveCount(0);
 
@@ -228,7 +228,7 @@ test('apagar a série diz que apaga a série', async ({ page }) => {
   await page.getByLabel('Descrição').fill('Internet');
   await page.getByLabel('Valor').fill('129,90');
   await page.getByLabel('Se repete').click();
-  await page.getByRole('button', { name: 'Todo mês' }).click();
+  await page.getByRole('option', { name: 'Todo mês' }).click();
   await page.getByRole('button', { name: 'Lançar' }).click();
 
   // O rótulo avisa antes do clique: a repetição não existe como registro,

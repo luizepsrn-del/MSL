@@ -154,7 +154,7 @@ test('a semana mostra os sete dias com o nome de cada item', async ({ page }) =>
   await page.goto('/app/calendario');
 
   await page.getByRole('button', { name: 'Mês', exact: true }).first().click();
-  await page.getByRole('button', { name: 'Semana', exact: true }).click();
+  await page.getByRole('option', { name: 'Semana', exact: true }).click();
 
   // Sete dias, e o título por extenso — não uma bolinha, como no mês.
   const dias = page.locator('button[aria-label*="dia "]');
@@ -266,7 +266,7 @@ test('a visão de dia põe tudo na ordem do relógio', async ({ page }) => {
 
   await page.goto('/app/calendario');
   await page.getByRole('button', { name: 'Mês', exact: true }).first().click();
-  await page.getByRole('button', { name: 'Dia', exact: true }).click();
+  await page.getByRole('option', { name: 'Dia', exact: true }).click();
 
   await expect(page.getByText('07:00')).toBeVisible();
   await expect(page.getByText('14:30')).toBeVisible();
@@ -280,7 +280,7 @@ test('o filtro corta rotina, tarefa e dinheiro juntos', async ({ page }) => {
   await semear(page);
   await page.goto('/app/calendario');
   await page.getByRole('button', { name: 'Mês', exact: true }).first().click();
-  await page.getByRole('button', { name: 'Dia', exact: true }).click();
+  await page.getByRole('option', { name: 'Dia', exact: true }).click();
 
   await expect(page.getByText('Ler 20 páginas')).toBeVisible();
   await expect(page.getByText('Entregar o relatório')).toBeVisible();
@@ -289,7 +289,7 @@ test('o filtro corta rotina, tarefa e dinheiro juntos', async ({ page }) => {
   // O seletor é localizado pelo id: "Pessoal e profissional" também é o
   // subtítulo do meu nome na barra de cima.
   await page.locator('#cal-contexto').click();
-  await page.getByRole('button', { name: 'Profissional', exact: true }).click();
+  await page.getByRole('option', { name: 'Profissional', exact: true }).click();
 
   await expect(page.getByText('Ler 20 páginas')).toHaveCount(0);
   await expect(page.getByText('Entregar o relatório')).toBeVisible();
@@ -302,7 +302,7 @@ test('"o que vem" pula os dias vazios e deixa a rotina de fora por padrão', asy
   await semear(page);
   await page.goto('/app/calendario');
   await page.getByRole('button', { name: 'Mês', exact: true }).first().click();
-  await page.getByRole('button', { name: 'O que vem', exact: true }).click();
+  await page.getByRole('option', { name: 'O que vem', exact: true }).click();
 
   // A rotina diária repetida sessenta vezes afogaria a tarefa.
   await expect(page.getByText('Ler 20 páginas')).toHaveCount(0);

@@ -17,11 +17,13 @@ import {
   DIAS_CURTOS,
   DIAS_DA_SEMANA,
   descreverRecorrencia,
+  descreverRotina,
   deveOcorrerEm,
   foiFeita,
   sequencia,
   diaValido,
 } from '../dominio/rotina';
+import { horaValida } from '../dominio/calendario';
 import { ordenarPor } from '../formato';
 
 /** Rotina — a lista do que se repete, e o formulário para criar mais. */
@@ -141,7 +143,7 @@ export function Rotinas() {
                               color: 'var(--text-muted)',
                             }}
                           >
-                            {descreverRecorrencia(r.recorrencia)}
+                            {descreverRotina(r)}
                             {!hojeTem && ' · não é hoje'}
                           </span>
                         </span>
@@ -220,6 +222,7 @@ interface DadosNovos {
   inicioEm: string;
   arquivada: boolean;
   recorrencia: Recorrencia;
+  hora?: string;
 }
 
 const ICONES = [
@@ -252,6 +255,7 @@ function FormularioRotina({
   const [aCadaDias, setACadaDias] = React.useState('3');
   const [inicioEm, setInicioEm] = React.useState(hoje);
   const [icone, setIcone] = React.useState('repeat');
+  const [hora, setHora] = React.useState('');
   const [tentou, setTentou] = React.useState(false);
 
   React.useEffect(() => {
@@ -266,6 +270,7 @@ function FormularioRotina({
   const erroDias =
     tentou && tipo === 'semanal' && dias.length === 0 ? 'Escolha ao menos um dia' : undefined;
   const erroInicio = tentou && !diaValido(inicioEm) ? 'Data inválida' : undefined;
+  const erroHora = tentou && hora !== '' && !horaValida(hora) ? 'Hora inválida' : undefined;
 
   const montarRecorrencia = (): Recorrencia => {
     switch (tipo) {
@@ -284,6 +289,7 @@ function FormularioRotina({
     setTentou(true);
     if (titulo.trim() === '' || !diaValido(inicioEm)) return;
     if (tipo === 'semanal' && dias.length === 0) return;
+    if (hora !== '' && !horaValida(hora)) return;
 
     await aoCriar({
       titulo: titulo.trim(),
@@ -292,6 +298,7 @@ function FormularioRotina({
       inicioEm,
       arquivada: false,
       recorrencia: montarRecorrencia(),
+      hora: hora === '' ? undefined : hora,
     });
   };
 
@@ -459,6 +466,25 @@ function FormularioRotina({
               value={inicioEm}
               onChange={setInicioEm}
               invalid={!!erroInicio}
+              size="lg"
+              fullWidth
+            />
+          </Field>
+
+          {/* A hora entrou no esquema com a agenda do dia; sem este campo, a
+              rotina nunca teria uma para a agenda pôr na linha certa. */}
+          <Field
+            label="Hora"
+            htmlFor="rot-hora"
+            help="Opcional — põe a rotina na linha certa da agenda"
+            error={erroHora}
+          >
+            <TextInput
+              id="rot-hora"
+              type="time"
+              value={hora}
+              onChange={setHora}
+              invalid={!!erroHora}
               size="lg"
               fullWidth
             />

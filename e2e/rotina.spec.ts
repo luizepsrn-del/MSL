@@ -106,7 +106,7 @@ test('a frequência escolhida aparece descrita em português', async ({ page }) 
   await page.getByLabel('O que é').fill('Planejar a semana');
 
   await page.getByLabel('Frequência').click();
-  await page.getByRole('button', { name: 'Dias da semana' }).click();
+  await page.getByRole('option', { name: 'Dias da semana' }).click();
   await expect(page.getByText('Vai acontecer: de segunda a sexta')).toBeVisible();
 
   await page.getByRole('button', { name: 'segunda', exact: true }).click();
@@ -126,7 +126,7 @@ test('a rotina que não é de hoje aparece sem caixa de marcar', async ({ page }
   await page.getByRole('button', { name: 'Nova rotina' }).click();
   await page.getByLabel('O que é').fill('Só no dia 1');
   await page.getByLabel('Frequência').click();
-  await page.getByRole('button', { name: 'Uma vez por mês' }).click();
+  await page.getByRole('option', { name: 'Uma vez por mês' }).click();
   await page.getByRole('button', { name: 'Criar rotina' }).click();
 
   await expect(page.getByText('Só no dia 1')).toBeVisible();

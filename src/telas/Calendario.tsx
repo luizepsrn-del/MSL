@@ -29,7 +29,7 @@ import {
   type FiltroCalendario,
   type ItemDaAgenda,
 } from '../dominio/calendario';
-import { descreverRecorrencia, somarDias, diaDaSemana, distanciaEmDias } from '../dominio/rotina';
+import { descreverRotina, somarDias, diaDaSemana, distanciaEmDias } from '../dominio/rotina';
 import { descreverPrazo, situacao } from '../dominio/tarefa';
 import { efeitoDaOcorrencia } from '../dominio/financeiro';
 import {
@@ -359,7 +359,7 @@ export function Calendario() {
                       key={rotina.id}
                       icone={rotina.icone}
                       titulo={rotina.titulo}
-                      detalhe={descreverRecorrencia(rotina.recorrencia)}
+                      detalhe={descreverRotina(rotina)}
                       contexto={rotina.contexto}
                       feita={feita}
                       // Só dá para marcar o dia de hoje: marcar o passado ou o

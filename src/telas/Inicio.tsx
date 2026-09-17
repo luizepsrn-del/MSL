@@ -5,6 +5,7 @@ import {
   Modal,
   Switch,
   IconButton,
+  LineChart,
   Button,
   Badge,
   ProgressBar,
@@ -37,7 +38,7 @@ import {
   progressoDoDia,
   sequencia,
   somarDias,
-  descreverRecorrencia,
+  descreverRotina,
   diaDaSemana,
 } from '../dominio/rotina';
 import {
@@ -68,6 +69,16 @@ import { useLarguraDesktop } from '../casca/useLarguraDesktop';
  * Só usa componentes da biblioteca. Nenhum valor de cor, fonte, espaçamento ou
  * raio escrito à mão.
  */
+/**
+ * O dia do mês sob cada ponto, alternado.
+ *
+ * Catorze números seguidos num cartão de meia largura se encostam; um sim, um
+ * não, a linha do eixo continua legível e ainda dá para se localizar no tempo.
+ */
+function rotulosDaQuinzena(dias: string[]): string[] {
+  return dias.map((dia, i) => (i % 2 === dias.length % 2 ? String(Number(dia.slice(8))) : ''));
+}
+
 /** Cresce para preencher no desktop, transborda em trilho no telefone. */
 const ITEM_TRILHO = { flex: '1 0 var(--grid-min)', scrollSnapAlign: 'start' } as const;
 
@@ -153,10 +164,13 @@ export function Inicio() {
             ? {
                 // No desktop o trilho não tem para onde rolar sem barra, e o
                 // último tile aparecia cortado na borda — media-se: com cinco
-                // tiles de --grid-min já não cabia. A grade que reflui é a que
-                // o DESIGN.md prescreve para este caso.
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(var(--grid-min), 1fr))',
+                // tiles de --grid-min já não cabia.
+                //
+                // Flex que quebra, e não grade: a grade deixava a segunda
+                // fileira com dois tiles e um vão do tamanho de dois. Com
+                // `flex-grow`, a última fileira estica e fecha a largura.
+                display: 'flex',
+                flexWrap: 'wrap',
                 gap: 'var(--card-gap)',
               }
             : {
@@ -239,6 +253,7 @@ export function Inicio() {
       <>
       {/* O que falta hoje */}
       <Card
+        style={{ height: '100%' }}
         title="Hoje"
         subtitle={`${formatarDiaDaSemana(new Date())}, ${formatarDataLonga(new Date())}`}
         action={
@@ -289,7 +304,7 @@ export function Inicio() {
                 key={rotina.id}
                 titulo={rotina.titulo}
                 icone={rotina.icone}
-                detalhe={descreverRecorrencia(rotina.recorrencia)}
+                detalhe={descreverRotina(rotina)}
                 contexto={rotina.contexto}
                 feita={false}
                 aoAlternar={() => alternarExecucao(rotina.id, hoje)}
@@ -324,7 +339,7 @@ export function Inicio() {
                     key={rotina.id}
                     titulo={rotina.titulo}
                     icone={rotina.icone}
-                    detalhe={descreverRecorrencia(rotina.recorrencia)}
+                    detalhe={descreverRotina(rotina)}
                     contexto={rotina.contexto}
                     feita
                     aoAlternar={() => alternarExecucao(rotina.id, hoje)}
@@ -341,6 +356,7 @@ export function Inicio() {
       {/* O que vence — atrasado e de hoje, nada além disso */}
       {tarefas.length > 0 && (
         <Card
+          style={{ height: '100%' }}
           title="Vencendo"
           subtitle={`${tarefas.length} ${tarefas.length === 1 ? 'tarefa' : 'tarefas'}`}
           action={
@@ -368,7 +384,11 @@ export function Inicio() {
     ),
     contexto: (
       <>
-      <Card title="Pessoal e profissional" subtitle="Rotinas e tarefas de hoje">
+      <Card
+        style={{ height: '100%' }}
+        title="Pessoal e profissional"
+        subtitle="Rotinas e tarefas de hoje"
+      >
         <div
           style={{
             display: 'flex',
@@ -406,10 +426,20 @@ export function Inicio() {
       {/* O número fica no subtítulo, e não no balão sobre a última barra:
           no iPhone esse balão saía pela borda do cartão, medido. */}
       <Card
+        style={{ height: '100%' }}
         title="Últimos 14 dias"
         subtitle={`Quanto do dia foi cumprido · hoje: ${formatarPorcento(progresso)}`}
       >
-        <BarChart height={140} data={serie} highlightIndex={13} />
+        {/* Linha, e não barra: dois cartões de barras cinzas lado a lado, sem
+            eixo nenhum, eram dois gráficos que não diziam nada. A linha tem
+            grade, marca de eixo e a faixa do dia de hoje. */}
+        <LineChart
+          height={180}
+          series={[{ data: serie, color: 'var(--chart-1)' }]}
+          labels={rotulosDaQuinzena(quinzena)}
+          yTicks={['100%', '50%', '0%']}
+          highlightIndex={13}
+        />
       </Card>
       </>
     ),
@@ -464,6 +494,7 @@ export function Inicio() {
     atencao: (
       <>
       <Card
+        style={{ height: '100%' }}
         title="Projetos que pedem atenção"
         subtitle={
           atencao.length === 0
@@ -542,12 +573,19 @@ export function Inicio() {
     concluidas: (
       <>
       <Card
+        style={{ height: '100%' }}
         title="Tarefas concluídas"
         subtitle={`Uma barra por dia, nos últimos 14 · hoje: ${formatarNumero(
           concluidas[13].total,
         )}`}
       >
-        <BarChart height={140} data={concluidas.map((c) => c.total)} highlightIndex={13} />
+        {/* Sem rótulo, catorze barras cinzas não dizem de quando são. */}
+        <BarChart
+          height={180}
+          data={concluidas.map((c) => c.total)}
+          labels={rotulosDaQuinzena(concluidas.map((c) => c.dia))}
+          highlightIndex={13}
+        />
       </Card>
       </>
     ),
@@ -585,7 +623,9 @@ export function Inicio() {
             display: 'grid',
             gridTemplateColumns: desktop ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)',
             gap: 'var(--card-gap)',
-            alignItems: 'start',
+            // Esticado, e não alinhado ao topo: com `start`, o cartão mais
+            // curto da linha deixava um buraco do tamanho da diferença.
+            alignItems: 'stretch',
           }}
         >
           {visiveis.map((id) => (
@@ -593,6 +633,8 @@ export function Inicio() {
               key={id}
               style={{
                 minWidth: 0,
+                display: 'flex',
+                flexDirection: 'column',
                 // Os blocos largos ocupam as duas colunas; os outros, uma.
                 gridColumn: desktop && blocoPorId(id)?.largura === 'inteira' ? 'span 2' : 'auto',
               }}

@@ -150,6 +150,27 @@ export function lerMoeda(texto: string): number | null {
   return Math.round(Number(normalizado) * 100);
 }
 
+const moedaCompactaFmt = new Intl.NumberFormat(LOCALE, {
+  style: 'currency',
+  currency: MOEDA,
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
+/**
+ * `R$ 11,3 mil` — para eixo de gráfico, onde não cabe o valor inteiro.
+ *
+ * Existe porque `R$ 11.300,00` escrito na marca do eixo encosta na borda do
+ * cartão e invade a área do desenho. Só para eixo e rótulo apertado: em
+ * qualquer lugar onde o número é o assunto, use `formatarMoeda`.
+ */
+export function formatarMoedaCompacta(centavos: number): string {
+  if (!Number.isInteger(centavos)) {
+    throw new TypeError(`dinheiro precisa ser inteiro em centavos, recebi ${centavos}`);
+  }
+  return moedaCompactaFmt.format(centavos / 100);
+}
+
 /* ── Números ─────────────────────────────────────────────────────────────── */
 
 const numeroFmt = new Intl.NumberFormat(LOCALE);

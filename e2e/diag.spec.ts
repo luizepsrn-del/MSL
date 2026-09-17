@@ -29,7 +29,7 @@ function semente() {
       { ...b(-30), id: 't7', titulo: 'Achar um professor de inglês', contexto: 'pessoal', projetoId: 'p2' },
     ];
     for (let i = 1; i <= 12; i++) {
-      tarefas.push({ ...b(-i), id: `f${i}`, titulo: `Tarefa concluída ${i}`, contexto: i % 2 ? 'pessoal' : 'profissional', concluidaEm: inst(-((i % 9) + 1)), projetoId: i % 3 === 0 ? 'p1' : undefined });
+      tarefas.push({ ...b(-i), id: `f${i}`, titulo: `Tarefa concluída ${i}`, contexto: i % 2 ? 'pessoal' : 'profissional', concluidaEm: inst(-(i % 10)), projetoId: i % 3 === 0 ? 'p1' : undefined });
     }
 
     const lancamentos: unknown[] = [

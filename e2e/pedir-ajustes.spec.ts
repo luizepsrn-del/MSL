@@ -85,7 +85,7 @@ test('mudar o nível regenera o pedido na hora', async ({ page }) => {
 
   // Escolher "meus dados reais" tem que refletir no texto sem gerar de novo.
   await page.getByLabel('Quanto do meu dado entra').click();
-  await page.getByRole('button', { name: 'Meus dados reais' }).click();
+  await page.getByRole('option', { name: 'Meus dados reais' }).click();
 
   await expect(page.locator('pre')).toContainText(SEGREDO);
 });

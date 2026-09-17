@@ -39,7 +39,7 @@ import {
 } from '../dominio/financeiro';
 import { mesVizinho, nomeDoMes, anoMesDe } from '../dominio/calendario';
 import { diaValido } from '../dominio/rotina';
-import { formatarMoeda, lerMoeda, formatarData } from '../formato';
+import { formatarMoeda, formatarMoedaCompacta, lerMoeda, formatarData } from '../formato';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 
 /** As cinco cores de série do sistema, na ordem de importância do DESIGN.md. */
@@ -519,7 +519,13 @@ const MESES_CURTOS = [
  */
 function ticksDe(pontos: { entradas: number; saidas: number }[]): string[] {
   const teto = Math.max(...pontos.flatMap((p) => [p.entradas, p.saidas]), 100);
-  return [formatarMoeda(teto), formatarMoeda(Math.round(teto / 2)), formatarMoeda(0)];
+  // Compacto: `R$ 11.300,00` na marca do eixo encosta na borda do cartão e
+  // invade o desenho. Aqui o número é referência, não o assunto.
+  return [
+    formatarMoedaCompacta(teto),
+    formatarMoedaCompacta(Math.round(teto / 2)),
+    formatarMoedaCompacta(0),
+  ];
 }
 
 function Legenda({ cor, texto }: { cor: string; texto: string }) {

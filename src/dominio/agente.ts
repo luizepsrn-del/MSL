@@ -14,7 +14,7 @@ import {
   agendaDoDia,
   progressoDoDia,
   sequencia,
-  descreverRecorrencia,
+  descreverRotina,
 } from './rotina';
 import {
   situacao,
@@ -641,7 +641,7 @@ export function responder(banco: Banco, intencao: Intencao, hoje: string): Respo
             titulo: 'Sequência de cada uma',
             itens: ativas.map((r) => ({
               texto: r.titulo,
-              detalhe: `${plural(sequencia(banco, r, hoje), 'dia seguido', 'dias seguidos')} · ${descreverRecorrencia(r.recorrencia).toLowerCase()}`,
+              detalhe: `${plural(sequencia(banco, r, hoje), 'dia seguido', 'dias seguidos')} · ${descreverRotina(r).toLowerCase()}`,
             })),
           },
           { tipo: 'atalho', rotulo: 'Abrir rotina', destino: '/app/rotina' },
@@ -784,7 +784,7 @@ function agendaDeHoje(banco: Banco, hoje: string): Resposta {
       titulo: 'Rotinas que faltam',
       itens: pendentesDeRotina.map((i) => ({
         texto: i.rotina.titulo,
-        detalhe: descreverRecorrencia(i.rotina.recorrencia),
+        detalhe: descreverRotina(i.rotina),
       })),
     });
     blocos.push({ tipo: 'atalho', rotulo: 'Abrir rotina', destino: '/app/rotina' });

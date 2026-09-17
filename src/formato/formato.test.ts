@@ -9,6 +9,7 @@ import {
   formatarMes,
   formatarDataRelativa,
   formatarMoeda,
+  formatarMoedaCompacta,
   lerMoeda,
   formatarNumero,
   formatarPorcento,
@@ -179,5 +180,21 @@ describe('ordenação', () => {
     const original = ['b', 'a'];
     ordenarPor(original, (x) => x);
     expect(original).toEqual(['b', 'a']);
+  });
+});
+
+describe('moeda compacta, para eixo de gráfico', () => {
+  it('encurta os milhares', () => {
+    // `R$ 11.300,00` escrito na marca do eixo encosta na borda do cartão.
+    expect(formatarMoedaCompacta(1_130_000)).toBe('R$\u00a011,3\u00a0mil');
+    expect(formatarMoedaCompacta(950_000)).toBe('R$\u00a09,5\u00a0mil');
+  });
+
+  it('valores pequenos continuam legíveis', () => {
+    expect(formatarMoedaCompacta(0)).toBe('R$\u00a00');
+  });
+
+  it('recusa centavo fracionado, como a moeda cheia', () => {
+    expect(() => formatarMoedaCompacta(10.5)).toThrow(TypeError);
   });
 });

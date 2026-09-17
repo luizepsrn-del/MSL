@@ -11,6 +11,7 @@ import {
   sequencia,
   progressoDoDia,
   descreverRecorrencia,
+  descreverRotina,
 } from './rotina';
 import { bancoVazio, type Rotina, type Execucao, type Recorrencia } from '../dados/esquema';
 
@@ -265,5 +266,28 @@ describe('descrição da recorrência', () => {
     expect(descreverRecorrencia({ tipo: 'mensal', diaDoMes: 10 })).toBe('Todo dia 10 do mês');
     expect(descreverRecorrencia({ tipo: 'intervalo', aCadaDias: 3 })).toBe('A cada 3 dias');
     expect(descreverRecorrencia({ tipo: 'intervalo', aCadaDias: 1 })).toBe('Todo dia');
+  });
+});
+
+describe('descrever a rotina inteira', () => {
+  const base = {
+    id: 'r1',
+    criadoEm: 'x',
+    alteradoEm: 'x',
+    titulo: 'Academia',
+    contexto: 'pessoal' as const,
+    icone: 'dumbbell',
+    inicioEm: '2026-01-01',
+    arquivada: false,
+  };
+
+  it('junta a recorrência e a hora', () => {
+    expect(descreverRotina({ ...base, recorrencia: { tipo: 'diaria' }, hora: '07:00' })).toBe(
+      'Todo dia · 07:00',
+    );
+  });
+
+  it('sem hora, é só a recorrência', () => {
+    expect(descreverRotina({ ...base, recorrencia: { tipo: 'diaria' } })).toBe('Todo dia');
   });
 });

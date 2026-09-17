@@ -28,7 +28,7 @@ async function criarTarefaNoProjeto(page: Page, titulo: string, projeto?: string
   await page.getByLabel('O que precisa ser feito').fill(titulo);
   if (projeto) {
     await page.getByLabel('Projeto').click();
-    await page.getByRole('button', { name: projeto }).click();
+    await page.getByRole('option', { name: projeto }).click();
   }
   await page.getByRole('button', { name: 'Criar tarefa' }).click();
   await expect(page.getByRole('button', { name: 'Criar tarefa' })).toHaveCount(0);
@@ -111,7 +111,7 @@ test('uma tarefa atrasada deixa o projeto atrasado', async ({ page }) => {
   await page.getByLabel('O que precisa ser feito').fill('Passo vencido');
   await page.getByLabel('Prazo').fill(ontem);
   await page.getByLabel('Projeto').click();
-  await page.getByRole('button', { name: 'Entrega' }).click();
+  await page.getByRole('option', { name: 'Entrega' }).click();
   await page.getByRole('button', { name: 'Criar tarefa' }).click();
 
   await page.goto('/app/projetos');
@@ -198,7 +198,7 @@ test('uma tarefa solta pode ser guardada num projeto', async ({ page }) => {
   await expect(page.getByText('Tarefas sem projeto')).toBeVisible();
 
   await page.getByRole('button', { name: 'Pôr num projeto' }).click();
-  await page.getByRole('button', { name: 'Reforma', exact: true }).click();
+  await page.getByRole('option', { name: 'Reforma', exact: true }).click();
 
   // Saiu das soltas e entrou no projeto.
   await expect(page.getByText('Tarefas sem projeto')).toHaveCount(0);
@@ -215,7 +215,7 @@ test('cada projeto tem o seu próprio quadro', async ({ page }) => {
   await page.goto('/app/projetos');
   await page.getByRole('button', { name: /^2 tarefas$/ }).click();
   await page.getByRole('button', { name: 'Lista', exact: true }).first().click();
-  await page.getByRole('button', { name: 'Quadro', exact: true }).click();
+  await page.getByRole('option', { name: 'Quadro', exact: true }).click();
 
   // O mesmo quadro da tela de Tarefas, com as tarefas deste projeto.
   await expect(page.getByRole('heading', { name: 'A fazer' })).toBeVisible();
@@ -224,4 +224,20 @@ test('cada projeto tem o seu próprio quadro', async ({ page }) => {
   await page.getByRole('button', { name: 'Mover Comprar caixas para Fazendo' }).click();
   // E o painel do projeto concorda na hora.
   await expect(page.getByText('1 em andamento')).toBeVisible();
+});
+
+test('o prazo do projeto aparece no cartão dele', async ({ page }) => {
+  // Eu preenchia o prazo no formulário e ele sumia: não aparecia em lugar
+  // nenhum depois de salvo.
+  await comecarLimpo(page);
+  await page.goto('/app/projetos');
+
+  await page.getByRole('button', { name: 'Novo projeto' }).click();
+  await page.getByLabel('Nome do projeto').fill('Mudança de casa');
+  const daqui = new Date();
+  daqui.setDate(daqui.getDate() + 5);
+  await page.getByLabel('Prazo').fill(daqui.toISOString().slice(0, 10));
+  await page.getByRole('button', { name: 'Criar projeto' }).click();
+
+  await expect(page.getByText(/Prazo em \d+ dias/)).toBeVisible();
 });

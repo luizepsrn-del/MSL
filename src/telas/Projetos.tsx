@@ -31,7 +31,7 @@ import {
   type PainelProjeto,
 } from '../dominio/projeto';
 import { situacao, descreverPrazo, quadroPor } from '../dominio/tarefa';
-import { diaValido } from '../dominio/rotina';
+import { diaValido, distanciaEmDias } from '../dominio/rotina';
 import { formatarPorcento, formatarDataMedia, formatarNumero } from '../formato';
 import { FormularioTarefa, QuadroTarefas } from './Tarefas';
 
@@ -638,6 +638,13 @@ function Sinais({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-6)' }}>
       <div style={{ display: 'flex', gap: 'var(--sp-4)', flexWrap: 'wrap' }}>
+        {/* O prazo do projeto não aparecia em lugar nenhum: eu preenchia no
+            formulário e ele sumia. */}
+        {painel.projeto.prazo && (
+          <Badge tone={painel.situacao === 'atrasado' ? 'delay' : 'neutral'} dot={false}>
+            {descreverPrazoDoProjeto(painel.projeto.prazo, hoje)}
+          </Badge>
+        )}
         {atrasadas > 0 && (
           <Badge tone="delay">
             {atrasadas} {atrasadas === 1 ? 'tarefa atrasada' : 'tarefas atrasadas'}
@@ -722,6 +729,21 @@ function Sinais({
       )}
     </div>
   );
+}
+
+/**
+ * O prazo do projeto por extenso, relativo quando está perto.
+ *
+ * Diferente do prazo de tarefa: aqui não existe "atrasado há três dias" — a
+ * situação do projeto já diz isso, e repetir seria dizer duas vezes.
+ */
+function descreverPrazoDoProjeto(prazo: string, hoje: string): string {
+  const dias = distanciaEmDias(hoje, prazo);
+  if (dias < 0) return `Prazo era ${formatarDataMedia(comoData(prazo))}`;
+  if (dias === 0) return 'Prazo é hoje';
+  if (dias === 1) return 'Prazo é amanhã';
+  if (dias <= 14) return `Prazo em ${dias} dias`;
+  return `Prazo em ${formatarDataMedia(comoData(prazo))}`;
 }
 
 /** `AAAA-MM-DD` → Date no meio-dia UTC, longe de qualquer virada de fuso. */

@@ -211,3 +211,14 @@ export function descreverRecorrencia(r: Recorrencia): string {
       return r.aCadaDias === 1 ? 'Todo dia' : `A cada ${r.aCadaDias} dias`;
   }
 }
+
+/**
+ * A recorrência e a hora juntas, como as telas mostram.
+ *
+ * Mora aqui porque três telas mostram a mesma linha — Rotina, Início e o
+ * painel do dia no Calendário — e a hora entrou no esquema depois delas.
+ */
+export function descreverRotina(rotina: Rotina): string {
+  const quando = descreverRecorrencia(rotina.recorrencia);
+  return rotina.hora ? `${quando} · ${rotina.hora}` : quando;
+}

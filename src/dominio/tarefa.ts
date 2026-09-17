@@ -117,24 +117,30 @@ export function tarefasPorContexto(tarefas: readonly Tarefa[], contexto: Context
   return tarefas.filter((t) => t.contexto === contexto);
 }
 
-/** Texto do prazo, relativo quando está perto e absoluto quando está longe. */
+/**
+ * Texto do prazo, relativo quando está perto e absoluto quando está longe.
+ *
+ * A hora entra no que ainda vai vencer, e não no que já venceu: "venceu há
+ * três dias às 14:30" é ruído, "vence hoje às 14:30" é o compromisso.
+ */
 export function descreverPrazo(tarefa: Tarefa, hoje: string): string {
   const s = situacao(tarefa, hoje);
+  const hora = tarefa.hora ? ` às ${tarefa.hora}` : '';
 
   switch (s) {
     case 'sem-prazo':
       return 'Sem prazo';
     case 'hoje':
-      return 'Vence hoje';
+      return `Vence hoje${hora}`;
     case 'atrasada': {
       const dias = diasDeAtraso(tarefa, hoje);
       return dias === 1 ? 'Venceu ontem' : `Venceu há ${dias} dias`;
     }
     case 'futura': {
       const dias = distanciaEmDias(hoje, tarefa.prazo!);
-      if (dias === 1) return 'Vence amanhã';
-      if (dias <= 7) return `Vence em ${dias} dias`;
-      return `Vence em ${formatarDiaMes(tarefa.prazo!)}`;
+      if (dias === 1) return `Vence amanhã${hora}`;
+      if (dias <= 7) return `Vence em ${dias} dias${hora}`;
+      return `Vence em ${formatarDiaMes(tarefa.prazo!)}${hora}`;
     }
     case 'concluida':
       return 'Concluída';
