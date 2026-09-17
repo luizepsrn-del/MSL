@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, Button, Badge, Icon, SuccessDialog } from '../../design-system';
 import { useBanco } from '../dados/BancoContexto';
-import { VERSAO_ESQUEMA, COLECOES } from '../dados/esquema';
+import { VERSAO_ESQUEMA, COLECOES, nomearColecao } from '../dados/esquema';
 import { formatarData, formatarNumero } from '../formato';
 
 /**
@@ -115,7 +115,7 @@ export function Ajustes() {
               const n = (banco as unknown as Record<string, unknown[]>)[c]?.length ?? 0;
               return (
                 <Badge key={c} tone={n > 0 ? 'ontime' : 'neutral'} dot={false}>
-                  {formatarNumero(n)} {c}
+                  {nomearColecao(c, n)}
                 </Badge>
               );
             })}

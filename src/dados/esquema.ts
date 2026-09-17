@@ -254,6 +254,27 @@ export interface Banco {
 export const COLECOES = ['rotinas', 'execucoes', 'tarefas', 'projetos', 'lancamentos'] as const;
 export type NomeColecao = (typeof COLECOES)[number];
 
+/**
+ * O nome de cada coleção em português, no singular e no plural.
+ *
+ * Os identificadores são sem acento porque são chaves de dado; a tela não
+ * pode mostrá-los crus — "25 execucoes" é jargão de banco, e "1 rotinas" é
+ * erro de concordância.
+ */
+export const ROTULO_COLECAO: Record<NomeColecao, [string, string]> = {
+  rotinas: ['rotina', 'rotinas'],
+  execucoes: ['execução', 'execuções'],
+  tarefas: ['tarefa', 'tarefas'],
+  projetos: ['projeto', 'projetos'],
+  lancamentos: ['lançamento', 'lançamentos'],
+};
+
+/** `1 rotina`, `25 execuções` — o número e o nome concordando. */
+export function nomearColecao(colecao: NomeColecao, quantos: number): string {
+  const [um, muitos] = ROTULO_COLECAO[colecao];
+  return `${quantos} ${quantos === 1 ? um : muitos}`;
+}
+
 export function bancoVazio(): Banco {
   return {
     versao: VERSAO_ESQUEMA,

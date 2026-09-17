@@ -109,7 +109,9 @@ test('Ajustes mostra o que está guardado e oferece exportar', async ({ page }) 
   await semear(page);
   await page.goto('/app/ajustes');
 
-  await expect(page.getByText('1 rotinas')).toBeVisible();
+  // Era "1 rotinas": o número e o nome não concordavam, e o teste guardava
+  // o erro em vez de pegá-lo.
+  await expect(page.getByText('1 rotina', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Exportar tudo' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Importar de um arquivo' })).toBeVisible();
 });
