@@ -1,6 +1,6 @@
 import type { Banco, Projeto, Tarefa } from '../dados/esquema';
 import { situacao, ordenarTarefas, estadoDe } from './tarefa';
-import { diaLocalDe, distanciaEmDias, somarDias } from './rotina';
+import { diaLocalDe, distanciaEmDias, somarDias, diaValido } from './rotina';
 
 /**
  * Projeto: trabalho maior que uma tarefa.
@@ -187,12 +187,14 @@ export function painelProjeto(banco: Banco, projeto: Projeto, hoje: string): Pai
 
   // A atividade inclui criação de tarefa, e não só conclusão: um projeto onde
   // acabei de escrever cinco tarefas não está parado há um mês.
+  // Instante ilegível é descartado, não propagado: um `criadoEm` estragado num
+  // arquivo importado viraria `paradoHa: NaN`, e NaN some da tela sem avisar.
   const marcos = [
     diaLocalDe(projeto.criadoEm),
     ...tarefas.map((t) => diaLocalDe(t.criadoEm)),
     ...tarefas.filter((t) => t.concluidaEm).map((t) => diaLocalDe(t.concluidaEm!)),
-  ];
-  const ultimaAtividade = marcos.reduce((a, b) => (a > b ? a : b));
+  ].filter(diaValido);
+  const ultimaAtividade = marcos.length === 0 ? hoje : marcos.reduce((a, b) => (a > b ? a : b));
   const paradoHa = Math.max(0, distanciaEmDias(ultimaAtividade, hoje));
 
   const desde = somarDias(hoje, -(JANELA_DO_RITMO - 1));

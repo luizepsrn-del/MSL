@@ -374,6 +374,16 @@ describe('o painel do projeto', () => {
     expect(painelProjeto(b, b.projetos[0], HOJE).parado).toBe(false);
   });
 
+  it('instante ilegível não vira NaN na tela', () => {
+    // Um `criadoEm` estragado num arquivo importado à mão dava `paradoHa: NaN`,
+    // e NaN some da interface sem avisar ninguém.
+    const b = banco([projeto({ criadoEm: 'qualquer coisa' })], [tarefa({ projetoId: 'p1', criadoEm: 'x' })]);
+    const painel = painelProjeto(b, b.projetos[0], HOJE);
+    expect(Number.isNaN(painel.paradoHa)).toBe(false);
+    expect(painel.paradoHa).toBe(0);
+    expect(painel.parado).toBe(false);
+  });
+
   it('projeto vazio fica em 0%, e o painel não quebra', () => {
     const b = banco([projeto()], []);
     const painel = painelProjeto(b, b.projetos[0], HOJE);
