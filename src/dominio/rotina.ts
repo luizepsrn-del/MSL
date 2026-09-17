@@ -63,6 +63,22 @@ export function somarDias(dia: string, dias: number): string {
 }
 
 /**
+ * O dia local de um instante ISO (`criadoEm`, `concluidaEm`).
+ *
+ * Instante é ponto no tempo e pode virar `Date`; o que nunca pode virar `Date`
+ * é um dia `AAAA-MM-DD`. Cortar os dez primeiros caracteres do ISO devolve o
+ * dia em UTC: às 21h em São Paulo isso já é o dia seguinte, e a tarefa que
+ * concluí hoje à noite apareceria concluída amanhã.
+ */
+export function diaLocalDe(instante: string): string {
+  const d = new Date(instante);
+  if (Number.isNaN(d.getTime())) return instante.slice(0, 10);
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const data = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mes}-${data}`;
+}
+
+/**
  * A rotina deve acontecer neste dia?
  *
  * Responde só sobre a recorrência e a data de início. Não sabe nada sobre ter

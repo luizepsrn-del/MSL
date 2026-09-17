@@ -1,5 +1,12 @@
-import type { Tarefa, Banco, Contexto } from '../dados/esquema';
-import { distanciaEmDias, diaValido } from './rotina';
+import {
+  ESTADOS_TAREFA,
+  ROTULO_ESTADO,
+  type Tarefa,
+  type Banco,
+  type Contexto,
+  type EstadoTarefa,
+} from '../dados/esquema';
+import { distanciaEmDias, diaValido, diaLocalDe, somarDias } from './rotina';
 
 /**
  * Tarefa: o que tem fim, ao contrário da rotina, que se repete.
@@ -83,7 +90,7 @@ export function resumoTarefas(banco: Banco, hoje: string): ResumoTarefas {
     if (s === 'concluida') {
       // `concluidaEm` é um instante UTC; o dia local dele é o que interessa
       // para "concluí hoje".
-      if (t.concluidaEm && t.concluidaEm.slice(0, 10) >= hoje) concluidasHoje++;
+      if (t.concluidaEm && diaLocalDe(t.concluidaEm) === hoje) concluidasHoje++;
       continue;
     }
     pendentes++;
@@ -152,4 +159,114 @@ const MESES = [
 function formatarDiaMes(dia: string): string {
   const [, mes, data] = dia.split('-').map(Number);
   return `${data} de ${MESES[mes - 1]}`;
+}
+
+/**
+ * O quadro: em que coluna a tarefa está.
+ *
+ * `concluidaEm` continua sendo a única verdade sobre "feito" — o campo
+ * `estado` só distingue o que ainda está pendente entre parado e em andamento.
+ * Por isso um `estado: 'feito'` sem conclusão não promove ninguém: se houvesse
+ * duas fontes para a mesma resposta, elas divergiriam.
+ */
+export function estadoDe(tarefa: Tarefa): EstadoTarefa {
+  if (tarefa.concluidaEm) return 'feito';
+  return tarefa.estado === 'fazendo' ? 'fazendo' : 'a-fazer';
+}
+
+export interface ColunaDoQuadro {
+  estado: EstadoTarefa;
+  rotulo: string;
+  tarefas: Tarefa[];
+}
+
+/**
+ * As três colunas, sempre as três, mesmo vazias.
+ *
+ * Coluna que some quando esvazia tira o lugar de soltar a tarefa e faz o
+ * quadro mudar de forma enquanto eu arrasto.
+ *
+ * Em "feito" a ordem é a da conclusão, do mais recente para o mais antigo: o
+ * que acabei de terminar aparece no topo, e não afundado sob o de semanas
+ * atrás. Nas outras duas vale a ordem de urgência de `ordenarTarefas`.
+ */
+export function quadro(tarefas: readonly Tarefa[], hoje: string): ColunaDoQuadro[] {
+  return ESTADOS_TAREFA.map((estado) => {
+    const daColuna = tarefas.filter((t) => estadoDe(t) === estado);
+    return {
+      estado,
+      rotulo: ROTULO_ESTADO[estado],
+      tarefas:
+        estado === 'feito'
+          ? [...daColuna].sort((a, b) => (a.concluidaEm! < b.concluidaEm! ? 1 : -1))
+          : ordenarTarefas(daColuna, hoje),
+    };
+  });
+}
+
+/**
+ * O que muda no registro ao mover a tarefa para uma coluna.
+ *
+ * Mover para "feito" conclui; tirar de "feito" reabre, apagando a conclusão.
+ * A regra mora aqui, e não no clique, para o arrastar e o marcar caixinha
+ * nunca discordarem sobre o que aconteceu.
+ */
+export function aoMoverPara(tarefa: Tarefa, estado: EstadoTarefa, agora: string): Partial<Tarefa> {
+  if (estado === 'feito') {
+    return { estado: 'feito', concluidaEm: tarefa.concluidaEm ?? agora };
+  }
+  return { estado, concluidaEm: undefined };
+}
+
+export interface DiaDaSemanaDeTarefas {
+  dia: string;
+  /** tarefas com prazo neste dia, ainda pendentes */
+  pendentes: Tarefa[];
+  /** tarefas concluídas neste dia */
+  concluidas: Tarefa[];
+}
+
+/**
+ * Sete dias a partir de `de`, com o que vence e o que foi concluído em cada um.
+ *
+ * O atraso não é redistribuído pelos dias: uma tarefa que venceu na semana
+ * passada continua com o prazo dela, fora desta janela. Quem mostra atraso é o
+ * resumo, não a semana.
+ */
+export function semanaDeTarefas(banco: Banco, de: string, dias = 7): DiaDaSemanaDeTarefas[] {
+  const janela: DiaDaSemanaDeTarefas[] = [];
+  for (let i = 0; i < dias; i++) {
+    const dia = somarDias(de, i);
+    janela.push({
+      dia,
+      pendentes: banco.tarefas.filter((t) => !t.concluidaEm && t.prazo === dia),
+      concluidas: banco.tarefas.filter((t) => t.concluidaEm && diaLocalDe(t.concluidaEm) === dia),
+    });
+  }
+  return janela;
+}
+
+/**
+ * Quantas tarefas concluí por dia, olhando para trás.
+ *
+ * Serve ao gráfico do Início. O dia sem nenhuma conclusão entra como zero, e
+ * não some: buraco na série mentiria sobre o ritmo.
+ */
+export function concluidasPorDia(
+  banco: Banco,
+  ate: string,
+  dias = 14,
+): { dia: string; total: number }[] {
+  const inicio = somarDias(ate, -(dias - 1));
+  const contagem = new Map<string, number>();
+  for (const t of banco.tarefas) {
+    if (!t.concluidaEm) continue;
+    const dia = diaLocalDe(t.concluidaEm);
+    if (dia < inicio || dia > ate) continue;
+    contagem.set(dia, (contagem.get(dia) ?? 0) + 1);
+  }
+  return Array.from({ length: dias }, (_, i) => {
+    const dia = somarDias(inicio, i);
+    return { dia, total: contagem.get(dia) ?? 0 };
+  });
 }

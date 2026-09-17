@@ -7,8 +7,24 @@ import {
   tarefasDoDia,
   descreverPrazo,
   ROTULO_SITUACAO,
+  estadoDe,
+  quadro,
+  aoMoverPara,
+  semanaDeTarefas,
+  concluidasPorDia,
 } from './tarefa';
 import { bancoVazio, type Tarefa } from '../dados/esquema';
+
+/**
+ * Um instante que cai naquele dia **no fuso desta máquina**.
+ *
+ * Escrever `'2026-01-15T23:00:00.000Z'` à mão amarraria o teste ao UTC: em São
+ * Paulo esse instante é dia 15 às 20h, mas em Tóquio já é dia 16.
+ */
+function instanteLocal(dia: string, hora = 12): string {
+  const [ano, mes, data] = dia.split('-').map(Number);
+  return new Date(ano, mes - 1, data, hora).toISOString();
+}
 
 const HOJE = '2026-01-15';
 
@@ -199,5 +215,167 @@ describe('descrição do prazo', () => {
   it('o corte entre contagem e data é uma semana', () => {
     expect(descreverPrazo(tarefa({ prazo: '2026-01-22' }), HOJE)).toBe('Vence em 7 dias');
     expect(descreverPrazo(tarefa({ prazo: '2026-01-23' }), HOJE)).toBe('Vence em 23 de jan.');
+  });
+});
+
+describe('o quadro', () => {
+  it('sem estado gravado, a tarefa começa em "a fazer"', () => {
+    // O campo é opcional: tudo que existia antes do quadro precisa cair em
+    // algum lugar, e a primeira coluna é onde trabalho ainda não começou.
+    expect(estadoDe(tarefa())).toBe('a-fazer');
+  });
+
+  it('"fazendo" é uma declaração minha, e é respeitada', () => {
+    expect(estadoDe(tarefa({ estado: 'fazendo' }))).toBe('fazendo');
+  });
+
+  it('concluída está em "feito", tenha o estado que tiver', () => {
+    expect(estadoDe(tarefa({ concluidaEm: instanteLocal(HOJE), estado: 'fazendo' }))).toBe('feito');
+  });
+
+  it('estado "feito" sem conclusão não promove ninguém', () => {
+    // Se houvesse duas fontes para "feito", elas divergiriam. `concluidaEm`
+    // continua sendo a única.
+    expect(estadoDe(tarefa({ estado: 'feito' }))).toBe('a-fazer');
+  });
+
+  it('as três colunas existem sempre, mesmo vazias', () => {
+    const colunas = quadro([], HOJE);
+    expect(colunas.map((c) => c.estado)).toEqual(['a-fazer', 'fazendo', 'feito']);
+    expect(colunas.every((c) => c.tarefas.length === 0)).toBe(true);
+    expect(colunas.map((c) => c.rotulo)).toEqual(['A fazer', 'Fazendo', 'Feito']);
+  });
+
+  it('cada tarefa aparece em exatamente uma coluna', () => {
+    const tarefas = [
+      tarefa({ id: 'a' }),
+      tarefa({ id: 'b', estado: 'fazendo' }),
+      tarefa({ id: 'c', concluidaEm: instanteLocal(HOJE) }),
+      tarefa({ id: 'd', prazo: '2026-01-01' }),
+    ];
+    const colunas = quadro(tarefas, HOJE);
+    const todas = colunas.flatMap((c) => c.tarefas.map((t) => t.id));
+    expect(todas).toHaveLength(4);
+    expect(new Set(todas).size).toBe(4);
+    expect(colunas[0].tarefas.map((t) => t.id)).toEqual(['d', 'a']); // atrasada antes
+    expect(colunas[1].tarefas.map((t) => t.id)).toEqual(['b']);
+    expect(colunas[2].tarefas.map((t) => t.id)).toEqual(['c']);
+  });
+
+  it('em "feito" o que acabei de concluir fica no topo', () => {
+    const colunas = quadro(
+      [
+        tarefa({ id: 'antiga', concluidaEm: instanteLocal('2026-01-02') }),
+        tarefa({ id: 'agora', concluidaEm: instanteLocal('2026-01-14') }),
+        tarefa({ id: 'meio', concluidaEm: instanteLocal('2026-01-10') }),
+      ],
+      HOJE,
+    );
+    expect(colunas[2].tarefas.map((t) => t.id)).toEqual(['agora', 'meio', 'antiga']);
+  });
+});
+
+describe('mover de coluna', () => {
+  it('soltar em "feito" conclui', () => {
+    const mudanca = aoMoverPara(tarefa(), 'feito', '2026-01-15T12:00:00.000Z');
+    expect(mudanca).toEqual({ estado: 'feito', concluidaEm: '2026-01-15T12:00:00.000Z' });
+  });
+
+  it('mover dentro de "feito" não reescreve a data da conclusão', () => {
+    const feita = tarefa({ concluidaEm: '2026-01-02T10:00:00.000Z' });
+    expect(aoMoverPara(feita, 'feito', '2026-01-15T12:00:00.000Z').concluidaEm).toBe(
+      '2026-01-02T10:00:00.000Z',
+    );
+  });
+
+  it('tirar de "feito" reabre de verdade', () => {
+    // Sem apagar `concluidaEm`, a tarefa voltaria para a coluna e continuaria
+    // contando como concluída em todo o resto do sistema.
+    const feita = tarefa({ estado: 'feito', concluidaEm: '2026-01-02T10:00:00.000Z' });
+    const mudanca = aoMoverPara(feita, 'fazendo', '2026-01-15T12:00:00.000Z');
+    expect(mudanca).toEqual({ estado: 'fazendo', concluidaEm: undefined });
+    expect(estadoDe({ ...feita, ...mudanca })).toBe('fazendo');
+  });
+});
+
+describe('a semana', () => {
+  const banco = {
+    ...bancoVazio(),
+    tarefas: [
+      tarefa({ id: 'hoje', prazo: HOJE }),
+      tarefa({ id: 'quinta', prazo: '2026-01-16' }),
+      tarefa({ id: 'fora', prazo: '2026-02-20' }),
+      tarefa({ id: 'velha', prazo: '2026-01-05' }),
+      tarefa({ id: 'feita', prazo: '2026-01-16', concluidaEm: instanteLocal('2026-01-16') }),
+    ],
+  };
+
+  it('tem sete dias, começando no que eu pedi', () => {
+    const semana = semanaDeTarefas(banco, HOJE);
+    expect(semana).toHaveLength(7);
+    expect(semana[0].dia).toBe(HOJE);
+    expect(semana[6].dia).toBe('2026-01-21');
+  });
+
+  it('coloca cada tarefa no dia do prazo dela', () => {
+    const semana = semanaDeTarefas(banco, HOJE);
+    expect(semana[0].pendentes.map((t) => t.id)).toEqual(['hoje']);
+    expect(semana[1].pendentes.map((t) => t.id)).toEqual(['quinta']);
+  });
+
+  it('não arrasta o atraso para dentro da semana', () => {
+    // A tarefa que venceu dia 5 continua vencida no dia 5. Empurrá-la para
+    // hoje faria a semana mentir sobre quando o compromisso era.
+    const semana = semanaDeTarefas(banco, HOJE);
+    expect(semana.flatMap((d) => d.pendentes.map((t) => t.id))).not.toContain('velha');
+  });
+
+  it('separa o que foi concluído do que ainda vence', () => {
+    const semana = semanaDeTarefas(banco, HOJE);
+    expect(semana[1].concluidas.map((t) => t.id)).toEqual(['feita']);
+    expect(semana[1].pendentes.map((t) => t.id)).not.toContain('feita');
+  });
+
+  it('dia sem nada vem vazio, e não ausente', () => {
+    const semana = semanaDeTarefas(banco, HOJE);
+    expect(semana[5]).toEqual({ dia: '2026-01-20', pendentes: [], concluidas: [] });
+  });
+});
+
+describe('concluídas por dia', () => {
+  const banco = {
+    ...bancoVazio(),
+    tarefas: [
+      tarefa({ id: 'a', concluidaEm: instanteLocal(HOJE, 9) }),
+      tarefa({ id: 'b', concluidaEm: instanteLocal(HOJE, 22) }),
+      tarefa({ id: 'c', concluidaEm: instanteLocal('2026-01-13') }),
+      tarefa({ id: 'antiga', concluidaEm: instanteLocal('2025-11-01') }),
+      tarefa({ id: 'pendente' }),
+    ],
+  };
+
+  it('a série é contínua e termina no dia pedido', () => {
+    const serie = concluidasPorDia(banco, HOJE, 14);
+    expect(serie).toHaveLength(14);
+    expect(serie[0].dia).toBe('2026-01-02');
+    expect(serie[13].dia).toBe(HOJE);
+  });
+
+  it('conta as duas de hoje no mesmo ponto', () => {
+    // A das 22h é do mesmo dia que a das 9h. Cortar o ISO em UTC jogaria a da
+    // noite para amanhã e o gráfico contaria uma a menos hoje.
+    const serie = concluidasPorDia(banco, HOJE, 14);
+    expect(serie.at(-1)).toEqual({ dia: HOJE, total: 2 });
+  });
+
+  it('dia sem conclusão é zero, e não um buraco', () => {
+    const serie = concluidasPorDia(banco, HOJE, 14);
+    expect(serie.filter((p) => p.total === 0)).toHaveLength(12);
+    expect(serie.every((p) => typeof p.total === 'number')).toBe(true);
+  });
+
+  it('o que está fora da janela fica fora', () => {
+    const total = concluidasPorDia(banco, HOJE, 14).reduce((s, p) => s + p.total, 0);
+    expect(total).toBe(3);
   });
 });
