@@ -340,6 +340,11 @@ export function linhaDoTempo(
   de: string,
   dias: number,
   filtro: FiltroCalendario = SEM_FILTRO,
+  /**
+   * A rotina diária repetida sessenta vezes afoga o que é único. Quem chama
+   * decide — e a tela mostra o interruptor, para nada sumir em silêncio.
+   */
+  incluirRotinas = true,
 ): DiaDaLinha[] {
   const ate = somarDias(de, dias - 1);
   const agenda = agendaDeIntervalo(banco, de, ate);
@@ -347,7 +352,8 @@ export function linhaDoTempo(
   const linha: DiaDaLinha[] = [];
   for (let i = 0; i < dias; i++) {
     const dia = somarDias(de, i);
-    const itens = filtrarDia(agenda.get(dia) ?? { rotinas: [], tarefas: [], lancamentos: [] }, filtro);
+    const doDia = filtrarDia(agenda.get(dia) ?? { rotinas: [], tarefas: [], lancamentos: [] }, filtro);
+    const itens = incluirRotinas ? doDia : { ...doDia, rotinas: [] };
     if (itens.rotinas.length + itens.tarefas.length + itens.lancamentos.length > 0) {
       linha.push({ dia, itens });
     }

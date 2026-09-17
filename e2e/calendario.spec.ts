@@ -223,3 +223,92 @@ test('o lançamento recorrente aparece no mês seguinte sem eu relançar', async
   await expect(page.getByText('Aluguel')).toBeVisible();
   await expect(page.getByText('se repete')).toBeVisible();
 });
+
+test('a visão de dia põe tudo na ordem do relógio', async ({ page }) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  await page.addInitScript((hoje) => {
+    try {
+      if (sessionStorage.getItem('teste-ja-semeou')) return;
+      sessionStorage.setItem('teste-ja-semeou', '1');
+      const b = { criadoEm: new Date().toISOString(), alteradoEm: new Date().toISOString() };
+      localStorage.setItem(
+        'msl-banco',
+        JSON.stringify({
+          versao: 6,
+          rotinas: [
+            {
+              ...b,
+              id: 'r1',
+              titulo: 'Academia',
+              contexto: 'pessoal',
+              icone: 'dumbbell',
+              inicioEm: hoje,
+              arquivada: false,
+              recorrencia: { tipo: 'diaria' },
+              hora: '07:00',
+            },
+          ],
+          execucoes: [],
+          tarefas: [
+            { ...b, id: 't1', titulo: 'Reunião com o cliente', contexto: 'profissional', prazo: hoje, hora: '14:30' },
+            { ...b, id: 't2', titulo: 'Revisar a proposta', contexto: 'profissional', prazo: hoje },
+          ],
+          projetos: [],
+          lancamentos: [],
+        }),
+      );
+    } catch {
+      /* janela privada */
+    }
+  }, diaLocal(0));
+
+  await page.goto('/app/calendario');
+  await page.getByRole('button', { name: 'Mês', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Dia', exact: true }).click();
+
+  await expect(page.getByText('07:00')).toBeVisible();
+  await expect(page.getByText('14:30')).toBeVisible();
+  // O que não tem hora vai para o fim, junto, com o rótulo dizendo isso.
+  await expect(page.getByText('A qualquer hora')).toBeVisible();
+
+  expect(erros).toEqual([]);
+});
+
+test('o filtro corta rotina, tarefa e dinheiro juntos', async ({ page }) => {
+  await semear(page);
+  await page.goto('/app/calendario');
+  await page.getByRole('button', { name: 'Mês', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Dia', exact: true }).click();
+
+  await expect(page.getByText('Ler 20 páginas')).toBeVisible();
+  await expect(page.getByText('Entregar o relatório')).toBeVisible();
+
+  // "Ler 20 páginas" é pessoal; a tarefa é profissional.
+  // O seletor é localizado pelo id: "Pessoal e profissional" também é o
+  // subtítulo do meu nome na barra de cima.
+  await page.locator('#cal-contexto').click();
+  await page.getByRole('button', { name: 'Profissional', exact: true }).click();
+
+  await expect(page.getByText('Ler 20 páginas')).toHaveCount(0);
+  await expect(page.getByText('Entregar o relatório')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Limpar filtro' }).click();
+  await expect(page.getByText('Ler 20 páginas')).toBeVisible();
+});
+
+test('"o que vem" pula os dias vazios e deixa a rotina de fora por padrão', async ({ page }) => {
+  await semear(page);
+  await page.goto('/app/calendario');
+  await page.getByRole('button', { name: 'Mês', exact: true }).first().click();
+  await page.getByRole('button', { name: 'O que vem', exact: true }).click();
+
+  // A rotina diária repetida sessenta vezes afogaria a tarefa.
+  await expect(page.getByText('Ler 20 páginas')).toHaveCount(0);
+  await expect(page.getByText('Entregar o relatório')).toBeVisible();
+
+  // E nada some em silêncio: o interruptor traz a rotina de volta.
+  await page.getByText('Incluir as rotinas').click();
+  await expect(page.getByText('Ler 20 páginas').first()).toBeVisible();
+});

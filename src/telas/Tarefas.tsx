@@ -34,6 +34,7 @@ import {
   type ColunaAgrupada,
 } from '../dominio/tarefa';
 import { diaValido } from '../dominio/rotina';
+import { horaValida } from '../dominio/calendario';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 
 type Filtro = 'pendentes' | 'todas' | 'concluidas';
@@ -284,6 +285,7 @@ export interface DadosNovos {
   titulo: string;
   contexto: Contexto;
   prazo?: string;
+  hora?: string;
   anotacao?: string;
   projetoId?: string;
 }
@@ -314,6 +316,7 @@ export function FormularioTarefa({
   const [titulo, setTitulo] = React.useState('');
   const [contexto, setContexto] = React.useState<Contexto>('pessoal');
   const [prazo, setPrazo] = React.useState('');
+  const [hora, setHora] = React.useState('');
   const [anotacao, setAnotacao] = React.useState('');
   const [projetoId, setProjetoId] = React.useState(SEM_PROJETO);
   const [tentou, setTentou] = React.useState(false);
@@ -322,6 +325,7 @@ export function FormularioTarefa({
     if (aberto) {
       setTitulo('');
       setPrazo('');
+      setHora('');
       setAnotacao('');
       setProjetoId(SEM_PROJETO);
       setTentou(false);
@@ -331,16 +335,21 @@ export function FormularioTarefa({
   const erroTitulo = tentou && titulo.trim() === '' ? 'Dê um nome à tarefa' : undefined;
   const erroPrazo =
     tentou && prazo !== '' && !diaValido(prazo) ? 'Data inválida' : undefined;
+  const erroHora =
+    tentou && hora !== '' && !horaValida(hora) ? 'Hora inválida' : undefined;
 
   const enviar = async () => {
     setTentou(true);
     if (titulo.trim() === '') return;
     if (prazo !== '' && !diaValido(prazo)) return;
+    if (hora !== '' && !horaValida(hora)) return;
 
     await aoCriar({
       titulo: titulo.trim(),
       contexto,
       prazo: prazo === '' ? undefined : prazo,
+      // Hora sem data não tem onde acontecer: a agenda do dia é a do prazo.
+      hora: prazo === '' || hora === '' ? undefined : hora,
       anotacao: anotacao.trim() === '' ? undefined : anotacao.trim(),
       projetoId: projetoFixo ?? (projetoId === SEM_PROJETO ? undefined : projetoId),
     });
@@ -427,6 +436,24 @@ export function FormularioTarefa({
               value={prazo}
               onChange={setPrazo}
               invalid={!!erroPrazo}
+              size="lg"
+              fullWidth
+            />
+          </Field>
+
+          <Field
+            label="Hora"
+            htmlFor="tar-hora"
+            help={prazo === '' ? 'Precisa de um prazo antes' : 'Opcional — entra na agenda do dia'}
+            error={erroHora}
+          >
+            <TextInput
+              id="tar-hora"
+              type="time"
+              value={hora}
+              onChange={setHora}
+              disabled={prazo === ''}
+              invalid={!!erroHora}
               size="lg"
               fullWidth
             />

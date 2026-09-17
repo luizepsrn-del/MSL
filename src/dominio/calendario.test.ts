@@ -503,6 +503,14 @@ describe('a linha do tempo', () => {
     expect(so_trabalho).toEqual([]);
   });
 
+  it('dá para deixar a rotina de fora, sem ela afogar o que é único', () => {
+    // Uma rotina diária repetida sessenta vezes esconde as duas tarefas.
+    const semRotina = linhaDoTempo(banco, '2026-09-16', 14, SEM_FILTRO, false);
+    expect(semRotina.map((d) => d.dia)).toEqual(['2026-09-17']);
+    expect(semRotina[0].itens.rotinas).toEqual([]);
+    expect(semRotina[0].itens.tarefas.map((t) => t.id)).toEqual(['perto']);
+  });
+
   it('nada pela frente devolve lista vazia, não um erro', () => {
     expect(linhaDoTempo(bancoVazio(), '2026-09-16', 30)).toEqual([]);
   });
