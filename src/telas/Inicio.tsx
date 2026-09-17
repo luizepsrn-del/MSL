@@ -1,6 +1,10 @@
+import React from 'react';
 import {
   Card,
   StatCard,
+  Modal,
+  Switch,
+  IconButton,
   Button,
   Badge,
   ProgressBar,
@@ -19,6 +23,14 @@ import {
   concluidasPorDia,
 } from '../dominio/tarefa';
 import { resumoProjetos, projetosQuePedemAtencao } from '../dominio/projeto';
+import {
+  BLOCOS_DO_INICIO,
+  blocoPorId,
+  blocosVisiveis,
+  alternarBloco,
+  moverBloco,
+  ordemDeFabrica,
+} from '../dominio/preferencias';
 import { LinhaTarefa } from './Tarefas';
 import {
   agendaDoDia,
@@ -60,7 +72,8 @@ import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 const ITEM_TRILHO = { flex: '1 0 var(--grid-min)', scrollSnapAlign: 'start' } as const;
 
 export function Inicio() {
-  const { banco, hoje, alternarExecucao, alternarTarefa } = useBanco();
+  const { banco, hoje, alternarExecucao, alternarTarefa, definirPreferencias } = useBanco();
+  const [personalizando, setPersonalizando] = React.useState(false);
   // A mesma decisão que a casca toma, pela mesma fonte: onde a casca serve o
   // telefone, o conteúdo é de uma coluna só. Duas colunas em 393px espremiam
   // a data a uma palavra por linha e faziam o Badge cavalgar o título.
@@ -117,8 +130,13 @@ export function Inicio() {
     return <PrimeiroUso />;
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--card-gap)' }}>
+  const visiveis = blocosVisiveis(banco.preferencias);
+
+  // Cada bloco é uma entrada nomeada: a ordem e o que aparece vêm da
+  // preferência, e não da posição em que o JSX foi escrito.
+  const blocos: Record<string, React.ReactNode> = {
+    indicadores: (
+      <>
       {/*
         Indicadores do dia.
 
@@ -215,183 +233,188 @@ export function Inicio() {
         )}
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: desktop ? 'minmax(0, 1.75fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
-          gap: 'var(--card-gap)',
-          alignItems: 'start',
-        }}
+      </>
+    ),
+    hoje: (
+      <>
+      {/* O que falta hoje */}
+      <Card
+        title="Hoje"
+        subtitle={`${formatarDiaDaSemana(new Date())}, ${formatarDataLonga(new Date())}`}
+        action={
+          <Link to="/app/rotina" style={{ textDecoration: 'none' }}>
+            <Button variant="secondary" size="sm" iconRight="arrow-right">
+              Ver rotinas
+            </Button>
+          </Link>
+        }
       >
-        {/* O que falta hoje */}
+        <ProgressBar
+          value={Math.round(progresso * 100)}
+          valueLabel={formatarPorcento(progresso)}
+          tone={progresso === 1 ? 'green' : 'purple'}
+          style={{ marginBottom: 'var(--sp-9)' }}
+        />
+
+        {pendentes.length === 0 ? (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 'var(--sp-5)',
+              padding: 'var(--sp-12) 0',
+              textAlign: 'center',
+            }}
+          >
+            <span style={{ color: 'var(--green-500)' }}>
+              <Icon name="circle-check" size={28} />
+            </span>
+            <span
+              style={{
+                font: 'var(--fw-medium) var(--fs-lg)/1.3 var(--font-core)',
+                color: 'var(--text-heading)',
+              }}
+            >
+              Dia cumprido
+            </span>
+            <span style={{ font: 'var(--type-body)', color: 'var(--text-muted)' }}>
+              Nada pendente para hoje.
+            </span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+            {pendentes.map(({ rotina }) => (
+              <LinhaRotina
+                key={rotina.id}
+                titulo={rotina.titulo}
+                icone={rotina.icone}
+                detalhe={descreverRecorrencia(rotina.recorrencia)}
+                contexto={rotina.contexto}
+                feita={false}
+                aoAlternar={() => alternarExecucao(rotina.id, hoje)}
+              />
+            ))}
+          </div>
+        )}
+
+        {feitas > 0 && (
+          <details style={{ marginTop: 'var(--sp-9)' }}>
+            <summary
+              style={{
+                font: 'var(--type-body)',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+              }}
+            >
+              {feitas} já {feitas === 1 ? 'cumprida' : 'cumpridas'}
+            </summary>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--sp-2)',
+                marginTop: 'var(--sp-5)',
+              }}
+            >
+              {itens
+                .filter((i) => i.feita)
+                .map(({ rotina }) => (
+                  <LinhaRotina
+                    key={rotina.id}
+                    titulo={rotina.titulo}
+                    icone={rotina.icone}
+                    detalhe={descreverRecorrencia(rotina.recorrencia)}
+                    contexto={rotina.contexto}
+                    feita
+                    aoAlternar={() => alternarExecucao(rotina.id, hoje)}
+                  />
+                ))}
+            </div>
+          </details>
+        )}
+      </Card>
+      </>
+    ),
+    vencendo: (
+      <>
+      {/* O que vence — atrasado e de hoje, nada além disso */}
+      {tarefas.length > 0 && (
         <Card
-          title="Hoje"
-          subtitle={`${formatarDiaDaSemana(new Date())}, ${formatarDataLonga(new Date())}`}
+          title="Vencendo"
+          subtitle={`${tarefas.length} ${tarefas.length === 1 ? 'tarefa' : 'tarefas'}`}
           action={
-            <Link to="/app/rotina" style={{ textDecoration: 'none' }}>
+            <Link to="/app/tarefas" style={{ textDecoration: 'none' }}>
               <Button variant="secondary" size="sm" iconRight="arrow-right">
-                Ver rotinas
+                Ver tarefas
               </Button>
             </Link>
           }
         >
-          <ProgressBar
-            value={Math.round(progresso * 100)}
-            valueLabel={formatarPorcento(progresso)}
-            tone={progresso === 1 ? 'green' : 'purple'}
-            style={{ marginBottom: 'var(--sp-9)' }}
-          />
-
-          {pendentes.length === 0 ? (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 'var(--sp-5)',
-                padding: 'var(--sp-12) 0',
-                textAlign: 'center',
-              }}
-            >
-              <span style={{ color: 'var(--green-500)' }}>
-                <Icon name="circle-check" size={28} />
-              </span>
-              <span
-                style={{
-                  font: 'var(--fw-medium) var(--fs-lg)/1.3 var(--font-core)',
-                  color: 'var(--text-heading)',
-                }}
-              >
-                Dia cumprido
-              </span>
-              <span style={{ font: 'var(--type-body)', color: 'var(--text-muted)' }}>
-                Nada pendente para hoje.
-              </span>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
-              {pendentes.map(({ rotina }) => (
-                <LinhaRotina
-                  key={rotina.id}
-                  titulo={rotina.titulo}
-                  icone={rotina.icone}
-                  detalhe={descreverRecorrencia(rotina.recorrencia)}
-                  contexto={rotina.contexto}
-                  feita={false}
-                  aoAlternar={() => alternarExecucao(rotina.id, hoje)}
-                />
-              ))}
-            </div>
-          )}
-
-          {feitas > 0 && (
-            <details style={{ marginTop: 'var(--sp-9)' }}>
-              <summary
-                style={{
-                  font: 'var(--type-body)',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                }}
-              >
-                {feitas} já {feitas === 1 ? 'cumprida' : 'cumpridas'}
-              </summary>
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 'var(--sp-2)',
-                  marginTop: 'var(--sp-5)',
-                }}
-              >
-                {itens
-                  .filter((i) => i.feita)
-                  .map(({ rotina }) => (
-                    <LinhaRotina
-                      key={rotina.id}
-                      titulo={rotina.titulo}
-                      icone={rotina.icone}
-                      detalhe={descreverRecorrencia(rotina.recorrencia)}
-                      contexto={rotina.contexto}
-                      feita
-                      aoAlternar={() => alternarExecucao(rotina.id, hoje)}
-                    />
-                  ))}
-              </div>
-            </details>
-          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+            {tarefas.map((t) => (
+              <LinhaTarefa
+                key={t.id}
+                tarefa={t}
+                hoje={hoje}
+                aoAlternar={() => alternarTarefa(t.id)}
+              />
+            ))}
+          </div>
         </Card>
+      )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--card-gap)' }}>
-          {/* O que vence — atrasado e de hoje, nada além disso */}
-          {tarefas.length > 0 && (
-            <Card
-              title="Vencendo"
-              subtitle={`${tarefas.length} ${tarefas.length === 1 ? 'tarefa' : 'tarefas'}`}
-              action={
-                <Link to="/app/tarefas" style={{ textDecoration: 'none' }}>
-                  <Button variant="secondary" size="sm" iconRight="arrow-right">
-                    Ver tarefas
-                  </Button>
-                </Link>
-              }
-            >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
-                {tarefas.map((t) => (
-                  <LinhaTarefa
-                    key={t.id}
-                    tarefa={t}
-                    hoje={hoje}
-                    aoAlternar={() => alternarTarefa(t.id)}
-                  />
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {/* Pessoal x profissional */}
-          <Card title="Pessoal e profissional" subtitle="Rotinas e tarefas de hoje">
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 'var(--sp-10)',
-              }}
-            >
-              <DonutChart
-                size={150}
-                thickness={24}
-                centerValue={`${feitas}/${itens.length + tarefas.length}`}
-                centerLabel="hoje"
-                segments={porContexto.map((p, i) => ({
-                  value: Math.max(p.total, 0.0001),
-                  color: i === 0 ? 'var(--chart-1)' : 'var(--chart-2)',
-                }))}
-              />
-              <MetricBarList
-                style={{ width: '100%' }}
-                items={porContexto.map((p, i) => ({
-                  label: ROTULO_CONTEXTO[p.contexto],
-                  value: p.total === 0 ? 0 : Math.round((p.feitas / p.total) * 100),
-                  valueLabel: `${p.feitas}/${p.total}`,
-                  tone: i === 0 ? 'purple' : 'green',
-                }))}
-              />
-            </div>
-          </Card>
-
-          {/* Últimas duas semanas */}
-          {/* O número fica no subtítulo, e não no balão sobre a última barra:
-              no iPhone esse balão saía pela borda do cartão, medido. */}
-          <Card
-            title="Últimos 14 dias"
-            subtitle={`Quanto do dia foi cumprido · hoje: ${formatarPorcento(progresso)}`}
-          >
-            <BarChart height={140} data={serie} highlightIndex={13} />
-          </Card>
+      </>
+    ),
+    contexto: (
+      <>
+      <Card title="Pessoal e profissional" subtitle="Rotinas e tarefas de hoje">
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 'var(--sp-10)',
+          }}
+        >
+          <DonutChart
+            size={150}
+            thickness={24}
+            centerValue={`${feitas}/${itens.length + tarefas.length}`}
+            centerLabel="hoje"
+            segments={porContexto.map((p, i) => ({
+              value: Math.max(p.total, 0.0001),
+              color: i === 0 ? 'var(--chart-1)' : 'var(--chart-2)',
+            }))}
+          />
+          <MetricBarList
+            style={{ width: '100%' }}
+            items={porContexto.map((p, i) => ({
+              label: ROTULO_CONTEXTO[p.contexto],
+              value: p.total === 0 ? 0 : Math.round((p.feitas / p.total) * 100),
+              valueLabel: `${p.feitas}/${p.total}`,
+              tone: i === 0 ? 'purple' : 'green',
+            }))}
+          />
         </div>
-      </div>
-
+      </Card>
+      </>
+    ),
+    quinzena: (
+      <>
+      {/* Últimas duas semanas */}
+      {/* O número fica no subtítulo, e não no balão sobre a última barra:
+          no iPhone esse balão saía pela borda do cartão, medido. */}
+      <Card
+        title="Últimos 14 dias"
+        subtitle={`Quanto do dia foi cumprido · hoje: ${formatarPorcento(progresso)}`}
+      >
+        <BarChart height={140} data={serie} highlightIndex={13} />
+      </Card>
+      </>
+    ),
+    semana: (
+      <>
       {/* A semana inteira, para eu ver o que vem antes de ele chegar. */}
       <Card
         title="Esta semana"
@@ -436,101 +459,160 @@ export function Inicio() {
         </p>
       </Card>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: desktop ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
-          gap: 'var(--card-gap)',
-          alignItems: 'start',
-        }}
+      </>
+    ),
+    atencao: (
+      <>
+      <Card
+        title="Projetos que pedem atenção"
+        subtitle={
+          atencao.length === 0
+            ? temProjeto
+              ? 'Nenhum, no momento'
+              : 'Nenhum projeto ainda'
+            : `${atencao.length} de ${projetos.ativos}`
+        }
+        action={
+          <Link to="/app/projetos" style={{ textDecoration: 'none' }}>
+            <Button variant="secondary" size="sm" iconRight="arrow-right">
+              Ver projetos
+            </Button>
+          </Link>
+        }
       >
-        <Card
-          title="Projetos que pedem atenção"
-          subtitle={
-            atencao.length === 0
-              ? temProjeto
-                ? 'Nenhum, no momento'
-                : 'Nenhum projeto ainda'
-              : `${atencao.length} de ${projetos.ativos}`
-          }
-          action={
-            <Link to="/app/projetos" style={{ textDecoration: 'none' }}>
-              <Button variant="secondary" size="sm" iconRight="arrow-right">
-                Ver projetos
-              </Button>
-            </Link>
-          }
-        >
-          {atencao.length === 0 ? (
-            <p
-              style={{
-                padding: 'var(--sp-12) 0',
-                textAlign: 'center',
-                font: 'var(--type-body)',
-                color: 'var(--text-subtle)',
-              }}
-            >
-              {temProjeto
-                ? 'Nada atrasado nem parado. Bom sinal.'
-                : 'Um projeto agrupa tarefas que terminam juntas.'}
-            </p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-8)' }}>
-              {atencao.map((p) => (
-                <div key={p.projeto.id}>
-                  <div
+        {atencao.length === 0 ? (
+          <p
+            style={{
+              padding: 'var(--sp-12) 0',
+              textAlign: 'center',
+              font: 'var(--type-body)',
+              color: 'var(--text-subtle)',
+            }}
+          >
+            {temProjeto
+              ? 'Nada atrasado nem parado. Bom sinal.'
+              : 'Um projeto agrupa tarefas que terminam juntas.'}
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-8)' }}>
+            {atencao.map((p) => (
+              <div key={p.projeto.id}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--sp-5)',
+                    flexWrap: 'wrap',
+                    marginBottom: 'var(--sp-4)',
+                  }}
+                >
+                  <span
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 'var(--sp-5)',
-                      flexWrap: 'wrap',
-                      marginBottom: 'var(--sp-4)',
+                      font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
+                      color: 'var(--text-heading)',
+                      overflowWrap: 'anywhere',
                     }}
                   >
-                    <span
-                      style={{
-                        font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
-                        color: 'var(--text-heading)',
-                        overflowWrap: 'anywhere',
-                      }}
-                    >
-                      {p.projeto.titulo}
-                    </span>
-                    {p.atrasadas > 0 && (
-                      <Badge tone="delay">
-                        {p.atrasadas} {p.atrasadas === 1 ? 'atrasada' : 'atrasadas'}
-                      </Badge>
-                    )}
-                    {p.parado && (
-                      <Badge tone="delay" dot={false}>
-                        Parado há {p.paradoHa} dias
-                      </Badge>
-                    )}
-                  </div>
-                  <ProgressBar
-                    value={Math.round(p.progresso.fracao * 100)}
-                    valueLabel={`${p.progresso.concluidas}/${p.progresso.total}`}
-                    tone={p.situacao === 'atrasado' ? 'orange' : 'purple'}
-                    label={p.proxima ? `Próxima: ${p.proxima.titulo}` : 'Sem tarefas ainda'}
-                  />
+                    {p.projeto.titulo}
+                  </span>
+                  {p.atrasadas > 0 && (
+                    <Badge tone="delay">
+                      {p.atrasadas} {p.atrasadas === 1 ? 'atrasada' : 'atrasadas'}
+                    </Badge>
+                  )}
+                  {p.parado && (
+                    <Badge tone="delay" dot={false}>
+                      Parado há {p.paradoHa} dias
+                    </Badge>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
-        </Card>
+                <ProgressBar
+                  value={Math.round(p.progresso.fracao * 100)}
+                  valueLabel={`${p.progresso.concluidas}/${p.progresso.total}`}
+                  tone={p.situacao === 'atrasado' ? 'orange' : 'purple'}
+                  label={p.proxima ? `Próxima: ${p.proxima.titulo}` : 'Sem tarefas ainda'}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+      </>
+    ),
+    concluidas: (
+      <>
+      <Card
+        title="Tarefas concluídas"
+        subtitle={`Uma barra por dia, nos últimos 14 · hoje: ${formatarNumero(
+          concluidas[13].total,
+        )}`}
+      >
+        <BarChart height={140} data={concluidas.map((c) => c.total)} highlightIndex={13} />
+      </Card>
+      </>
+    ),
+  };
 
-        <Card
-          title="Tarefas concluídas"
-          subtitle={`Uma barra por dia, nos últimos 14 · hoje: ${formatarNumero(
-            concluidas[13].total,
-          )}`}
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--card-gap)' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconLeft="sliders-horizontal"
+          onClick={() => setPersonalizando(true)}
         >
-          <BarChart height={140} data={concluidas.map((c) => c.total)} highlightIndex={13} />
-        </Card>
+          Personalizar
+        </Button>
       </div>
+
+      {visiveis.length === 0 ? (
+        <Card>
+          <p
+            style={{
+              padding: 'var(--sp-14) var(--sp-8)',
+              textAlign: 'center',
+              font: 'var(--type-body)',
+              color: 'var(--text-subtle)',
+            }}
+          >
+            Você escondeu todos os blocos. Abra "Personalizar" para trazer algum de volta.
+          </p>
+        </Card>
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: desktop ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)',
+            gap: 'var(--card-gap)',
+            alignItems: 'start',
+          }}
+        >
+          {visiveis.map((id) => (
+            <div
+              key={id}
+              style={{
+                minWidth: 0,
+                // Os blocos largos ocupam as duas colunas; os outros, uma.
+                gridColumn: desktop && blocoPorId(id)?.largura === 'inteira' ? 'span 2' : 'auto',
+              }}
+            >
+              {blocos[id]}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Personalizar
+        aberto={personalizando}
+        visiveis={visiveis}
+        aoFechar={() => setPersonalizando(false)}
+        aoMudar={(lista) => definirPreferencias({ blocosDoInicio: lista })}
+      />
     </div>
   );
 }
+
 
 /**
  * Um dia da semana, em coluna estreita.
@@ -773,5 +855,132 @@ function PrimeiroUso() {
         </div>
       </div>
     </Card>
+  );
+}
+
+/**
+ * Escolher quais blocos aparecem, e em que ordem.
+ *
+ * A escolha vive no banco, e não no navegador: restaurar o backup em outro
+ * aparelho devolve o Início do jeito que eu deixei.
+ */
+function Personalizar({
+  aberto,
+  visiveis,
+  aoFechar,
+  aoMudar,
+}: {
+  aberto: boolean;
+  visiveis: string[];
+  aoFechar: () => void;
+  aoMudar: (lista: string[]) => void;
+}) {
+  // Os escondidos aparecem no fim da lista, apagados: sem isso não haveria
+  // como trazer de volta o que eu desliguei.
+  const escondidos = BLOCOS_DO_INICIO.map((b) => b.id).filter((id) => !visiveis.includes(id));
+
+  return (
+    <Modal
+      open={aberto}
+      onClose={aoFechar}
+      closeLabel="Fechar"
+      width={560}
+      header={
+        <div>
+          <h2
+            style={{
+              font: 'var(--fw-semibold) var(--fs-heading)/1.25 var(--font-core)',
+              color: 'var(--text-heading)',
+            }}
+          >
+            Personalizar o início
+          </h2>
+          <p
+            style={{
+              font: 'var(--type-page-subtitle)',
+              color: 'var(--text-muted)',
+              marginTop: 'var(--sp-3)',
+            }}
+          >
+            O que aparece, e em que ordem
+          </p>
+        </div>
+      }
+      footer={
+        <>
+          <Button variant="secondary" size="lg" fullWidth onClick={() => aoMudar(ordemDeFabrica())}>
+            Voltar ao padrão
+          </Button>
+          <Button variant="primary" size="lg" fullWidth onClick={aoFechar}>
+            Pronto
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+        {[...visiveis, ...escondidos].map((id, i) => {
+          const bloco = blocoPorId(id)!;
+          const ligado = visiveis.includes(id);
+          return (
+            <div
+              key={id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--sp-6)',
+                minHeight: 'var(--tap-min)',
+                padding: 'var(--sp-4) var(--sp-5)',
+                borderRadius: 'var(--r-nav)',
+                background: ligado ? 'transparent' : 'var(--surface-hover)',
+                opacity: ligado ? 1 : 0.62,
+              }}
+            >
+              <Switch
+                checked={ligado}
+                onChange={() => aoMudar(alternarBloco(visiveis, id))}
+                label={
+                  <span style={{ display: 'block', minWidth: 0 }}>
+                    <span
+                      style={{
+                        display: 'block',
+                        font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
+                        color: 'var(--text-body)',
+                      }}
+                    >
+                      {bloco.rotulo}
+                    </span>
+                    <span style={{ display: 'block', font: 'var(--type-body)', color: 'var(--text-muted)' }}>
+                      {bloco.descricao}
+                    </span>
+                  </span>
+                }
+                style={{ flex: 1, minWidth: 0 }}
+              />
+
+              {ligado && (
+                <span style={{ display: 'flex', gap: 'var(--sp-3)', flex: '0 0 auto' }}>
+                  <IconButton
+                    icon="chevron-up"
+                    label={`Subir ${bloco.rotulo}`}
+                    variant="ghost"
+                    size={34}
+                    disabled={i === 0}
+                    onClick={() => aoMudar(moverBloco(visiveis, id, -1))}
+                  />
+                  <IconButton
+                    icon="chevron-down"
+                    label={`Descer ${bloco.rotulo}`}
+                    variant="ghost"
+                    size={34}
+                    disabled={i === visiveis.length - 1}
+                    onClick={() => aoMudar(moverBloco(visiveis, id, 1))}
+                  />
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
   );
 }

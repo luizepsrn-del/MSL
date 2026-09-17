@@ -154,7 +154,7 @@ test('as duas telas funcionam no iPhone', async ({ page }, info) => {
   await page.goto('/app/pedir');
   await page.getByPlaceholder('Pergunte, ou mande fazer').fill('no telefone');
   await page.getByPlaceholder('Pergunte, ou mande fazer').press('Enter');
-  await expect(page.getByText('pedido.md')).toBeVisible();
+  await expect(page.getByText('Isto eu não resolvo sozinho')).toBeVisible();
 
   let vazamento = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,

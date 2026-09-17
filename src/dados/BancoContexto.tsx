@@ -10,6 +10,7 @@ import {
   type Projeto,
   type Lancamento,
   type EstadoTarefa,
+  type Preferencias,
 } from './esquema';
 import { RepositorioLocal, type Repositorio } from './repositorio';
 import { removerProjeto as soltarEremover } from '../dominio/projeto';
@@ -43,6 +44,8 @@ interface Acoes {
   moverTarefa(tarefaId: string, projetoId: string | undefined): Promise<void>;
   criarLancamento(dados: Omit<Lancamento, keyof BaseRegistro>): Promise<void>;
   removerLancamento(id: string): Promise<void>;
+  /** grava o que eu escolhi sobre a interface; viaja no backup */
+  definirPreferencias(mudanca: Partial<Preferencias>): Promise<void>;
   exportar(): Promise<string>;
   importar(json: string): Promise<void>;
 }
@@ -200,6 +203,10 @@ export function ProvedorBanco({
         const t = agora();
         const lancamento: Lancamento = { ...dados, id: novoId(), criadoEm: t, alteradoEm: t };
         await gravar({ ...banco, lancamentos: [...banco.lancamentos, lancamento] });
+      },
+
+      async definirPreferencias(mudanca) {
+        await gravar({ ...banco, preferencias: { ...banco.preferencias, ...mudanca } });
       },
 
       async removerLancamento(id) {

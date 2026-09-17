@@ -110,3 +110,55 @@ test('nada do painel estoura a largura da tela', async ({ page }) => {
   });
   expect(estouro).toEqual([]);
 });
+
+test('dá para escolher quais blocos aparecem, e a escolha sobrevive ao recarregar', async ({
+  page,
+}) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  await semear(page);
+  await page.goto('/app');
+  await expect(page.getByRole('heading', { name: 'Esta semana' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Personalizar' }).click();
+  await page.getByText('Os sete dias, com rotina, prazos e conclusões').click();
+  await page.getByRole('button', { name: 'Pronto' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Esta semana' })).toHaveCount(0);
+  // O resto continua lá: desligar um bloco não apaga nada.
+  await expect(page.getByRole('heading', { name: 'Hoje' })).toBeVisible();
+
+  // A escolha mora no banco, não na memória da aba.
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Esta semana' })).toHaveCount(0);
+
+  expect(erros).toEqual([]);
+});
+
+test('a ordem dos blocos pode mudar, e volta ao padrão num clique', async ({ page }) => {
+  await semear(page);
+  await page.goto('/app');
+
+  const titulos = () =>
+    page.locator('section h3').evaluateAll((els) => els.map((e) => e.textContent?.trim()));
+
+  const antes = await titulos();
+  expect(antes[0]).toBe('Hoje');
+
+  await page.getByRole('button', { name: 'Personalizar' }).click();
+  // Sobe uma posição por clique: de quarto para segundo são dois. O primeiro
+  // lugar é dos indicadores, que não são um cartão.
+  await page.getByRole('button', { name: 'Subir Esta semana' }).click();
+  await page.getByRole('button', { name: 'Subir Esta semana' }).click();
+  await page.getByRole('button', { name: 'Pronto' }).click();
+
+  const depois = await titulos();
+  expect(depois[0]).toBe('Esta semana');
+
+  await page.getByRole('button', { name: 'Personalizar' }).click();
+  await page.getByRole('button', { name: 'Voltar ao padrão' }).click();
+  await page.getByRole('button', { name: 'Pronto' }).click();
+
+  expect(await titulos()).toEqual(antes);
+});
