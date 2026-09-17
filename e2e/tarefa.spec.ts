@@ -165,3 +165,63 @@ test('tarefas funcionam no iPhone', async ({ page }, info) => {
   await page.getByText('Pagar o boleto').tap();
   await expect(page.getByText('Nada pendente. Bom sinal.')).toBeVisible();
 });
+
+/**
+ * O `Select` da biblioteca não é um `<select>` nativo: é um botão que abre uma
+ * lista de botões. `selectOption` não funciona nele.
+ */
+async function escolher(page: Page, atual: string, opcao: string) {
+  await page.getByRole('button', { name: atual, exact: true }).first().click();
+  await page.getByRole('button', { name: opcao, exact: true }).click();
+}
+
+test('o quadro move a tarefa entre as três colunas, e "feito" conclui de verdade', async ({
+  page,
+}) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  await comecarLimpo(page);
+  await page.goto('/app/tarefas');
+  await criarTarefa(page, 'Revisar o contrato');
+
+  await escolher(page, 'Lista', 'Quadro');
+  await expect(page.getByRole('heading', { name: 'A fazer' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Fazendo' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Feito' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Mover Revisar o contrato para Fazendo' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Mover Revisar o contrato para Feito' }),
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Mover Revisar o contrato para Feito' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Mover Revisar o contrato para Fazendo' }),
+  ).toBeVisible();
+
+  // O resto do sistema precisa concordar: a tarefa saiu das pendentes.
+  await escolher(page, 'Quadro', 'Lista');
+  await expect(page.getByText('0 pendentes')).toBeVisible();
+  await escolher(page, 'Pendentes', 'Concluídas');
+  await expect(page.getByText('Revisar o contrato')).toBeVisible();
+
+  expect(erros).toEqual([]);
+});
+
+test('tirar do "feito" reabre a tarefa em vez de só mudar de coluna', async ({ page }) => {
+  await comecarLimpo(page);
+  await page.goto('/app/tarefas');
+  await criarTarefa(page, 'Conferir a nota');
+
+  // Conclui pela caixinha da lista e só depois abre o quadro: as duas portas
+  // precisam falar da mesma coisa.
+  await page.getByText('Conferir a nota').click();
+  await expect(page.getByText('0 pendentes')).toBeVisible();
+
+  await escolher(page, 'Lista', 'Quadro');
+  await page.getByRole('button', { name: 'Mover Conferir a nota para Fazendo' }).click();
+
+  await escolher(page, 'Quadro', 'Lista');
+  await expect(page.getByText('1 pendente', { exact: true })).toBeVisible();
+});

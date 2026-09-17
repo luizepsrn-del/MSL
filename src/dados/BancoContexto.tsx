@@ -9,9 +9,11 @@ import {
   type Tarefa,
   type Projeto,
   type Lancamento,
+  type EstadoTarefa,
 } from './esquema';
 import { RepositorioLocal, type Repositorio } from './repositorio';
 import { removerProjeto as soltarEremover } from '../dominio/projeto';
+import { aoMoverPara } from '../dominio/tarefa';
 import { validarValor } from '../dominio/financeiro';
 
 /**
@@ -32,6 +34,8 @@ interface Acoes {
   criarTarefa(dados: Omit<Tarefa, keyof BaseRegistro>): Promise<void>;
   alternarTarefa(id: string): Promise<void>;
   removerTarefa(id: string): Promise<void>;
+  /** move a tarefa de coluna no quadro; entrar em "feito" conclui, sair reabre */
+  mudarEstadoTarefa(id: string, estado: EstadoTarefa): Promise<void>;
   criarProjeto(dados: Omit<Projeto, keyof BaseRegistro>): Promise<void>;
   arquivarProjeto(id: string): Promise<void>;
   /** solta as tarefas do projeto; não as apaga */
@@ -142,6 +146,20 @@ export function ProvedorBanco({
 
       async removerTarefa(id) {
         await gravar({ ...banco, tarefas: banco.tarefas.filter((t) => t.id !== id) });
+      },
+
+      async mudarEstadoTarefa(id, estado) {
+        const t = agora();
+        await gravar({
+          ...banco,
+          tarefas: banco.tarefas.map((tarefa) =>
+            // A regra da transição mora no domínio, testada: o quadro e a
+            // caixinha nunca podem discordar sobre o que "feito" significa.
+            tarefa.id === id
+              ? { ...tarefa, ...aoMoverPara(tarefa, estado, t), alteradoEm: t }
+              : tarefa,
+          ),
+        });
       },
 
       async criarProjeto(dados) {
