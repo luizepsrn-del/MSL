@@ -49,13 +49,14 @@ import {
   anoMesDe,
   CABECALHO_SEMANA,
 } from '../dominio/calendario';
-import { ocorrenciasDoMes, resumoFinanceiro } from '../dominio/financeiro';
+import { ocorrenciasDoMes, resumoFinanceiro, evolucaoMensal } from '../dominio/financeiro';
 import {
   formatarDataLonga,
   formatarDiaDaSemana,
   formatarPorcento,
   formatarNumero,
   formatarMoeda,
+  formatarMoedaCompacta,
 } from '../formato';
 import { Link } from 'react-router-dom';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
@@ -77,6 +78,40 @@ import { useLarguraDesktop } from '../casca/useLarguraDesktop';
  */
 function rotulosDaQuinzena(dias: string[]): string[] {
   return dias.map((dia, i) => (i % 2 === dias.length % 2 ? String(Number(dia.slice(8))) : ''));
+}
+
+const MESES_CURTOS = [
+  'jan',
+  'fev',
+  'mar',
+  'abr',
+  'mai',
+  'jun',
+  'jul',
+  'ago',
+  'set',
+  'out',
+  'nov',
+  'dez',
+];
+
+/** Três marcas no eixo, compactas: o valor inteiro encosta na borda. */
+function ticksDeDinheiro(pontos: { entradas: number; saidas: number }[]): string[] {
+  const teto = Math.max(...pontos.flatMap((p) => [p.entradas, p.saidas]), 100);
+  return [
+    formatarMoedaCompacta(teto),
+    formatarMoedaCompacta(Math.round(teto / 2)),
+    formatarMoedaCompacta(0),
+  ];
+}
+
+function Legenda({ cor, texto }: { cor: string; texto: string }) {
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-4)' }}>
+      <span style={{ width: 10, height: 3, borderRadius: 'var(--r-pill)', background: cor }} />
+      <span style={{ font: 'var(--type-body)', color: 'var(--text-muted)' }}>{texto}</span>
+    </span>
+  );
 }
 
 /** Cresce para preencher no desktop, transborda em trilho no telefone. */
@@ -116,6 +151,7 @@ export function Inicio() {
     data: o.data,
   }));
   const dinheiro = resumoFinanceiro(doMes, hoje);
+  const evolucao = evolucaoMensal(banco, anoAtual, mesAtual, 6);
 
   const melhorSequencia = banco.rotinas
     .filter((r) => !r.arquivada)
@@ -489,6 +525,65 @@ export function Inicio() {
         </p>
       </Card>
 
+      </>
+    ),
+    dinheiro: (
+      <>
+      {/* O dinheiro no Início como gráfico, e não só como número: o tile diz
+          quanto, a linha diz para onde. */}
+      <Card
+        style={{ height: '100%' }}
+        title="Dinheiro"
+        subtitle={
+          banco.lancamentos.length === 0
+            ? 'Nada lançado ainda'
+            : `Seis meses · saldo de ${MESES_CURTOS[mesAtual - 1]}: ${formatarMoeda(dinheiro.saldoRealizado)}`
+        }
+        action={
+          <Link to="/app/financeiro" style={{ textDecoration: 'none' }}>
+            <Button variant="secondary" size="sm" iconRight="arrow-right">
+              Ver financeiro
+            </Button>
+          </Link>
+        }
+      >
+        {banco.lancamentos.length === 0 ? (
+          <p
+            style={{
+              padding: 'var(--sp-12) 0',
+              textAlign: 'center',
+              font: 'var(--type-body)',
+              color: 'var(--text-subtle)',
+            }}
+          >
+            Lance uma entrada ou uma saída e o mês aparece aqui.
+          </p>
+        ) : (
+          <>
+            <LineChart
+              height={180}
+              labels={evolucao.map((p) => MESES_CURTOS[p.mes - 1])}
+              yTicks={ticksDeDinheiro(evolucao)}
+              highlightIndex={evolucao.length - 1}
+              series={[
+                { data: evolucao.map((p) => p.entradas), color: 'var(--chart-2)' },
+                { data: evolucao.map((p) => p.saidas), color: 'var(--chart-3)' },
+              ]}
+            />
+            <div
+              style={{
+                display: 'flex',
+                gap: 'var(--sp-8)',
+                flexWrap: 'wrap',
+                marginTop: 'var(--sp-8)',
+              }}
+            >
+              <Legenda cor="var(--chart-2)" texto="Entradas" />
+              <Legenda cor="var(--chart-3)" texto="Saídas" />
+            </div>
+          </>
+        )}
+      </Card>
       </>
     ),
     atencao: (

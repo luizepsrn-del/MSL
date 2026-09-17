@@ -45,6 +45,12 @@ export const BLOCOS_DO_INICIO: BlocoDoInicio[] = [
     largura: 'inteira',
   },
   {
+    id: 'dinheiro',
+    rotulo: 'Dinheiro',
+    descricao: 'Entradas e saídas nos seis meses até aqui',
+    largura: 'metade',
+  },
+  {
     id: 'atencao',
     rotulo: 'Projetos que pedem atenção',
     descricao: 'Atrasados, parados, ou com o prazo perto',

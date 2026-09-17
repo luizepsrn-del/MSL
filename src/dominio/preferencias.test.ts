@@ -23,6 +23,13 @@ describe('o catálogo dos blocos', () => {
     }
   });
 
+  it('bloco novo entra para quem nunca personalizou, e não para quem já o fez', () => {
+    // Quem escolheu uma ordem não pode tê-la mexida por uma versão nova; o
+    // bloco fica desligado, visível na lista de escondidos do diálogo.
+    expect(blocosVisiveis()).toContain('dinheiro');
+    expect(blocosVisiveis({ blocosDoInicio: ['hoje', 'semana'] })).not.toContain('dinheiro');
+  });
+
   it('acha o bloco pelo id, e devolve nada para o que não existe', () => {
     expect(blocoPorId('semana')?.rotulo).toBe('Esta semana');
     expect(blocoPorId('inventado')).toBeUndefined();

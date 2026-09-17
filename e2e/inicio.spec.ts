@@ -162,3 +162,46 @@ test('a ordem dos blocos pode mudar, e volta ao padrão num clique', async ({ pa
 
   expect(await titulos()).toEqual(antes);
 });
+
+test('o dinheiro aparece no Início como gráfico, e não só como número', async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      if (sessionStorage.getItem('teste-ja-semeou')) return;
+      sessionStorage.setItem('teste-ja-semeou', '1');
+      const b = { criadoEm: new Date().toISOString(), alteradoEm: new Date().toISOString() };
+      const hoje = new Date().toISOString().slice(0, 10);
+      localStorage.setItem(
+        'msl-banco',
+        JSON.stringify({
+          versao: 6,
+          rotinas: [],
+          execucoes: [],
+          tarefas: [{ ...b, id: 't1', titulo: 'Uma tarefa', contexto: 'pessoal' }],
+          projetos: [],
+          lancamentos: [
+            {
+              ...b,
+              id: 'l1',
+              descricao: 'Salário',
+              valor: 950000,
+              tipo: 'entrada',
+              categoria: 'receita',
+              contexto: 'profissional',
+              data: hoje,
+              recorrencia: { periodo: 'mensal' },
+            },
+          ],
+        }),
+      );
+    } catch {
+      /* janela privada */
+    }
+  });
+
+  await page.goto('/app');
+  const cartao = page.locator('section').filter({ hasText: 'Seis meses' });
+  await expect(cartao.getByRole('heading', { name: 'Dinheiro' })).toBeVisible();
+  await expect(cartao.getByText('Entradas')).toBeVisible();
+  // O eixo é compacto: o valor inteiro encosta na borda do cartão.
+  await expect(cartao.getByText(/R\$\u00a0[\d,]+\u00a0mil/).first()).toBeVisible();
+});
