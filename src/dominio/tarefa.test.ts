@@ -12,6 +12,8 @@ import {
   aoMoverPara,
   semanaDeTarefas,
   concluidasPorDia,
+  quadroPor,
+  SEM_PROJETO,
 } from './tarefa';
 import { bancoVazio, type Tarefa } from '../dados/esquema';
 
@@ -377,5 +379,118 @@ describe('concluídas por dia', () => {
   it('o que está fora da janela fica fora', () => {
     const total = concluidasPorDia(banco, HOJE, 14).reduce((s, p) => s + p.total, 0);
     expect(total).toBe(3);
+  });
+});
+
+describe('agrupar o quadro por outro eixo', () => {
+  const banco = {
+    ...bancoVazio(),
+    projetos: [
+      {
+        id: 'p1',
+        criadoEm: instanteLocal('2026-01-01'),
+        alteradoEm: instanteLocal('2026-01-01'),
+        titulo: 'Reforma',
+        contexto: 'profissional' as const,
+      },
+      {
+        id: 'p2',
+        criadoEm: instanteLocal('2026-01-01'),
+        alteradoEm: instanteLocal('2026-01-01'),
+        titulo: 'Guardado',
+        contexto: 'pessoal' as const,
+        arquivadoEm: instanteLocal('2026-01-10'),
+      },
+    ],
+    tarefas: [
+      tarefa({ id: 'atrasada', prazo: '2026-01-10' }),
+      tarefa({ id: 'hoje', prazo: HOJE }),
+      tarefa({ id: 'semana', prazo: '2026-01-20' }),
+      tarefa({ id: 'longe', prazo: '2026-03-01' }),
+      tarefa({ id: 'solta' }),
+      tarefa({ id: 'feita', concluidaEm: instanteLocal('2026-01-14') }),
+      tarefa({ id: 'do-projeto', projetoId: 'p1', contexto: 'profissional' }),
+      tarefa({ id: 'fantasma', projetoId: 'nao-existe' }),
+      tarefa({ id: 'arquivado', projetoId: 'p2' }),
+    ],
+  };
+
+  const colunas = (a: Parameters<typeof quadroPor>[1]) => quadroPor(banco, a, HOJE);
+  const ids = (a: Parameters<typeof quadroPor>[1], chave: string) =>
+    colunas(a)
+      .find((c) => c.chave === chave)!
+      .tarefas.map((t) => t.id);
+
+  it('agrupar não muda nenhuma tarefa: é a mesma lista em outras pilhas', () => {
+    for (const eixo of ['estado', 'prazo', 'projeto', 'contexto'] as const) {
+      const todas = colunas(eixo).flatMap((c) => c.tarefas.map((t) => t.id));
+      expect(todas.sort(), eixo).toEqual(banco.tarefas.map((t) => t.id).sort());
+    }
+  });
+
+  it('por prazo, cada tarefa cai na faixa certa', () => {
+    expect(ids('prazo', 'atrasada')).toEqual(['atrasada']);
+    expect(ids('prazo', 'hoje')).toEqual(['hoje']);
+    expect(ids('prazo', 'semana')).toEqual(['semana']);
+    expect(ids('prazo', 'depois')).toEqual(['longe']);
+    expect(ids('prazo', 'concluida')).toEqual(['feita']);
+  });
+
+  it('a faixa "próximos 7 dias" para exatamente no sétimo', () => {
+    const b = {
+      ...bancoVazio(),
+      tarefas: [tarefa({ id: 'no-limite', prazo: '2026-01-22' }), tarefa({ id: 'fora', prazo: '2026-01-23' })],
+    };
+    const sete = quadroPor(b, 'prazo', HOJE).find((c) => c.chave === 'semana')!;
+    expect(sete.tarefas.map((t) => t.id)).toEqual(['no-limite']);
+  });
+
+  it('por projeto, o arquivado e o fantasma caem em "sem projeto"', () => {
+    // A mesma regra de `tarefasSoltas`: esconder a tarefa num projeto que não
+    // aparece em lugar nenhum é perdê-la de vista sem apagar.
+    expect(ids('projeto', 'p1')).toEqual(['do-projeto']);
+    expect(ids('projeto', SEM_PROJETO)).toContain('fantasma');
+    expect(ids('projeto', SEM_PROJETO)).toContain('arquivado');
+    expect(colunas('projeto').map((c) => c.chave)).not.toContain('p2');
+  });
+
+  it('por contexto, separa pessoal de profissional', () => {
+    expect(ids('contexto', 'profissional')).toEqual(['do-projeto']);
+    expect(ids('contexto', 'pessoal').length).toBe(8);
+  });
+
+  it('coluna vazia continua na lista', () => {
+    const vazio = quadroPor(bancoVazio(), 'prazo', HOJE);
+    expect(vazio).toHaveLength(6);
+    expect(vazio.every((c) => c.tarefas.length === 0)).toBe(true);
+  });
+
+  it('só a coluna de etapa aceita soltar um cartão', () => {
+    // Soltar em "Atrasadas" não teria sentido, e soltar em "Hoje" teria de
+    // reescrever o prazo por baixo do pano.
+    expect(colunas('estado').every((c) => c.soltavel)).toBe(true);
+    for (const eixo of ['prazo', 'projeto', 'contexto'] as const) {
+      expect(colunas(eixo).every((c) => !c.soltavel), eixo).toBe(true);
+    }
+  });
+
+  it('o corte por etapa bate com o quadro de sempre', () => {
+    const porEixo = quadroPor(banco, 'estado', HOJE);
+    const direto = quadro(banco.tarefas, HOJE);
+    expect(porEixo.map((c) => c.chave)).toEqual(direto.map((c) => c.estado));
+    expect(porEixo.map((c) => c.tarefas.map((t) => t.id))).toEqual(
+      direto.map((c) => c.tarefas.map((t) => t.id)),
+    );
+  });
+
+  it('dá para agrupar só as tarefas de um projeto', () => {
+    // É o que o cartão de projeto usa para ter o próprio quadro.
+    const doProjeto = quadroPor(
+      banco,
+      'estado',
+      HOJE,
+      banco.tarefas.filter((t) => t.projetoId === 'p1'),
+    );
+    expect(doProjeto.flatMap((c) => c.tarefas.map((t) => t.id))).toEqual(['do-projeto']);
   });
 });

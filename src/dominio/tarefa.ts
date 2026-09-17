@@ -1,6 +1,7 @@
 import {
   ESTADOS_TAREFA,
   ROTULO_ESTADO,
+  ROTULO_CONTEXTO,
   type Tarefa,
   type Banco,
   type Contexto,
@@ -270,3 +271,113 @@ export function concluidasPorDia(
     return { dia, total: contagem.get(dia) ?? 0 };
   });
 }
+
+/* ── Agrupar o quadro por outra coisa ────────────────────────────────────── */
+
+export type Agrupamento = 'estado' | 'prazo' | 'projeto' | 'contexto';
+
+export const ROTULO_AGRUPAMENTO: Record<Agrupamento, string> = {
+  estado: 'Por etapa',
+  prazo: 'Por prazo',
+  projeto: 'Por projeto',
+  contexto: 'Por contexto',
+};
+
+export interface ColunaAgrupada {
+  /** identifica a coluna; em "estado" é o próprio `EstadoTarefa` */
+  chave: string;
+  rotulo: string;
+  tarefas: Tarefa[];
+  /** só a coluna de etapa recebe tarefa arrastada: as outras são leitura */
+  soltavel: boolean;
+}
+
+/** As faixas de prazo, na ordem em que a urgência cai. */
+const FAIXAS_DE_PRAZO: { chave: string; rotulo: string }[] = [
+  { chave: 'atrasada', rotulo: 'Atrasadas' },
+  { chave: 'hoje', rotulo: 'Hoje' },
+  { chave: 'semana', rotulo: 'Próximos 7 dias' },
+  { chave: 'depois', rotulo: 'Depois' },
+  { chave: 'sem-prazo', rotulo: 'Sem prazo' },
+  { chave: 'concluida', rotulo: 'Concluídas' },
+];
+
+function faixaDoPrazo(tarefa: Tarefa, hoje: string): string {
+  const s = situacao(tarefa, hoje);
+  if (s === 'concluida' || s === 'atrasada' || s === 'hoje' || s === 'sem-prazo') return s;
+  return distanciaEmDias(hoje, tarefa.prazo!) <= 7 ? 'semana' : 'depois';
+}
+
+/**
+ * O mesmo quadro, cortado por outro eixo.
+ *
+ * Mudar o agrupamento não muda nenhuma tarefa: é a mesma lista, em outras
+ * pilhas. Só o corte por etapa aceita soltar um cartão — mover para "Hoje"
+ * teria de reescrever o prazo, e mover para "Atrasadas" não teria sentido
+ * nenhum, então essas colunas são leitura.
+ *
+ * Colunas vazias continuam na lista: quadro que muda de forma conforme o dado
+ * é quadro que não dá para ler duas vezes do mesmo jeito.
+ */
+export function quadroPor(
+  banco: Banco,
+  agrupamento: Agrupamento,
+  hoje: string,
+  tarefas: readonly Tarefa[] = banco.tarefas,
+): ColunaAgrupada[] {
+  const montar = (
+    definicoes: { chave: string; rotulo: string }[],
+    chaveDe: (t: Tarefa) => string,
+    soltavel = false,
+  ): ColunaAgrupada[] =>
+    definicoes.map((d) => ({
+      chave: d.chave,
+      rotulo: d.rotulo,
+      soltavel,
+      tarefas: ordenarTarefas(
+        tarefas.filter((t) => chaveDe(t) === d.chave),
+        hoje,
+      ),
+    }));
+
+  switch (agrupamento) {
+    case 'estado':
+      // A coluna de feitos mantém a ordem de conclusão, como em `quadro`.
+      return quadro(tarefas, hoje).map((c) => ({
+        chave: c.estado,
+        rotulo: c.rotulo,
+        tarefas: c.tarefas,
+        soltavel: true,
+      }));
+
+    case 'prazo':
+      return montar(FAIXAS_DE_PRAZO, (t) => faixaDoPrazo(t, hoje));
+
+    case 'contexto':
+      return montar(
+        [
+          { chave: 'pessoal', rotulo: ROTULO_CONTEXTO.pessoal },
+          { chave: 'profissional', rotulo: ROTULO_CONTEXTO.profissional },
+        ],
+        (t) => t.contexto,
+      );
+
+    case 'projeto': {
+      const ativos = banco.projetos.filter((p) => !p.arquivadoEm);
+      const existentes = new Set(ativos.map((p) => p.id));
+      return montar(
+        [
+          ...ativos.map((p) => ({ chave: p.id, rotulo: p.titulo })),
+          { chave: SEM_PROJETO, rotulo: 'Sem projeto' },
+        ],
+        // Tarefa apontando para projeto arquivado ou inexistente conta como
+        // solta — a mesma regra de `tarefasSoltas`, para as duas telas não
+        // discordarem sobre onde ela está.
+        (t) => (t.projetoId && existentes.has(t.projetoId) ? t.projetoId : SEM_PROJETO),
+      );
+    }
+  }
+}
+
+/** A chave da coluna das tarefas que não pertencem a projeto nenhum. */
+export const SEM_PROJETO = '__sem-projeto__';

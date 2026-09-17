@@ -225,3 +225,34 @@ test('tirar do "feito" reabre a tarefa em vez de só mudar de coluna', async ({ 
   await escolher(page, 'Quadro', 'Lista');
   await expect(page.getByText('1 pendente', { exact: true })).toBeVisible();
 });
+
+test('o quadro pode ser cortado por prazo, sem mexer em nenhuma tarefa', async ({ page }) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  const { ontem, hoje, semanaQueVem } = datas();
+  await comecarLimpo(page);
+  await page.goto('/app/tarefas');
+  await criarTarefa(page, 'Entregar o relatório', ontem);
+  await criarTarefa(page, 'Pagar o IPVA', hoje);
+  await criarTarefa(page, 'Comprar passagem', semanaQueVem);
+  await criarTarefa(page, 'Pensar no próximo passo');
+
+  await escolher(page, 'Lista', 'Quadro');
+  await escolher(page, 'Por etapa', 'Por prazo');
+
+  await expect(page.getByRole('heading', { name: 'Atrasadas' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hoje' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Próximos 7 dias' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sem prazo' })).toBeVisible();
+
+  // Trocar o eixo é outro corte da mesma lista: as quatro continuam lá.
+  await escolher(page, 'Por prazo', 'Por contexto');
+  await expect(page.getByText('Entregar o relatório')).toBeVisible();
+  await expect(page.getByText('Pensar no próximo passo')).toBeVisible();
+
+  await escolher(page, 'Por contexto', 'Por etapa');
+  await expect(page.getByText('4 pendentes')).toBeVisible();
+
+  expect(erros).toEqual([]);
+});

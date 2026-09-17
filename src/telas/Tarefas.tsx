@@ -26,15 +26,20 @@ import {
   situacao,
   descreverPrazo,
   resumoTarefas,
-  quadro,
+  quadroPor,
   estadoDe,
+  ROTULO_AGRUPAMENTO,
   type Situacao,
+  type Agrupamento,
+  type ColunaAgrupada,
 } from '../dominio/tarefa';
 import { diaValido } from '../dominio/rotina';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 
 type Filtro = 'pendentes' | 'todas' | 'concluidas';
 type Visao = 'lista' | 'quadro';
+
+const AGRUPAMENTOS: Agrupamento[] = ['estado', 'prazo', 'projeto', 'contexto'];
 
 /** Tarefa — o que tem fim, com prazo quando faz sentido ter. */
 export function Tarefas() {
@@ -43,6 +48,7 @@ export function Tarefas() {
   const [criando, setCriando] = React.useState(false);
   const [filtro, setFiltro] = React.useState<Filtro>('pendentes');
   const [visao, setVisao] = React.useState<Visao>('lista');
+  const [agrupamento, setAgrupamento] = React.useState<Agrupamento>('estado');
 
   const resumo = resumoTarefas(banco, hoje);
 
@@ -94,7 +100,18 @@ export function Tarefas() {
             />
           </div>
 
-          {/* No quadro o filtro não se aplica: a coluna já é o filtro. */}
+          {/* No quadro o filtro dá lugar ao eixo: a coluna já é o filtro. */}
+          {visao === 'quadro' && (
+            <div style={{ minWidth: 170 }}>
+              <Select
+                id="tar-agrupar"
+                value={agrupamento}
+                onChange={(v) => setAgrupamento(v as Agrupamento)}
+                options={AGRUPAMENTOS.map((a) => ({ value: a, label: ROTULO_AGRUPAMENTO[a] }))}
+              />
+            </div>
+          )}
+
           {visao === 'lista' && (
             <div style={{ minWidth: 170 }}>
               <Select
@@ -123,7 +140,7 @@ export function Tarefas() {
 
       {visao === 'quadro' ? (
         <QuadroTarefas
-          tarefas={banco.tarefas}
+          colunas={quadroPor(banco, agrupamento, hoje)}
           hoje={hoje}
           aoMover={mudarEstadoTarefa}
           aoRemover={removerTarefa}
@@ -458,20 +475,22 @@ export function FormularioTarefa({
  * responde a arrastar seria um quadro que eu não consigo usar no telefone, que
  * é metade do ponto deste sistema.
  */
-function QuadroTarefas({
-  tarefas,
+export function QuadroTarefas({
+  colunas,
   hoje,
   aoMover,
   aoRemover,
+  colunasNaTela = 3,
 }: {
-  tarefas: Tarefa[];
+  colunas: ColunaAgrupada[];
   hoje: string;
   aoMover: (id: string, estado: EstadoTarefa) => Promise<void>;
-  aoRemover: (id: string) => Promise<void>;
+  aoRemover?: (id: string) => Promise<void>;
+  /** quantas colunas cabem lado a lado no desktop */
+  colunasNaTela?: number;
 }) {
   const desktop = useLarguraDesktop() !== false;
-  const [sobre, setSobre] = React.useState<EstadoTarefa | null>(null);
-  const colunas = quadro(tarefas, hoje);
+  const [sobre, setSobre] = React.useState<string | null>(null);
 
   return (
     <div
@@ -479,7 +498,7 @@ function QuadroTarefas({
         desktop
           ? {
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gridTemplateColumns: `repeat(${Math.min(colunas.length, colunasNaTela)}, minmax(0, 1fr))`,
               gap: 'var(--card-gap)',
               alignItems: 'start',
             }
@@ -502,25 +521,28 @@ function QuadroTarefas({
     >
       {colunas.map((coluna) => (
         <div
-          key={coluna.estado}
+          key={coluna.chave}
           style={desktop ? { minWidth: 0 } : { flex: '1 0 var(--grid-min)', scrollSnapAlign: 'start' }}
           onDragOver={(e) => {
-            if (!desktop) return;
+            // Só o corte por etapa recebe: soltar em "Atrasadas" não teria
+            // sentido, e soltar em "Hoje" reescreveria o prazo por baixo.
+            if (!desktop || !coluna.soltavel) return;
             e.preventDefault();
-            setSobre(coluna.estado);
+            setSobre(coluna.chave);
           }}
-          onDragLeave={() => setSobre((s) => (s === coluna.estado ? null : s))}
+          onDragLeave={() => setSobre((s) => (s === coluna.chave ? null : s))}
           onDrop={(e) => {
+            if (!coluna.soltavel) return;
             e.preventDefault();
             setSobre(null);
             const id = e.dataTransfer.getData('text/plain');
-            if (id) void aoMover(id, coluna.estado);
+            if (id) void aoMover(id, coluna.chave as EstadoTarefa);
           }}
         >
           <Card
             title={coluna.rotulo}
             action={
-              <Badge tone={coluna.estado === 'feito' ? 'delivered' : 'neutral'} dot={false}>
+              <Badge tone={coluna.chave === 'feito' ? 'delivered' : 'neutral'} dot={false}>
                 {coluna.tarefas.length}
               </Badge>
             }
@@ -532,7 +554,7 @@ function QuadroTarefas({
               // O realce só aparece enquanto algo paira sobre a coluna: é o que
               // diz onde a tarefa vai cair antes de eu soltar.
               outline:
-                sobre === coluna.estado
+                sobre === coluna.chave
                   ? 'var(--bw-focus) solid var(--border-focus)'
                   : 'none',
               outlineOffset: 'calc(var(--sp-2) * -1)',
@@ -556,9 +578,9 @@ function QuadroTarefas({
                   key={t.id}
                   tarefa={t}
                   hoje={hoje}
-                  arrastavel={desktop}
+                  arrastavel={desktop && coluna.soltavel}
                   aoMover={aoMover}
-                  aoRemover={() => aoRemover(t.id)}
+                  aoRemover={aoRemover ? () => aoRemover(t.id) : undefined}
                 />
               ))
             )}
@@ -580,7 +602,7 @@ function CartaoTarefa({
   hoje: string;
   arrastavel: boolean;
   aoMover: (id: string, estado: EstadoTarefa) => Promise<void>;
-  aoRemover: () => void;
+  aoRemover?: () => void;
 }) {
   const estado = estadoDe(tarefa);
   const indice = ESTADOS_TAREFA.indexOf(estado);
@@ -647,13 +669,15 @@ function CartaoTarefa({
               onClick={() => void aoMover(tarefa.id, proximo)}
             />
           )}
-          <IconButton
-            icon="trash-2"
-            label={`Remover ${tarefa.titulo}`}
-            variant="ghost"
-            size={34}
-            onClick={aoRemover}
-          />
+          {aoRemover && (
+            <IconButton
+              icon="trash-2"
+              label={`Remover ${tarefa.titulo}`}
+              variant="ghost"
+              size={34}
+              onClick={aoRemover}
+            />
+          )}
         </div>
       </div>
     </div>

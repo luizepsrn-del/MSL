@@ -204,3 +204,24 @@ test('uma tarefa solta pode ser guardada num projeto', async ({ page }) => {
   await expect(page.getByText('Tarefas sem projeto')).toHaveCount(0);
   await expect(page.getByText('Comprar tinta')).toBeVisible();
 });
+
+test('cada projeto tem o seu próprio quadro', async ({ page }) => {
+  await comecarLimpo(page);
+  await page.goto('/app/projetos');
+  await criarProjeto(page, 'Mudança');
+  await criarTarefaNoProjeto(page, 'Contratar o caminhão', 'Mudança');
+  await criarTarefaNoProjeto(page, 'Comprar caixas', 'Mudança');
+
+  await page.goto('/app/projetos');
+  await page.getByRole('button', { name: /^2 tarefas$/ }).click();
+  await page.getByRole('button', { name: 'Lista', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Quadro', exact: true }).click();
+
+  // O mesmo quadro da tela de Tarefas, com as tarefas deste projeto.
+  await expect(page.getByRole('heading', { name: 'A fazer' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Fazendo' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Mover Comprar caixas para Fazendo' }).click();
+  // E o painel do projeto concorda na hora.
+  await expect(page.getByText('1 em andamento')).toBeVisible();
+});

@@ -14,7 +14,13 @@ import {
   SuccessDialog,
 } from '../../design-system';
 import { useBanco } from '../dados/BancoContexto';
-import { CONTEXTOS, ROTULO_CONTEXTO, type Contexto, type Projeto } from '../dados/esquema';
+import {
+  CONTEXTOS,
+  ROTULO_CONTEXTO,
+  type Contexto,
+  type Projeto,
+  type EstadoTarefa,
+} from '../dados/esquema';
 import {
   painelDosProjetos,
   tarefasDoProjeto,
@@ -24,10 +30,10 @@ import {
   type SituacaoProjeto,
   type PainelProjeto,
 } from '../dominio/projeto';
-import { situacao, descreverPrazo } from '../dominio/tarefa';
+import { situacao, descreverPrazo, quadroPor } from '../dominio/tarefa';
 import { diaValido } from '../dominio/rotina';
 import { formatarPorcento, formatarDataMedia, formatarNumero } from '../formato';
-import { FormularioTarefa } from './Tarefas';
+import { FormularioTarefa, QuadroTarefas } from './Tarefas';
 
 const TOM: Record<SituacaoProjeto, 'delay' | 'ontime' | 'delivered' | 'neutral'> = {
   atrasado: 'delay',
@@ -48,6 +54,7 @@ export function Projetos() {
     alternarTarefa,
     criarTarefa,
     moverTarefa,
+    mudarEstadoTarefa,
   } = useBanco();
   const [criando, setCriando] = React.useState(false);
   const [aRemover, setARemover] = React.useState<Projeto | null>(null);
@@ -124,6 +131,7 @@ export function Projetos() {
             aoArquivar={() => arquivarProjeto(painel.projeto.id)}
             aoRemover={() => setARemover(painel.projeto)}
             aoAlternarTarefa={alternarTarefa}
+            aoMoverEstado={mudarEstadoTarefa}
             aoAcrescentar={() => setAcrescentandoEm(painel.projeto.id)}
           />
         ))
@@ -243,6 +251,7 @@ function CartaoProjeto({
   aoArquivar,
   aoRemover,
   aoAlternarTarefa,
+  aoMoverEstado,
   aoAcrescentar,
 }: {
   painel: PainelProjeto;
@@ -252,11 +261,13 @@ function CartaoProjeto({
   aoArquivar: () => void;
   aoRemover: () => void;
   aoAlternarTarefa: (id: string) => void;
+  aoMoverEstado: (id: string, estado: EstadoTarefa) => Promise<void>;
   aoAcrescentar: () => void;
 }) {
   const { banco } = useBanco();
   const { projeto, progresso, situacao: s } = painel;
   const tarefas = tarefasDoProjeto(banco, projeto.id);
+  const [vista, setVista] = React.useState<'lista' | 'quadro'>('lista');
 
   return (
     <Card>
@@ -367,6 +378,33 @@ function CartaoProjeto({
             </button>
 
             {expandido && (
+              <div style={{ display: 'inline-block', minWidth: 140, marginLeft: 'var(--sp-6)' }}>
+                <Select
+                  id={`vista-${projeto.id}`}
+                  value={vista}
+                  onChange={(v) => setVista(v as 'lista' | 'quadro')}
+                  size="sm"
+                  options={[
+                    { value: 'lista', label: 'Lista' },
+                    { value: 'quadro', label: 'Quadro' },
+                  ]}
+                />
+              </div>
+            )}
+
+            {expandido && vista === 'quadro' && (
+              <div style={{ marginTop: 'var(--sp-6)' }}>
+                {/* O mesmo quadro da tela de Tarefas, com as tarefas deste
+                    projeto — sem duplicar componente nem regra. */}
+                <QuadroTarefas
+                  colunas={quadroPor(banco, 'estado', hoje, tarefas)}
+                  hoje={hoje}
+                  aoMover={aoMoverEstado}
+                />
+              </div>
+            )}
+
+            {expandido && vista === 'lista' && (
               <div
                 style={{
                   display: 'flex',
