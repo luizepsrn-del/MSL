@@ -1,5 +1,13 @@
 import React from 'react';
-import { bancoVazio, novoId, diaLocal, type Banco, type Rotina, type Execucao } from './esquema';
+import {
+  bancoVazio,
+  novoId,
+  diaLocal,
+  type Banco,
+  type Rotina,
+  type Execucao,
+  type Tarefa,
+} from './esquema';
 import { RepositorioLocal, type Repositorio } from './repositorio';
 
 /**
@@ -17,6 +25,9 @@ interface Acoes {
   criarRotina(dados: Omit<Rotina, keyof BaseRegistro>): Promise<void>;
   arquivarRotina(id: string): Promise<void>;
   alternarExecucao(rotinaId: string, dia: string): Promise<void>;
+  criarTarefa(dados: Omit<Tarefa, keyof BaseRegistro>): Promise<void>;
+  alternarTarefa(id: string): Promise<void>;
+  removerTarefa(id: string): Promise<void>;
   exportar(): Promise<string>;
   importar(json: string): Promise<void>;
 }
@@ -92,6 +103,34 @@ export function ProvedorBanco({
         const t = agora();
         const execucao: Execucao = { id: novoId(), criadoEm: t, alteradoEm: t, rotinaId, dia };
         await gravar({ ...banco, execucoes: [...banco.execucoes, execucao] });
+      },
+
+      async criarTarefa(dados) {
+        const t = agora();
+        const tarefa: Tarefa = { ...dados, id: novoId(), criadoEm: t, alteradoEm: t };
+        await gravar({ ...banco, tarefas: [...banco.tarefas, tarefa] });
+      },
+
+      async alternarTarefa(id) {
+        const t = agora();
+        await gravar({
+          ...banco,
+          tarefas: banco.tarefas.map((tarefa) =>
+            tarefa.id === id
+              ? {
+                  ...tarefa,
+                  // Desmarcar apaga o instante em vez de guardar um falso:
+                  // "concluída" é a existência da marca, não um booleano.
+                  concluidaEm: tarefa.concluidaEm ? undefined : t,
+                  alteradoEm: t,
+                }
+              : tarefa,
+          ),
+        });
+      },
+
+      async removerTarefa(id) {
+        await gravar({ ...banco, tarefas: banco.tarefas.filter((t) => t.id !== id) });
       },
 
       exportar: () => repo.exportar(),

@@ -39,7 +39,9 @@ test('o primeiro uso convida em vez de mostrar painel vazio', async ({ page }) =
   await page.goto('/app/inicio');
 
   await expect(page.getByText('Nada cadastrado ainda')).toBeVisible();
-  await expect(page.getByRole('link', { name: /Criar a primeira rotina/ })).toBeVisible();
+  // O primeiro uso oferece os dois caminhos desde que Tarefas existe.
+  await expect(page.getByRole('link', { name: /Criar uma rotina/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Criar uma tarefa/ })).toBeVisible();
 });
 
 test('criar uma rotina e vê-la no Início', async ({ page }) => {

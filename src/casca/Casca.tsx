@@ -14,6 +14,7 @@ import { SECOES, porId, PILAR_INICIAL, type Pilar } from './navegacao';
 import { TelaEmBranco } from './TelaEmBranco';
 import { Inicio } from '../telas/Inicio';
 import { Rotinas } from '../telas/Rotinas';
+import { Tarefas } from '../telas/Tarefas';
 
 /**
  * A casca do produto.
@@ -64,6 +65,8 @@ function Conteudo({ pilar }: { pilar: Pilar }) {
       return <Inicio />;
     case 'rotina':
       return <Rotinas />;
+    case 'tarefas':
+      return <Tarefas />;
     default:
       return <TelaEmBranco pilar={pilar} />;
   }

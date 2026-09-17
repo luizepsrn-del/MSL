@@ -12,6 +12,8 @@ import {
 } from '../../design-system';
 import { useBanco } from '../dados/BancoContexto';
 import { CONTEXTOS, ROTULO_CONTEXTO, type Contexto } from '../dados/esquema';
+import { tarefasDoDia, resumoTarefas } from '../dominio/tarefa';
+import { LinhaTarefa } from './Tarefas';
 import {
   agendaDoDia,
   progressoDoDia,
@@ -41,7 +43,7 @@ import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 const ITEM_TRILHO = { flex: '1 0 var(--grid-min)', scrollSnapAlign: 'start' } as const;
 
 export function Inicio() {
-  const { banco, hoje, alternarExecucao } = useBanco();
+  const { banco, hoje, alternarExecucao, alternarTarefa } = useBanco();
   // A mesma decisão que a casca toma, pela mesma fonte: onde a casca serve o
   // telefone, o conteúdo é de uma coluna só. Duas colunas em 393px espremiam
   // a data a uma palavra por linha e faziam o Badge cavalgar o título.
@@ -66,9 +68,13 @@ export function Inicio() {
     feitas: itens.filter((i) => i.rotina.contexto === c && i.feita).length,
   }));
 
-  const temRotina = banco.rotinas.some((r) => !r.arquivada);
+  const tarefas = tarefasDoDia(banco, hoje);
+  const resumo = resumoTarefas(banco, hoje);
 
-  if (!temRotina) {
+  const temRotina = banco.rotinas.some((r) => !r.arquivada);
+  const temTarefa = banco.tarefas.length > 0;
+
+  if (!temRotina && !temTarefa) {
     return <PrimeiroUso />;
   }
 
@@ -117,9 +123,11 @@ export function Inicio() {
         />
         <StatCard
           style={ITEM_TRILHO}
-          icon="repeat"
-          value={formatarNumero(banco.rotinas.filter((r) => !r.arquivada).length)}
-          label="Rotinas ativas"
+          icon="clipboard-check"
+          value={formatarNumero(resumo.pendentes)}
+          label="Tarefas pendentes"
+          delta={resumo.atrasadas > 0 ? `${resumo.atrasadas} atrasada${resumo.atrasadas > 1 ? 's' : ''}` : undefined}
+          deltaTone="delay"
         />
       </div>
 
@@ -230,6 +238,32 @@ export function Inicio() {
         </Card>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--card-gap)' }}>
+          {/* O que vence — atrasado e de hoje, nada além disso */}
+          {tarefas.length > 0 && (
+            <Card
+              title="Vencendo"
+              subtitle={`${tarefas.length} ${tarefas.length === 1 ? 'tarefa' : 'tarefas'}`}
+              action={
+                <Link to="/app/tarefas" style={{ textDecoration: 'none' }}>
+                  <Button variant="secondary" size="sm" iconRight="arrow-right">
+                    Ver tarefas
+                  </Button>
+                </Link>
+              }
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+                {tarefas.map((t) => (
+                  <LinhaTarefa
+                    key={t.id}
+                    tarefa={t}
+                    hoje={hoje}
+                    aoAlternar={() => alternarTarefa(t.id)}
+                  />
+                ))}
+              </div>
+            </Card>
+          )}
+
           {/* Pessoal x profissional */}
           <Card title="Pessoal e profissional" subtitle="A divisão de hoje">
             <div
@@ -400,15 +434,23 @@ function PrimeiroUso() {
               lineHeight: 'var(--lh-normal)',
             }}
           >
-            O Início mostra o dia de hoje assim que existir uma rotina. Comece por uma só — a
-            que você já faz e quer parar de esquecer.
+            O Início mostra o dia de hoje assim que existir uma rotina ou uma tarefa. Comece
+            por uma só — a rotina que você já faz e quer parar de esquecer, ou aquela tarefa
+            que está pendurada.
           </p>
         </div>
-        <Link to="/app/rotina" style={{ textDecoration: 'none' }}>
-          <Button variant="primary" iconRight="plus">
-            Criar a primeira rotina
-          </Button>
-        </Link>
+        <div style={{ display: 'flex', gap: 'var(--sp-6)', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <Link to="/app/rotina" style={{ textDecoration: 'none' }}>
+            <Button variant="primary" iconRight="plus">
+              Criar uma rotina
+            </Button>
+          </Link>
+          <Link to="/app/tarefas" style={{ textDecoration: 'none' }}>
+            <Button variant="secondary" iconRight="plus">
+              Criar uma tarefa
+            </Button>
+          </Link>
+        </div>
       </div>
     </Card>
   );
