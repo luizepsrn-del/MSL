@@ -145,3 +145,81 @@ test('o calendário funciona no iPhone', async ({ page }, info) => {
     .boundingBox())!;
   expect(Math.round(celula.height), 'altura de toque').toBeGreaterThanOrEqual(44);
 });
+
+test('a semana mostra os sete dias com o nome de cada item', async ({ page }) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  await semear(page);
+  await page.goto('/app/calendario');
+
+  await page.getByRole('button', { name: 'Mês', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Semana', exact: true }).click();
+
+  // Sete dias, e o título por extenso — não uma bolinha, como no mês.
+  const dias = page.locator('button[aria-label*="dia "]');
+  await expect(dias).toHaveCount(7);
+  await expect(page.getByText('Entregar o relatório').first()).toBeVisible();
+
+  // Andar uma semana muda o intervalo e faz aparecer o atalho de voltar.
+  await page.getByRole('button', { name: 'Próxima semana' }).click();
+  await expect(page.getByRole('button', { name: 'Hoje', exact: true })).toBeVisible();
+
+  expect(erros).toEqual([]);
+});
+
+/** Um dia seguro para repetição mensal: o 29, 30 e 31 encostam no fim do mês. */
+function diaSeguro() {
+  const [ano, mes, dia] = diaLocal(0).split('-').map(Number);
+  const d = Math.min(dia, 28);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    numero: d,
+    mesPassado: `${mes === 1 ? ano - 1 : ano}-${pad(mes === 1 ? 12 : mes - 1)}-${pad(d)}`,
+  };
+}
+
+test('o lançamento recorrente aparece no mês seguinte sem eu relançar', async ({ page }) => {
+  const { numero, mesPassado } = diaSeguro();
+
+  await page.addInitScript((data) => {
+    try {
+      if (sessionStorage.getItem('teste-ja-semeou')) return;
+      sessionStorage.setItem('teste-ja-semeou', '1');
+      localStorage.setItem(
+        'msl-banco',
+        JSON.stringify({
+          versao: 5,
+          rotinas: [],
+          execucoes: [],
+          tarefas: [],
+          projetos: [],
+          lancamentos: [
+            {
+              id: 'l1',
+              criadoEm: 'x',
+              alteradoEm: 'x',
+              descricao: 'Aluguel',
+              valor: 250000,
+              tipo: 'saida',
+              categoria: 'moradia',
+              contexto: 'pessoal',
+              data,
+              recorrencia: { periodo: 'mensal' },
+            },
+          ],
+        }),
+      );
+    } catch {
+      /* janela privada */
+    }
+  }, mesPassado);
+
+  await page.goto('/app/calendario');
+
+  // Foi lançado no mês passado, uma vez só. Este mês ele está lá.
+  await page.getByRole('button', { name: `Dia ${numero}`, exact: true }).click();
+  await expect(page.getByText('Dinheiro')).toBeVisible();
+  await expect(page.getByText('Aluguel')).toBeVisible();
+  await expect(page.getByText('se repete')).toBeVisible();
+});
