@@ -28,6 +28,7 @@ import {
   resumoFinanceiro,
   saidasPorCategoria,
   ordenarLancamentos,
+  realizados,
 } from '../dominio/financeiro';
 import { mesVizinho, nomeDoMes, anoMesDe } from '../dominio/calendario';
 import { diaValido } from '../dominio/rotina';
@@ -49,8 +50,15 @@ export function Financeiro() {
 
   const doMes = lancamentosDoMes(banco, ano, mes);
   const resumo = resumoFinanceiro(doMes, hoje);
-  const categorias = saidasPorCategoria(doMes).slice(0, 5);
   const lista = ordenarLancamentos(doMes);
+
+  // Só o realizado, e todas as categorias.
+  //
+  // Duas coisas que estavam erradas juntas: incluir o previsto fazia os
+  // segmentos somarem mais que o total escrito no centro — o gráfico mentia
+  // sobre a própria soma. E cortar no quinto fazia categorias sumirem do donut
+  // e da lista sem nenhum aviso, o que esconde gasto em vez de mostrar.
+  const categorias = saidasPorCategoria(realizados(doMes, hoje));
   const noMesAtual = ano === anoHoje && mes === mesHoje;
 
   return (
@@ -262,7 +270,7 @@ export function Financeiro() {
           )}
         </Card>
 
-        <Card title="Para onde foi" subtitle="Saídas do mês por categoria">
+        <Card title="Para onde foi" subtitle="Saídas já realizadas, por categoria">
           {categorias.length === 0 ? (
             <p
               style={{

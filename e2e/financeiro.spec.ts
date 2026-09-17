@@ -168,3 +168,18 @@ test('o formulário não herda o tipo do lançamento anterior', async ({ page })
   // 1000 − 400, e não 1000 + 400.
   await expect(page.getByText(reais('600,00')).first()).toBeVisible();
 });
+
+test('o gráfico de categorias bate com o total que ele mesmo mostra', async ({ page }) => {
+  await comecarLimpo(page);
+  await page.goto('/app/financeiro');
+
+  await lancar(page, 'Gasto de hoje', '100,00', 'Saída');
+  await lancar(page, 'Conta futura', '900,00', 'Saída', diaLocal(5));
+
+  // O centro do donut fala de saídas realizadas. Se o previsto entrasse nos
+  // segmentos, eles somariam R$ 1.000,00 contra um centro de R$ 100,00.
+  const cartao = page.locator('section').filter({ hasText: 'Para onde foi' });
+  await expect(cartao.getByText(reais('100,00')).first()).toBeVisible();
+  await expect(cartao.getByText(reais('900,00'))).toHaveCount(0);
+  await expect(cartao.getByText(reais('1.000,00'))).toHaveCount(0);
+});
