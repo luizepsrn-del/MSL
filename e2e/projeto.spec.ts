@@ -157,7 +157,50 @@ test('os contadores concordam em número', async ({ page }) => {
   await criarTarefaNoProjeto(page, 'Única tarefa', 'Um projeto só');
   await page.goto('/app/projetos');
   await page.getByRole('button', { name: /tarefa$/ }).click();
-  await page.getByText('Única tarefa').click();
+  // O título aparece duas vezes: na lista e no bloco "Próxima" que o painel
+  // agora mostra. Marcar por qualquer um dos dois tem o mesmo efeito.
+  await page.getByText('Única tarefa').first().click();
 
   await expect(page.getByText('1 concluído', { exact: true })).toBeVisible();
+});
+
+test('dá para criar a tarefa de dentro do projeto, sem escolher o projeto de novo', async ({
+  page,
+}) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  await comecarLimpo(page);
+  await page.goto('/app/projetos');
+  await criarProjeto(page, 'Mudança de casa');
+
+  await page.getByRole('button', { name: 'Nova tarefa em Mudança de casa' }).click();
+  // O seletor de projeto não aparece: quem abriu daqui já disse qual é.
+  await expect(page.getByText('Projeto', { exact: true })).toHaveCount(0);
+  await page.getByLabel('O que precisa ser feito').fill('Contratar o caminhão');
+  await page.getByRole('button', { name: 'Criar tarefa' }).click();
+
+  // Entrou no projeto, e virou a próxima coisa a fazer.
+  await expect(page.getByText('Próxima')).toBeVisible();
+  await expect(page.getByText('Contratar o caminhão')).toBeVisible();
+  await expect(page.getByText('1 tarefa', { exact: true })).toBeVisible();
+
+  expect(erros).toEqual([]);
+});
+
+test('uma tarefa solta pode ser guardada num projeto', async ({ page }) => {
+  await comecarLimpo(page);
+  await page.goto('/app/projetos');
+  await criarProjeto(page, 'Reforma');
+  await criarTarefaNoProjeto(page, 'Comprar tinta');
+
+  await page.goto('/app/projetos');
+  await expect(page.getByText('Tarefas sem projeto')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Pôr num projeto' }).click();
+  await page.getByRole('button', { name: 'Reforma', exact: true }).click();
+
+  // Saiu das soltas e entrou no projeto.
+  await expect(page.getByText('Tarefas sem projeto')).toHaveCount(0);
+  await expect(page.getByText('Comprar tinta')).toBeVisible();
 });

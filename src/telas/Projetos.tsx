@@ -16,18 +16,18 @@ import {
 import { useBanco } from '../dados/BancoContexto';
 import { CONTEXTOS, ROTULO_CONTEXTO, type Contexto, type Projeto } from '../dados/esquema';
 import {
-  ordenarProjetos,
-  progressoProjeto,
-  situacaoProjeto,
+  painelDosProjetos,
   tarefasDoProjeto,
   tarefasSoltas,
   resumoProjetos,
   ROTULO_SITUACAO_PROJETO,
   type SituacaoProjeto,
+  type PainelProjeto,
 } from '../dominio/projeto';
 import { situacao, descreverPrazo } from '../dominio/tarefa';
 import { diaValido } from '../dominio/rotina';
-import { formatarPorcento } from '../formato';
+import { formatarPorcento, formatarDataMedia, formatarNumero } from '../formato';
+import { FormularioTarefa } from './Tarefas';
 
 const TOM: Record<SituacaoProjeto, 'delay' | 'ontime' | 'delivered' | 'neutral'> = {
   atrasado: 'delay',
@@ -39,14 +39,25 @@ const TOM: Record<SituacaoProjeto, 'delay' | 'ontime' | 'delivered' | 'neutral'>
 
 /** Projetos — trabalho maior que uma tarefa. */
 export function Projetos() {
-  const { banco, hoje, criarProjeto, arquivarProjeto, removerProjeto, alternarTarefa } =
-    useBanco();
+  const {
+    banco,
+    hoje,
+    criarProjeto,
+    arquivarProjeto,
+    removerProjeto,
+    alternarTarefa,
+    criarTarefa,
+    moverTarefa,
+  } = useBanco();
   const [criando, setCriando] = React.useState(false);
   const [aRemover, setARemover] = React.useState<Projeto | null>(null);
   const [aberto, setAberto] = React.useState<string | null>(null);
+  /** id do projeto ao qual estou acrescentando uma tarefa, ou null */
+  const [acrescentandoEm, setAcrescentandoEm] = React.useState<string | null>(null);
 
   const resumo = resumoProjetos(banco, hoje);
-  const projetos = ordenarProjetos(banco, hoje).filter((p) => !p.arquivadoEm);
+  const paineis = painelDosProjetos(banco, hoje);
+  const projetosAtivos = banco.projetos.filter((p) => !p.arquivadoEm);
   const soltas = tarefasSoltas(banco).filter((t) => !t.concluidaEm);
 
   return (
@@ -89,7 +100,7 @@ export function Projetos() {
         </div>
       </Card>
 
-      {projetos.length === 0 ? (
+      {paineis.length === 0 ? (
         <Card>
           <p
             style={{
@@ -103,16 +114,17 @@ export function Projetos() {
           </p>
         </Card>
       ) : (
-        projetos.map((p) => (
+        paineis.map((painel) => (
           <CartaoProjeto
-            key={p.id}
-            projeto={p}
+            key={painel.projeto.id}
+            painel={painel}
             hoje={hoje}
-            expandido={aberto === p.id}
-            aoExpandir={() => setAberto(aberto === p.id ? null : p.id)}
-            aoArquivar={() => arquivarProjeto(p.id)}
-            aoRemover={() => setARemover(p)}
+            expandido={aberto === painel.projeto.id}
+            aoExpandir={() => setAberto(aberto === painel.projeto.id ? null : painel.projeto.id)}
+            aoArquivar={() => arquivarProjeto(painel.projeto.id)}
+            aoRemover={() => setARemover(painel.projeto)}
             aoAlternarTarefa={alternarTarefa}
+            aoAcrescentar={() => setAcrescentandoEm(painel.projeto.id)}
           />
         ))
       )}
@@ -166,11 +178,37 @@ export function Projetos() {
                 <Badge tone={t.contexto === 'pessoal' ? 'ontime' : 'delivered'} dot={false}>
                   {ROTULO_CONTEXTO[t.contexto]}
                 </Badge>
+
+                {/* Estas tarefas existiam sem caminho de volta para um projeto:
+                    dava para soltar, nunca para guardar. */}
+                {projetosAtivos.length > 0 && (
+                  <div style={{ minWidth: 190, flex: '0 0 auto' }}>
+                    <Select
+                      id={`solta-${t.id}`}
+                      value=""
+                      placeholder="Pôr num projeto"
+                      size="sm"
+                      onChange={(id) => moverTarefa(t.id, id)}
+                      options={projetosAtivos.map((p) => ({ value: p.id, label: p.titulo }))}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>
         </Card>
       )}
+
+      <FormularioTarefa
+        aberto={acrescentandoEm !== null}
+        projetos={projetosAtivos}
+        projetoFixo={acrescentandoEm ?? undefined}
+        aoFechar={() => setAcrescentandoEm(null)}
+        aoCriar={async (dados) => {
+          await criarTarefa(dados);
+          setAcrescentandoEm(null);
+        }}
+      />
 
       <FormularioProjeto
         aberto={criando}
@@ -198,25 +236,26 @@ export function Projetos() {
 }
 
 function CartaoProjeto({
-  projeto,
+  painel,
   hoje,
   expandido,
   aoExpandir,
   aoArquivar,
   aoRemover,
   aoAlternarTarefa,
+  aoAcrescentar,
 }: {
-  projeto: Projeto;
+  painel: PainelProjeto;
   hoje: string;
   expandido: boolean;
   aoExpandir: () => void;
   aoArquivar: () => void;
   aoRemover: () => void;
   aoAlternarTarefa: (id: string) => void;
+  aoAcrescentar: () => void;
 }) {
   const { banco } = useBanco();
-  const progresso = progressoProjeto(banco, projeto.id);
-  const s = situacaoProjeto(banco, projeto, hoje);
+  const { projeto, progresso, situacao: s } = painel;
   const tarefas = tarefasDoProjeto(banco, projeto.id);
 
   return (
@@ -272,6 +311,13 @@ function CartaoProjeto({
 
           <span style={{ display: 'flex', gap: 'var(--sp-4)', flex: '0 0 auto' }}>
             <IconButton
+              icon="plus"
+              label={`Nova tarefa em ${projeto.titulo}`}
+              variant="ghost"
+              size={34}
+              onClick={aoAcrescentar}
+            />
+            <IconButton
               icon="archive"
               label={`Arquivar ${projeto.titulo}`}
               variant="ghost"
@@ -294,6 +340,8 @@ function CartaoProjeto({
           tone={s === 'concluido' ? 'green' : s === 'atrasado' ? 'orange' : 'purple'}
           label={progresso.total === 0 ? 'Sem tarefas ainda' : formatarPorcento(progresso.fracao)}
         />
+
+        <Sinais painel={painel} hoje={hoje} aoAlternarTarefa={aoAlternarTarefa} />
 
         {tarefas.length > 0 && (
           <div>
@@ -529,4 +577,116 @@ function FormularioProjeto({
       </div>
     </Modal>
   );
+}
+
+/**
+ * O que o projeto sabe dizer sozinho.
+ *
+ * Nada aqui foi digitado por mim: próxima tarefa, parado, ritmo e previsão
+ * saem das tarefas que já existem. É a diferença entre uma lista de projetos e
+ * um projeto que me cobra.
+ */
+function Sinais({
+  painel,
+  hoje,
+  aoAlternarTarefa,
+}: {
+  painel: PainelProjeto;
+  hoje: string;
+  aoAlternarTarefa: (id: string) => void;
+}) {
+  const { proxima, parado, paradoHa, emAndamento, atrasadas, ritmo, previsao } = painel;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-6)' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-4)', flexWrap: 'wrap' }}>
+        {atrasadas > 0 && (
+          <Badge tone="delay">
+            {atrasadas} {atrasadas === 1 ? 'tarefa atrasada' : 'tarefas atrasadas'}
+          </Badge>
+        )}
+        {emAndamento > 0 && (
+          <Badge tone="ontime" dot={false}>
+            {emAndamento} em andamento
+          </Badge>
+        )}
+        {parado && (
+          <Badge tone="delay" dot={false}>
+            Parado há {paradoHa} dias
+          </Badge>
+        )}
+      </div>
+
+      {proxima && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--sp-6)',
+            minHeight: 'var(--tap-min)',
+            padding: 'var(--sp-4) var(--sp-5)',
+            borderRadius: 'var(--r-nav)',
+            background: 'var(--surface-raised)',
+          }}
+        >
+          <Checkbox
+            checked={false}
+            onChange={() => aoAlternarTarefa(proxima.id)}
+            style={{ flex: 1, minWidth: 0, alignItems: 'center' }}
+            label={
+              <span style={{ minWidth: 0, display: 'block' }}>
+                <span
+                  style={{
+                    display: 'block',
+                    font: 'var(--fw-regular) var(--fs-micro)/1 var(--font-core)',
+                    color: 'var(--text-subtle)',
+                    letterSpacing: 'var(--ls-caps)',
+                    textTransform: 'uppercase',
+                    marginBottom: 'var(--sp-3)',
+                  }}
+                >
+                  Próxima
+                </span>
+                <span
+                  style={{
+                    display: 'block',
+                    font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
+                    color: 'var(--text-body)',
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {proxima.titulo}
+                </span>
+                <span
+                  style={{
+                    display: 'block',
+                    font: 'var(--type-body)',
+                    color:
+                      situacao(proxima, hoje) === 'atrasada'
+                        ? 'var(--orange-500)'
+                        : 'var(--text-muted)',
+                  }}
+                >
+                  {descreverPrazo(proxima, hoje)}
+                </span>
+              </span>
+            }
+          />
+        </div>
+      )}
+
+      {ritmo > 0 && (
+        <p style={{ font: 'var(--type-body)', color: 'var(--text-muted)' }}>
+          {formatarNumero(Math.round(ritmo * 10) / 10)}{' '}
+          {ritmo === 1 ? 'tarefa concluída por semana' : 'tarefas concluídas por semana'}
+          {previsao && ` · neste ritmo, termina em ${formatarDataMedia(comoData(previsao))}`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** `AAAA-MM-DD` → Date no meio-dia UTC, longe de qualquer virada de fuso. */
+function comoData(dia: string): Date {
+  return new Date(`${dia}T12:00:00Z`);
 }

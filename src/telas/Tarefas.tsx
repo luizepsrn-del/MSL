@@ -263,7 +263,7 @@ export function LinhaTarefa({
   );
 }
 
-interface DadosNovos {
+export interface DadosNovos {
   titulo: string;
   contexto: Contexto;
   prazo?: string;
@@ -274,14 +274,23 @@ interface DadosNovos {
 /** Valor do Select quando a tarefa não pertence a projeto nenhum. */
 const SEM_PROJETO = '';
 
-function FormularioTarefa({
+/**
+ * O formulário de tarefa, reusado pela tela de Projetos.
+ *
+ * Com `projetoFixo` o seletor de projeto some: quem abriu o formulário de
+ * dentro de um projeto já disse a qual projeto a tarefa pertence, e oferecer a
+ * escolha de novo seria convidar a contradizê-la.
+ */
+export function FormularioTarefa({
   aberto,
   projetos,
+  projetoFixo,
   aoFechar,
   aoCriar,
 }: {
   aberto: boolean;
   projetos: Projeto[];
+  projetoFixo?: string;
   aoFechar: () => void;
   aoCriar: (dados: DadosNovos) => Promise<void>;
 }) {
@@ -316,7 +325,7 @@ function FormularioTarefa({
       contexto,
       prazo: prazo === '' ? undefined : prazo,
       anotacao: anotacao.trim() === '' ? undefined : anotacao.trim(),
-      projetoId: projetoId === SEM_PROJETO ? undefined : projetoId,
+      projetoId: projetoFixo ?? (projetoId === SEM_PROJETO ? undefined : projetoId),
     });
   };
 
@@ -407,7 +416,7 @@ function FormularioTarefa({
           </Field>
         </div>
 
-        {projetos.length > 0 && (
+        {projetos.length > 0 && !projetoFixo && (
           <Field label="Projeto" htmlFor="tar-projeto" help="Opcional — tarefa solta também vale">
             <Select
               id="tar-projeto"
