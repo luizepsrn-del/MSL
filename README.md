@@ -20,8 +20,14 @@ npm run dev
 
 | Rota | O que é |
 | --- | --- |
-| `/app/rotina` … `/app/financeiro` | O produto. Cada pilar tem URL própria |
-| `/app/pedir` | Compositor de pedido para a IA |
+| `/app/inicio` | O dia de hoje em uma tela |
+| `/app/rotina` | O que se repete, com sequência |
+| `/app/tarefas` | O que tem fim, com prazo |
+| `/app/calendario` | Rotina e tarefa no tempo |
+| `/app/projetos` | Trabalho maior que uma tarefa |
+| `/app/financeiro` | Entradas, saídas, realizado e previsto |
+| `/app/pedir` | Compositor de pedido para a IA — não chama modelo nenhum |
+| `/app/ajustes` | Exportar, importar e o aviso de armazenamento |
 | `/design-system` | O showcase da biblioteca: todo componente, todo estado, os dois temas |
 | `/design-system/reference/index.html` | As páginas de referência visual (precisam do dev server, não de `file://`) |
 
@@ -55,9 +61,19 @@ design-system/    a biblioteca — 36 componentes, tokens, patterns e as
                   páginas de referência preservadas
 src/
   casca/          a casca do produto: navegação, desktop e mobile
+  dados/          esquema, migrações, costura de armazenamento
+  dominio/        a lógica testada, um módulo por pilar
+  telas/          uma tela por pilar
   formato/        formatação pt-BR — data, hora, moeda, ordenação
   routes/         o showcase da biblioteca
 ```
+
+## Backup
+
+Os dados ficam no navegador deste aparelho. **O Safari apaga armazenamento
+local após sete dias sem uso do site** — sites adicionados à tela de início
+ficam de fora dessa regra. Exporte em `/app/ajustes`: o arquivo é JSON legível
+e a importação traz de volta, migrando de versões antigas se preciso.
 
 ## Trabalhando nele
 

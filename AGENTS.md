@@ -55,12 +55,38 @@ DECISOES.md            the structural decisions and why each was taken
 design-system/         the component library (see its README for the map)
 src/
   casca/               the product shell: navigation, desktop and mobile
+  dados/               schema, migrations, repository seam, React context
+  dominio/             the tested logic: rotina, tarefa, calendario,
+                       projeto, financeiro, pedido
+  telas/               one screen per pillar
   formato/             pt-BR formatting — dates, money, sorting
   routes/Showcase.tsx  the /design-system showcase page
 adherence.rules.json   the design-system lint rules, from the original export
 ```
 
-Routes: `/app/<pilar>` is the product — each pillar has its own URL.
+## Domain rules that already bit once
+
+Each of these is a decision with a test behind it. Changing one without
+reading its test is how the system starts lying.
+
+- **Derived, never stored.** A task's situation, a project's progress, a
+  calendar day's contents — all computed from the data. A stored "overdue"
+  ages on its own and would need someone sweeping the database at midnight.
+- **Money is an integer in cents.** Never a float, never negative — the sign
+  comes from `tipo`. `src/dominio/financeiro.ts` has the one function that
+  converts a record into a signed number.
+- **Today is not late.** A routine not yet done today does not break the
+  streak; a task due today is "today", not overdue. The day is not over.
+- **A day with nothing scheduled is complete (100%); a project with no tasks
+  is 0%.** Opposite defaults, on purpose: nothing to do is a finished day, but
+  an empty project has not started.
+- **Removing a project frees its tasks, never deletes them.**
+- **Schema changes are additive**, bump `VERSAO_ESQUEMA` and add a migration.
+  A test walks every version from 0 to current and fails if a step has no path.
+- **Dates are local `AAAA-MM-DD` strings**, never `Date`, in every domain
+  module. Recurrence is a calendar question, not an instant.
+
+Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `pedir`, `ajustes`. Each has its own URL.
 `/design-system` is the library showcase.
 
 ## Language
