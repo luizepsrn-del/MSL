@@ -342,3 +342,19 @@ export function comprometidoPorMes(banco: Banco): { entradas: number; saidas: nu
   }
   return { entradas, saidas };
 }
+
+/**
+ * A ordem das ocorrências na lista do mês: a mais recente primeiro.
+ *
+ * Mesma regra de `ordenarLancamentos`, mas pela data da ocorrência, e não pela
+ * data original — senão a repetição de setembro apareceria ordenada por
+ * janeiro, onde o lançamento nasceu.
+ */
+export function ordenarOcorrencias(ocorrencias: readonly Ocorrencia[]): Ocorrencia[] {
+  return [...ocorrencias].sort((a, b) => {
+    if (a.data !== b.data) return a.data < b.data ? 1 : -1;
+    const ca = a.lancamento.criadoEm;
+    const cb = b.lancamento.criadoEm;
+    return ca < cb ? 1 : ca > cb ? -1 : 0;
+  });
+}

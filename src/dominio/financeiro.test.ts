@@ -18,6 +18,7 @@ import {
   evolucaoMensal,
   lancamentosRecorrentes,
   comprometidoPorMes,
+  ordenarOcorrencias,
 } from './financeiro';
 import { formatarMoeda } from '../formato';
 import { bancoVazio, type Lancamento } from '../dados/esquema';
@@ -414,5 +415,46 @@ describe('ocorrências do mês e evolução', () => {
   it('avulso não conta como comprometido', () => {
     const so_avulso = { ...bancoVazio(), lancamentos: [lanc({ valor: 1000 })] };
     expect(comprometidoPorMes(so_avulso)).toEqual({ entradas: 0, saidas: 0 });
+  });
+});
+
+describe('ordem das ocorrências', () => {
+  it('a mais recente primeiro, pela data da ocorrência', () => {
+    // A repetição de setembro tem de ser ordenada por setembro, e não por
+    // janeiro, onde o lançamento nasceu.
+    const banco = {
+      ...bancoVazio(),
+      lancamentos: [
+        lanc({ id: 'antigo-recorrente', data: '2026-01-20', recorrencia: { periodo: 'mensal' } }),
+        lanc({ id: 'novo-avulso', data: '2026-09-05', criadoEm: '2026-09-05T09:00:00.000Z' }),
+      ],
+    };
+    const ordenadas = ordenarOcorrencias(ocorrenciasDoMes(banco, 2026, 9));
+    expect(ordenadas.map((o) => o.lancamento.id)).toEqual(['antigo-recorrente', 'novo-avulso']);
+    expect(ordenadas.map((o) => o.data)).toEqual(['2026-09-20', '2026-09-05']);
+  });
+
+  it('no mesmo dia, o lançado por último aparece em cima', () => {
+    const banco = {
+      ...bancoVazio(),
+      lancamentos: [
+        lanc({ id: 'primeiro', data: '2026-09-10', criadoEm: '2026-09-01T09:00:00.000Z' }),
+        lanc({ id: 'segundo', data: '2026-09-10', criadoEm: '2026-09-02T09:00:00.000Z' }),
+      ],
+    };
+    expect(ordenarOcorrencias(ocorrenciasDoMes(banco, 2026, 9)).map((o) => o.lancamento.id)).toEqual(
+      ['segundo', 'primeiro'],
+    );
+  });
+
+  it('não muda a lista que recebeu', () => {
+    const os = ocorrenciasDoMes(
+      { ...bancoVazio(), lancamentos: [lanc({ data: '2026-09-10' })] },
+      2026,
+      9,
+    );
+    const copia = [...os];
+    ordenarOcorrencias(os);
+    expect(os).toEqual(copia);
   });
 });

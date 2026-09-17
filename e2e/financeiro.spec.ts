@@ -183,3 +183,58 @@ test('o gráfico de categorias bate com o total que ele mesmo mostra', async ({ 
   await expect(cartao.getByText(reais('900,00'))).toHaveCount(0);
   await expect(cartao.getByText(reais('1.000,00'))).toHaveCount(0);
 });
+
+test('um lançamento que se repete aparece no mês seguinte sozinho', async ({ page }) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  await comecarLimpo(page);
+  await page.goto('/app/financeiro');
+
+  // Dia 28 ou antes: 29, 30 e 31 encostam no fim do mês e mudariam de data.
+  const [ano, mes, dia] = diaLocal(0).split('-').map(Number);
+  const seguro = `${ano}-${String(mes).padStart(2, '0')}-${String(Math.min(dia, 28)).padStart(2, '0')}`;
+
+  await page.getByRole('button', { name: 'Novo lançamento' }).click();
+  await page.getByLabel('Descrição').fill('Aluguel');
+  await page.getByLabel('Valor').fill('2.500,00');
+  await page.getByLabel('Data').fill(seguro);
+  await page.getByLabel('Se repete').click();
+  await page.getByRole('button', { name: 'Todo mês' }).click();
+  await page.getByRole('button', { name: 'Lançar' }).click();
+  await expect(page.getByRole('button', { name: 'Lançar' })).toHaveCount(0);
+
+  // Neste mês, uma vez.
+  await expect(page.getByText('Aluguel').first()).toBeVisible();
+  await expect(page.getByText('Todo mês').first()).toBeVisible();
+
+  // No mês seguinte ele está lá, sem eu lançar de novo.
+  await page.getByRole('button', { name: 'Próximo mês' }).click();
+  await expect(page.getByText('Aluguel').first()).toBeVisible();
+  await expect(page.getByText(reais('2.500,00')).first()).toBeVisible();
+
+  // E daqui a seis meses também.
+  for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Próximo mês' }).click();
+  await expect(page.getByText('Aluguel').first()).toBeVisible();
+
+  expect(erros).toEqual([]);
+});
+
+test('apagar a série diz que apaga a série', async ({ page }) => {
+  await comecarLimpo(page);
+  await page.goto('/app/financeiro');
+
+  await page.getByRole('button', { name: 'Novo lançamento' }).click();
+  await page.getByLabel('Descrição').fill('Internet');
+  await page.getByLabel('Valor').fill('129,90');
+  await page.getByLabel('Se repete').click();
+  await page.getByRole('button', { name: 'Todo mês' }).click();
+  await page.getByRole('button', { name: 'Lançar' }).click();
+
+  // O rótulo avisa antes do clique: a repetição não existe como registro,
+  // então não dá para apagar uma só.
+  const apagar = page.getByRole('button', { name: 'Remover Internet e todas as repetições' });
+  await expect(apagar).toBeVisible();
+  await apagar.click();
+  await expect(page.getByText('Nada lançado neste mês.')).toBeVisible();
+});

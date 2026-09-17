@@ -12,6 +12,7 @@ import {
   TextInput,
   Select,
   Modal,
+  LineChart,
 } from '../../design-system';
 import { useBanco } from '../dados/BancoContexto';
 import {
@@ -19,16 +20,22 @@ import {
   CONTEXTOS,
   ROTULO_CATEGORIA,
   ROTULO_CONTEXTO,
+  ROTULO_PERIODO,
   type Categoria,
   type Contexto,
   type TipoLancamento,
+  type PeriodoRecorrencia,
+  type RecorrenciaLancamento,
 } from '../dados/esquema';
 import {
-  lancamentosDoMes,
   resumoFinanceiro,
   saidasPorCategoria,
-  ordenarLancamentos,
   realizados,
+  ocorrenciasDoMes,
+  ordenarOcorrencias,
+  evolucaoMensal,
+  lancamentosRecorrentes,
+  comprometidoPorMes,
 } from '../dominio/financeiro';
 import { mesVizinho, nomeDoMes, anoMesDe } from '../dominio/calendario';
 import { diaValido } from '../dominio/rotina';
@@ -48,9 +55,18 @@ export function Financeiro() {
   const [[ano, mes], setMes] = React.useState<[number, number]>([anoHoje, mesHoje]);
   const [criando, setCriando] = React.useState(false);
 
-  const doMes = lancamentosDoMes(banco, ano, mes);
+  // Ocorrências, não lançamentos: o que se repete aparece no mês em que cai,
+  // sem eu relançar. A repetição é derivada — guardar doze aluguéis criaria
+  // doze registros que envelhecem juntos.
+  const ocorrencias = ocorrenciasDoMes(banco, ano, mes);
+  const lista = ordenarOcorrencias(ocorrencias);
+  // Para as contas, cada ocorrência vale como um lançamento na data dela.
+  const doMes = ocorrencias.map((o) => ({ ...o.lancamento, data: o.data }));
   const resumo = resumoFinanceiro(doMes, hoje);
-  const lista = ordenarLancamentos(doMes);
+
+  const evolucao = evolucaoMensal(banco, ano, mes, 6);
+  const recorrentes = lancamentosRecorrentes(banco);
+  const comprometido = comprometidoPorMes(banco);
 
   // Só o realizado, e todas as categorias.
   //
@@ -162,6 +178,146 @@ export function Financeiro() {
         }}
       >
         <Card
+          title="Entradas e saídas"
+          // O saldo mora aqui, e não num balão sobre o último ponto: o balão
+          // do último mês fica meio para fora da borda do cartão.
+          subtitle={`Os seis meses até aqui · saldo de ${MESES_CURTOS[mes - 1]}: ${formatarMoeda(
+            evolucao[evolucao.length - 1].saldo,
+          )}`}
+        >
+          <LineChart
+            height={220}
+            labels={evolucao.map((p) => MESES_CURTOS[p.mes - 1])}
+            yTicks={ticksDe(evolucao)}
+            highlightIndex={evolucao.length - 1}
+            series={[
+              { data: evolucao.map((p) => p.entradas), color: 'var(--chart-2)', label: 'Entradas' },
+              { data: evolucao.map((p) => p.saidas), color: 'var(--chart-3)', label: 'Saídas' },
+            ]}
+          />
+          <div
+            style={{
+              display: 'flex',
+              gap: 'var(--sp-8)',
+              flexWrap: 'wrap',
+              marginTop: 'var(--sp-8)',
+            }}
+          >
+            <Legenda cor="var(--chart-2)" texto="Entradas" />
+            <Legenda cor="var(--chart-3)" texto="Saídas" />
+          </div>
+        </Card>
+
+        <Card
+          title="Todo mês"
+          subtitle={
+            recorrentes.length === 0
+              ? 'Nada se repete ainda'
+              : `${recorrentes.length} ${recorrentes.length === 1 ? 'lançamento repete' : 'lançamentos repetem'}`
+          }
+        >
+          {recorrentes.length === 0 ? (
+            <p
+              style={{
+                padding: 'var(--sp-12) 0',
+                textAlign: 'center',
+                font: 'var(--type-body)',
+                color: 'var(--text-subtle)',
+                lineHeight: 'var(--lh-normal)',
+              }}
+            >
+              Marque um lançamento como repetido e ele aparece sozinho em todos os meses
+              seguintes.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-8)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+                {recorrentes.map((l) => (
+                  <div
+                    key={l.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--sp-6)',
+                      minHeight: 'var(--tap-min)',
+                      padding: 'var(--sp-4) var(--sp-5)',
+                    }}
+                  >
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: 'block',
+                          font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
+                          color: 'var(--text-body)',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
+                        {l.descricao}
+                      </span>
+                      <span
+                        style={{
+                          display: 'block',
+                          font: 'var(--type-body)',
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        {ROTULO_PERIODO[l.recorrencia!.periodo]}
+                        {l.recorrencia!.ate
+                          ? ` · até ${formatarData(new Date(`${l.recorrencia!.ate}T12:00:00Z`))}`
+                          : ''}
+                      </span>
+                    </span>
+                    <span
+                      style={{
+                        font: 'var(--fw-medium) var(--fs-md)/1 var(--font-core)',
+                        color: l.tipo === 'entrada' ? 'var(--green-500)' : 'var(--text-body)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {l.tipo === 'entrada' ? '+' : '−'}
+                      {formatarMoeda(l.valor)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* O número que eu quero saber antes de assumir mais alguma coisa. */}
+              <MetricBarList
+                items={[
+                  {
+                    label: 'Entra todo mês',
+                    value: 100,
+                    valueLabel: formatarMoeda(comprometido.entradas),
+                    tone: 'green',
+                  },
+                  {
+                    label: 'Já comprometido',
+                    value:
+                      comprometido.entradas > 0
+                        ? Math.min(
+                            100,
+                            Math.round((comprometido.saidas / comprometido.entradas) * 100),
+                          )
+                        : 100,
+                    valueLabel: formatarMoeda(comprometido.saidas),
+                    tone: comprometido.saidas > comprometido.entradas ? 'orange' : 'purple',
+                  },
+                ]}
+              />
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: desktop ? 'minmax(0, 1.6fr) minmax(0, 1fr)' : '1fr',
+          gap: 'var(--card-gap)',
+          alignItems: 'start',
+        }}
+      >
+        <Card
           title="Lançamentos"
           subtitle={`${lista.length} ${lista.length === 1 ? 'lançamento' : 'lançamentos'}`}
         >
@@ -178,12 +334,13 @@ export function Financeiro() {
             </p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
-              {lista.map((l) => {
-                const futuro = l.data > hoje;
+              {lista.map((o) => {
+                const l = o.lancamento;
+                const futuro = o.data > hoje;
                 const entrada = l.tipo === 'entrada';
                 return (
                   <div
-                    key={l.id}
+                    key={`${l.id}@${o.data}`}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -231,9 +388,10 @@ export function Financeiro() {
                           color: 'var(--text-muted)',
                         }}
                       >
-                        {formatarData(new Date(`${l.data}T12:00:00Z`))} ·{' '}
+                        {formatarData(new Date(`${o.data}T12:00:00Z`))} ·{' '}
                         {ROTULO_CATEGORIA[l.categoria]}
                         {futuro ? ' · previsto' : ''}
+                        {l.recorrencia ? ` · ${ROTULO_PERIODO[l.recorrencia.periodo].toLowerCase()}` : ''}
                       </span>
                     </span>
 
@@ -256,9 +414,16 @@ export function Financeiro() {
                       {ROTULO_CONTEXTO[l.contexto]}
                     </Badge>
 
+                    {/* Não dá para apagar uma repetição sozinha: ela não
+                        existe como registro. Apagar remove a série inteira, e
+                        o rótulo diz isso antes do clique. */}
                     <IconButton
                       icon="trash-2"
-                      label={`Remover ${l.descricao}`}
+                      label={
+                        l.recorrencia
+                          ? `Remover ${l.descricao} e todas as repetições`
+                          : `Remover ${l.descricao}`
+                      }
                       variant="ghost"
                       size={34}
                       onClick={() => removerLancamento(l.id)}
@@ -330,6 +495,36 @@ export function Financeiro() {
 
 const ITEM_TRILHO = { flex: '1 0 var(--grid-min)', scrollSnapAlign: 'start' } as const;
 
+const MESES_CURTOS = [
+  'jan',
+  'fev',
+  'mar',
+  'abr',
+  'mai',
+  'jun',
+  'jul',
+  'ago',
+  'set',
+  'out',
+  'nov',
+  'dez',
+];
+
+/** Três marcas no eixo: o teto, o meio e o zero. */
+function ticksDe(pontos: { entradas: number; saidas: number }[]): string[] {
+  const teto = Math.max(...pontos.flatMap((p) => [p.entradas, p.saidas]), 1);
+  return [formatarMoeda(teto), formatarMoeda(Math.round(teto / 2)), formatarMoeda(0)];
+}
+
+function Legenda({ cor, texto }: { cor: string; texto: string }) {
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-4)' }}>
+      <span style={{ width: 10, height: 3, borderRadius: 'var(--r-pill)', background: cor }} />
+      <span style={{ font: 'var(--type-body)', color: 'var(--text-muted)' }}>{texto}</span>
+    </span>
+  );
+}
+
 interface DadosNovos {
   descricao: string;
   valor: number;
@@ -337,7 +532,13 @@ interface DadosNovos {
   categoria: Categoria;
   contexto: Contexto;
   data: string;
+  recorrencia?: RecorrenciaLancamento;
 }
+
+/** Valor do Select quando o lançamento acontece uma vez só. */
+const UMA_VEZ = 'uma-vez';
+
+const PERIODOS: PeriodoRecorrencia[] = ['semanal', 'mensal', 'anual'];
 
 function FormularioLancamento({
   aberto,
@@ -356,6 +557,7 @@ function FormularioLancamento({
   const [categoria, setCategoria] = React.useState<Categoria>('outros');
   const [contexto, setContexto] = React.useState<Contexto>('pessoal');
   const [data, setData] = React.useState(hoje);
+  const [repete, setRepete] = React.useState<string>(UMA_VEZ);
   const [tentou, setTentou] = React.useState(false);
 
   React.useEffect(() => {
@@ -372,6 +574,7 @@ function FormularioLancamento({
     setCategoria('outros');
     setContexto('pessoal');
     setData(hoje);
+    setRepete(UMA_VEZ);
     setTentou(false);
   }, [aberto, hoje]);
 
@@ -396,6 +599,10 @@ function FormularioLancamento({
       categoria,
       contexto,
       data,
+      recorrencia:
+        repete === UMA_VEZ
+          ? undefined
+          : { periodo: repete as PeriodoRecorrencia },
     });
   };
 
@@ -422,7 +629,8 @@ function FormularioLancamento({
               marginTop: 'var(--sp-3)',
             }}
           >
-            Data futura vira previsão, e não entra no saldo realizado
+            Data futura vira previsão. O que se repete aparece sozinho nos meses
+            seguintes
           </p>
         </div>
       }
@@ -521,22 +729,48 @@ function FormularioLancamento({
           </Field>
         </div>
 
-        <Field
-          label="Data"
-          htmlFor="fin-data"
-          error={erroData}
-          help="Data futura vira previsão"
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(var(--grid-min), 1fr))',
+            gap: 'var(--sp-8)',
+          }}
         >
-          <TextInput
-            id="fin-data"
-            type="date"
-            value={data}
-            onChange={setData}
-            invalid={!!erroData}
-            size="lg"
-            fullWidth
-          />
-        </Field>
+          <Field
+            label="Data"
+            htmlFor="fin-data"
+            error={erroData}
+            help="Data futura vira previsão"
+          >
+            <TextInput
+              id="fin-data"
+              type="date"
+              value={data}
+              onChange={setData}
+              invalid={!!erroData}
+              size="lg"
+              fullWidth
+            />
+          </Field>
+
+          <Field
+            label="Se repete"
+            htmlFor="fin-repete"
+            help="Lance uma vez; ele aparece nos meses seguintes sozinho"
+          >
+            <Select
+              id="fin-repete"
+              value={repete}
+              onChange={setRepete}
+              size="lg"
+              fullWidth
+              options={[
+                { value: UMA_VEZ, label: 'Uma vez só' },
+                ...PERIODOS.map((p) => ({ value: p, label: ROTULO_PERIODO[p] })),
+              ]}
+            />
+          </Field>
+        </div>
       </div>
     </Modal>
   );
