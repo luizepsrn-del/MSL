@@ -231,3 +231,97 @@ test('as páginas de referência abrem e carregam seus recursos', async ({ page 
 
   expect(quebrados, 'nenhum recurso quebrado').toEqual([]);
 });
+
+
+const ROTAS_DO_PRODUTO = [
+  '',
+  '/rotina',
+  '/tarefas',
+  '/calendario',
+  '/projetos',
+  '/financeiro',
+  '/pedir',
+  '/ajustes',
+];
+
+test('nenhuma tela estoura a largura do aparelho', async ({ page }) => {
+  // O estouro não faz a página rolar de lado: um ancestral com overflow
+  // escondido corta o botão e ninguém percebe. Já aconteceu duas vezes.
+  await page.addInitScript(() => {
+    try {
+      if (sessionStorage.getItem('teste-ja-semeou-largura')) return;
+      sessionStorage.setItem('teste-ja-semeou-largura', '1');
+      const b = { criadoEm: new Date().toISOString(), alteradoEm: new Date().toISOString() };
+      const hoje = new Date().toISOString().slice(0, 10);
+      localStorage.setItem(
+        'msl-banco',
+        JSON.stringify({
+          versao: 6,
+          rotinas: [
+            {
+              ...b,
+              id: 'r1',
+              titulo: 'Ler 20 páginas',
+              contexto: 'pessoal',
+              icone: 'book-open',
+              inicioEm: '2026-01-01',
+              arquivada: false,
+              recorrencia: { tipo: 'diaria' },
+              hora: '07:00',
+            },
+          ],
+          execucoes: [],
+          tarefas: [
+            {
+              ...b,
+              id: 't1',
+              titulo: 'Entregar o relatório do trimestre',
+              contexto: 'profissional',
+              prazo: hoje,
+              hora: '14:30',
+              projetoId: 'p1',
+            },
+          ],
+          projetos: [{ ...b, id: 'p1', titulo: 'Proposta comercial', contexto: 'profissional' }],
+          lancamentos: [
+            {
+              ...b,
+              id: 'l1',
+              descricao: 'Aluguel',
+              valor: 250000,
+              tipo: 'saida',
+              categoria: 'moradia',
+              contexto: 'pessoal',
+              data: hoje,
+              recorrencia: { periodo: 'mensal' },
+            },
+          ],
+        }),
+      );
+    } catch {
+      /* janela privada */
+    }
+  });
+
+  for (const rota of ROTAS_DO_PRODUTO) {
+    await page.goto(`/app${rota}`);
+    // Espera a decisão de largura assentar: `useLarguraDesktop` começa em
+    // `null` e só sabe a resposta no quadro seguinte, porque em
+    // desenvolvimento o Vite injeta o CSS por JavaScript.
+    await page.waitForTimeout(400);
+
+    // O trilho com encaixe transborda de propósito; o resto, não.
+    const culpados = await page.evaluate(() => {
+      const largura = window.innerWidth;
+      const trilhos = [...document.querySelectorAll('div')].filter((e) =>
+        getComputedStyle(e).scrollSnapType.startsWith('x'),
+      );
+      return [...document.querySelectorAll('section, div, p, span, button')]
+        .filter((e) => !trilhos.some((t) => t.contains(e)))
+        .filter((e) => e.getBoundingClientRect().right > largura + 1)
+        .map((e) => `${e.tagName}: ${(e.textContent || '').slice(0, 30)}`)
+        .slice(0, 4);
+    });
+    expect(culpados, `em /app${rota}`).toEqual([]);
+  }
+});
