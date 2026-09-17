@@ -83,7 +83,7 @@ export function Calendario() {
           // Na semana as sete colunas precisam da largura inteira: espremidas
           // ao lado do painel, o título de cada item virava reticência.
           gridTemplateColumns:
-            desktop && visao === 'mes' ? 'minmax(0, 1.6fr) minmax(0, 1fr)' : '1fr',
+            desktop && visao === 'mes' ? 'minmax(0, 1.6fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
           gap: 'var(--card-gap)',
           alignItems: 'start',
         }}

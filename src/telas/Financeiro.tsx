@@ -172,7 +172,7 @@ export function Financeiro() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: desktop ? 'minmax(0, 1.6fr) minmax(0, 1fr)' : '1fr',
+          gridTemplateColumns: desktop ? 'minmax(0, 1.6fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
           gap: 'var(--card-gap)',
           alignItems: 'start',
         }}
@@ -312,7 +312,7 @@ export function Financeiro() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: desktop ? 'minmax(0, 1.6fr) minmax(0, 1fr)' : '1fr',
+          gridTemplateColumns: desktop ? 'minmax(0, 1.6fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
           gap: 'var(--card-gap)',
           alignItems: 'start',
         }}
