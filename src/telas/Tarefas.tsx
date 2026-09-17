@@ -11,7 +11,13 @@ import {
   Modal,
 } from '../../design-system';
 import { useBanco } from '../dados/BancoContexto';
-import { CONTEXTOS, ROTULO_CONTEXTO, type Contexto, type Tarefa } from '../dados/esquema';
+import {
+  CONTEXTOS,
+  ROTULO_CONTEXTO,
+  type Contexto,
+  type Tarefa,
+  type Projeto,
+} from '../dados/esquema';
 import {
   ordenarTarefas,
   situacao,
@@ -26,6 +32,7 @@ type Filtro = 'pendentes' | 'todas' | 'concluidas';
 /** Tarefa — o que tem fim, com prazo quando faz sentido ter. */
 export function Tarefas() {
   const { banco, hoje, criarTarefa, alternarTarefa, removerTarefa } = useBanco();
+  const projetosAtivos = banco.projetos.filter((p) => !p.arquivadoEm);
   const [criando, setCriando] = React.useState(false);
   const [filtro, setFiltro] = React.useState<Filtro>('pendentes');
 
@@ -126,6 +133,7 @@ export function Tarefas() {
 
       <FormularioTarefa
         aberto={criando}
+        projetos={projetosAtivos}
         aoFechar={() => setCriando(false)}
         aoCriar={async (dados) => {
           await criarTarefa(dados);
@@ -230,14 +238,20 @@ interface DadosNovos {
   contexto: Contexto;
   prazo?: string;
   anotacao?: string;
+  projetoId?: string;
 }
+
+/** Valor do Select quando a tarefa não pertence a projeto nenhum. */
+const SEM_PROJETO = '';
 
 function FormularioTarefa({
   aberto,
+  projetos,
   aoFechar,
   aoCriar,
 }: {
   aberto: boolean;
+  projetos: Projeto[];
   aoFechar: () => void;
   aoCriar: (dados: DadosNovos) => Promise<void>;
 }) {
@@ -245,6 +259,7 @@ function FormularioTarefa({
   const [contexto, setContexto] = React.useState<Contexto>('pessoal');
   const [prazo, setPrazo] = React.useState('');
   const [anotacao, setAnotacao] = React.useState('');
+  const [projetoId, setProjetoId] = React.useState(SEM_PROJETO);
   const [tentou, setTentou] = React.useState(false);
 
   React.useEffect(() => {
@@ -252,6 +267,7 @@ function FormularioTarefa({
       setTitulo('');
       setPrazo('');
       setAnotacao('');
+      setProjetoId(SEM_PROJETO);
       setTentou(false);
     }
   }, [aberto]);
@@ -270,6 +286,7 @@ function FormularioTarefa({
       contexto,
       prazo: prazo === '' ? undefined : prazo,
       anotacao: anotacao.trim() === '' ? undefined : anotacao.trim(),
+      projetoId: projetoId === SEM_PROJETO ? undefined : projetoId,
     });
   };
 
@@ -359,6 +376,22 @@ function FormularioTarefa({
             />
           </Field>
         </div>
+
+        {projetos.length > 0 && (
+          <Field label="Projeto" htmlFor="tar-projeto" help="Opcional — tarefa solta também vale">
+            <Select
+              id="tar-projeto"
+              value={projetoId}
+              onChange={setProjetoId}
+              size="lg"
+              fullWidth
+              options={[
+                { value: SEM_PROJETO, label: 'Sem projeto' },
+                ...projetos.map((p) => ({ value: p.id, label: p.titulo })),
+              ]}
+            />
+          </Field>
+        )}
 
         <Field label="Anotação" htmlFor="tar-nota" help="Opcional">
           <TextInput

@@ -7,8 +7,10 @@ import {
   type Rotina,
   type Execucao,
   type Tarefa,
+  type Projeto,
 } from './esquema';
 import { RepositorioLocal, type Repositorio } from './repositorio';
+import { removerProjeto as soltarEremover } from '../dominio/projeto';
 
 /**
  * O banco, disponível para as telas.
@@ -28,6 +30,11 @@ interface Acoes {
   criarTarefa(dados: Omit<Tarefa, keyof BaseRegistro>): Promise<void>;
   alternarTarefa(id: string): Promise<void>;
   removerTarefa(id: string): Promise<void>;
+  criarProjeto(dados: Omit<Projeto, keyof BaseRegistro>): Promise<void>;
+  arquivarProjeto(id: string): Promise<void>;
+  /** solta as tarefas do projeto; não as apaga */
+  removerProjeto(id: string): Promise<void>;
+  moverTarefa(tarefaId: string, projetoId: string | undefined): Promise<void>;
   exportar(): Promise<string>;
   importar(json: string): Promise<void>;
 }
@@ -131,6 +138,37 @@ export function ProvedorBanco({
 
       async removerTarefa(id) {
         await gravar({ ...banco, tarefas: banco.tarefas.filter((t) => t.id !== id) });
+      },
+
+      async criarProjeto(dados) {
+        const t = agora();
+        const projeto: Projeto = { ...dados, id: novoId(), criadoEm: t, alteradoEm: t };
+        await gravar({ ...banco, projetos: [...banco.projetos, projeto] });
+      },
+
+      async arquivarProjeto(id) {
+        const t = agora();
+        await gravar({
+          ...banco,
+          projetos: banco.projetos.map((p) =>
+            p.id === id ? { ...p, arquivadoEm: t, alteradoEm: t } : p,
+          ),
+        });
+      },
+
+      async removerProjeto(id) {
+        // A regra mora no domínio, testada: soltar as tarefas, nunca apagá-las.
+        await gravar(soltarEremover(banco, id, agora()));
+      },
+
+      async moverTarefa(tarefaId, projetoId) {
+        const t = agora();
+        await gravar({
+          ...banco,
+          tarefas: banco.tarefas.map((tarefa) =>
+            tarefa.id === tarefaId ? { ...tarefa, projetoId, alteradoEm: t } : tarefa,
+          ),
+        });
       },
 
       exportar: () => repo.exportar(),
