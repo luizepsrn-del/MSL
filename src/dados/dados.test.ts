@@ -55,6 +55,15 @@ function bancoDeExemplo(): Banco {
         prazo: '2026-01-20',
       },
     ],
+    projetos: [
+      {
+        id: 'p1',
+        criadoEm: '2026-01-03T09:00:00.000Z',
+        alteradoEm: '2026-01-03T09:00:00.000Z',
+        titulo: 'Reforma do escritório',
+        contexto: 'profissional',
+      },
+    ],
   };
 }
 
@@ -104,10 +113,12 @@ describe('migração', () => {
     expect(() => migrar([1, 2, 3])).toThrow(ErroDeMigracao);
   });
 
-  it('sobe um banco v1 de verdade para v2 sem perder nada', () => {
-    // O caso que importa: um arquivo gravado antes de Tarefas existir. As
-    // rotinas e execuções precisam chegar do outro lado intactas, e a coleção
-    // nova precisa aparecer vazia em vez de ausente.
+  it('sobe um banco v1 de verdade até a versão atual sem perder nada', () => {
+    // O caso que importa: um arquivo gravado quando só existiam rotinas. Ele
+    // atravessa TODOS os degraus até hoje — v1 → v2 → v3 — e o que estava lá
+    // precisa chegar do outro lado intacto, com cada coleção nova aparecendo
+    // vazia em vez de ausente. É este teste que prova que subir de versão não
+    // custa o banco.
     const v1 = {
       versao: 1,
       rotinas: [
@@ -136,12 +147,26 @@ describe('migração', () => {
 
     const banco = migrar(v1);
 
-    expect(banco.versao).toBe(2);
+    expect(banco.versao).toBe(VERSAO_ESQUEMA);
     expect(banco.rotinas).toHaveLength(1);
     expect(banco.rotinas[0].titulo).toBe('Ler 20 páginas');
+    expect(banco.rotinas[0].recorrencia).toEqual({ tipo: 'diaria' });
     expect(banco.execucoes).toHaveLength(1);
     expect(banco.execucoes[0].dia).toBe('2026-01-05');
+
+    // Toda coleção que nasceu depois chega vazia, nunca ausente.
     expect(banco.tarefas).toEqual([]);
+    expect(banco.projetos).toEqual([]);
+  });
+
+  it('toda versão entre 0 e a atual tem caminho até o topo', () => {
+    // Um degrau sem migração deixaria um arquivo daquela versão impossível de
+    // abrir. Este teste falha no dia em que alguém subir VERSAO_ESQUEMA sem
+    // escrever a migração.
+    for (let v = 0; v < VERSAO_ESQUEMA; v++) {
+      expect(() => migrar({ versao: v }), `versão ${v}`).not.toThrow();
+      expect(migrar({ versao: v }).versao, `versão ${v}`).toBe(VERSAO_ESQUEMA);
+    }
   });
 
   it('sobe do zero até a versão atual atravessando todos os degraus', () => {
@@ -149,6 +174,7 @@ describe('migração', () => {
     const banco = migrar({ rotinas: [], execucoes: [] });
     expect(banco.versao).toBe(VERSAO_ESQUEMA);
     expect(banco.tarefas).toEqual([]);
+    expect(banco.projetos).toEqual([]);
   });
 
   it('é idempotente — migrar duas vezes dá o mesmo banco', () => {

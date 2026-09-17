@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 2;
+export const VERSAO_ESQUEMA = 3;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -85,6 +85,33 @@ export interface Tarefa extends Registro {
   /** ISO UTC do momento em que foi concluída; ausente enquanto pendente */
   concluidaEm?: string;
   anotacao?: string;
+  /**
+   * Projeto a que pertence, ou ausente quando é solta.
+   *
+   * Pode apontar para um projeto que não existe mais — um arquivo importado ou
+   * editado à mão. O domínio trata isso como tarefa solta em vez de quebrar.
+   */
+  projetoId?: string;
+}
+
+/* ── Projeto ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Um projeto é trabalho maior que uma tarefa: ele agrupa tarefas e termina
+ * quando todas terminam.
+ *
+ * Não guarda progresso nem situação: os dois são derivados das tarefas, pelo
+ * mesmo motivo que a situação da tarefa é derivada do prazo — número guardado
+ * envelhece e passa a mentir.
+ */
+export interface Projeto extends Registro {
+  titulo: string;
+  contexto: Contexto;
+  descricao?: string;
+  /** data local `AAAA-MM-DD`, ou ausente */
+  prazo?: string;
+  /** ISO UTC; arquivado some das listas sem perder o histórico */
+  arquivadoEm?: string;
 }
 
 /* ── O banco ─────────────────────────────────────────────────────────────── */
@@ -94,13 +121,14 @@ export interface Banco {
   rotinas: Rotina[];
   execucoes: Execucao[];
   tarefas: Tarefa[];
+  projetos: Projeto[];
 }
 
-export const COLECOES = ['rotinas', 'execucoes', 'tarefas'] as const;
+export const COLECOES = ['rotinas', 'execucoes', 'tarefas', 'projetos'] as const;
 export type NomeColecao = (typeof COLECOES)[number];
 
 export function bancoVazio(): Banco {
-  return { versao: VERSAO_ESQUEMA, rotinas: [], execucoes: [], tarefas: [] };
+  return { versao: VERSAO_ESQUEMA, rotinas: [], execucoes: [], tarefas: [], projetos: [] };
 }
 
 /** Identificador estável e ordenável por criação. */

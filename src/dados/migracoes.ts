@@ -39,6 +39,19 @@ export const MIGRACOES: Record<number, Migracao> = {
     tarefas: Array.isArray(dados.tarefas) ? dados.tarefas : [],
     versao: 2,
   }),
+
+  /**
+   * 2 → 3: entra o pilar Projetos.
+   *
+   * Aditiva como a anterior. As tarefas que já existem ficam sem `projetoId`,
+   * que é exatamente o que "tarefa solta" significa — nenhuma precisa ser
+   * tocada.
+   */
+  2: (dados) => ({
+    ...dados,
+    projetos: Array.isArray(dados.projetos) ? dados.projetos : [],
+    versao: 3,
+  }),
 };
 
 export class ErroDeMigracao extends Error {
