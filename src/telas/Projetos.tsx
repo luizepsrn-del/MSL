@@ -74,7 +74,9 @@ export function Projetos() {
             </Badge>
           )}
           {resumo.concluidos > 0 && (
-            <Badge tone="delivered">{resumo.concluidos} concluídos</Badge>
+            <Badge tone="delivered">
+              {resumo.concluidos} {resumo.concluidos === 1 ? 'concluído' : 'concluídos'}
+            </Badge>
           )}
           <Button
             variant="primary"

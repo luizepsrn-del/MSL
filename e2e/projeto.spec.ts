@@ -143,3 +143,21 @@ test('projetos funcionam no iPhone', async ({ page }, info) => {
   );
   expect(vazamento, 'sem rolagem horizontal').toBeLessThanOrEqual(0);
 });
+
+test('os contadores concordam em número', async ({ page }) => {
+  await comecarLimpo(page);
+  await page.goto('/app/projetos');
+  await criarProjeto(page, 'Um projeto só');
+
+  // "1 projetos ativos" e "1 concluídos" são o tipo de erro que passa
+  // despercebido para sempre porque nada quebra.
+  await expect(page.getByText('1 projeto ativo')).toBeVisible();
+  await expect(page.getByText('projetos ativos')).toHaveCount(0);
+
+  await criarTarefaNoProjeto(page, 'Única tarefa', 'Um projeto só');
+  await page.goto('/app/projetos');
+  await page.getByRole('button', { name: /tarefa$/ }).click();
+  await page.getByText('Única tarefa').click();
+
+  await expect(page.getByText('1 concluído', { exact: true })).toBeVisible();
+});
