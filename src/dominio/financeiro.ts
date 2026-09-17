@@ -1,5 +1,11 @@
-import type { Banco, Lancamento, Categoria, Contexto } from '../dados/esquema';
-import { distanciaEmDias } from './rotina';
+import type {
+  Banco,
+  Lancamento,
+  Categoria,
+  Contexto,
+  PeriodoRecorrencia,
+} from '../dados/esquema';
+import { distanciaEmDias, somarDias, diasNoMes } from './rotina';
 
 /**
  * Financeiro.
@@ -174,4 +180,165 @@ export function validarValor(centavos: number): void {
   if (centavos <= 0) {
     throw new ValorInvalido('o valor precisa ser maior que zero');
   }
+}
+
+/* ── Recorrência ─────────────────────────────────────────────────────────── */
+
+/**
+ * Uma ocorrência de lançamento no tempo.
+ *
+ * Não é um registro: é o cruzamento de um lançamento com uma data. A primeira
+ * ocorrência é a do próprio lançamento; as demais são repetições calculadas.
+ * Por isso o tipo é explícito em vez de fabricar `Lancamento` com id inventado
+ * — um objeto que parece registro e não é acaba gravado por engano.
+ */
+export interface Ocorrencia {
+  lancamento: Lancamento;
+  /** data local `AAAA-MM-DD` desta ocorrência */
+  data: string;
+  /** false na primeira, true nas repetições */
+  repeticao: boolean;
+}
+
+/** Chave estável para lista e para React. */
+export const chaveDaOcorrencia = (o: Ocorrencia) => `${o.lancamento.id}@${o.data}`;
+
+/** O efeito de uma ocorrência é o do lançamento que a gerou. */
+export const efeitoDaOcorrencia = (o: Ocorrencia) => efeito(o.lancamento);
+
+/** Avança uma data local pelo período, respeitando o fim do mês. */
+function proxima(data: string, periodo: PeriodoRecorrencia): string {
+  const [ano, mes, dia] = data.split('-').map(Number);
+
+  if (periodo === 'semanal') return somarDias(data, 7);
+
+  const alvoAno = periodo === 'anual' ? ano + 1 : mes === 12 ? ano + 1 : ano;
+  const alvoMes = periodo === 'anual' ? mes : mes === 12 ? 1 : mes + 1;
+
+  // Dia 31 num mês de 30 cai no último dia, como na rotina mensal. Sem isto
+  // um aluguel marcado no 31 sumiria em fevereiro.
+  const ultimo = diasNoMes(alvoAno, alvoMes);
+  const alvoDia = Math.min(dia, ultimo);
+
+  return `${alvoAno}-${String(alvoMes).padStart(2, '0')}-${String(alvoDia).padStart(2, '0')}`;
+}
+
+/** Teto de segurança: ~10 anos de repetição semanal. */
+const MAX_REPETICOES = 520;
+
+/**
+ * As ocorrências de um lançamento dentro de uma janela, inclusive nas pontas.
+ *
+ * Lançamento sem recorrência tem no máximo uma. Com recorrência, caminha a
+ * partir da data original — nunca a partir da janela — para que a série não
+ * escorregue conforme o mês que estou olhando.
+ */
+export function ocorrenciasDe(l: Lancamento, de: string, ate: string): Ocorrencia[] {
+  if (!l.recorrencia) {
+    return l.data >= de && l.data <= ate
+      ? [{ lancamento: l, data: l.data, repeticao: false }]
+      : [];
+  }
+
+  const fim = l.recorrencia.ate && l.recorrencia.ate < ate ? l.recorrencia.ate : ate;
+  const saida: Ocorrencia[] = [];
+  let data = l.data;
+
+  for (let i = 0; i < MAX_REPETICOES && data <= fim; i++) {
+    if (data >= de) saida.push({ lancamento: l, data, repeticao: i > 0 });
+    data = proxima(data, l.recorrencia.periodo);
+  }
+
+  return saida;
+}
+
+/** Todas as ocorrências do banco numa janela, já ordenadas. */
+export function ocorrenciasEntre(banco: Banco, de: string, ate: string): Ocorrencia[] {
+  return banco.lancamentos
+    .flatMap((l) => ocorrenciasDe(l, de, ate))
+    .sort((a, b) => {
+      if (a.data !== b.data) return a.data < b.data ? 1 : -1;
+      return a.lancamento.criadoEm < b.lancamento.criadoEm ? 1 : -1;
+    });
+}
+
+/** As ocorrências de um mês — é isto que a tela do Financeiro mostra. */
+export function ocorrenciasDoMes(banco: Banco, ano: number, mes: number): Ocorrencia[] {
+  const inicio = `${ano}-${String(mes).padStart(2, '0')}-01`;
+  const fim = `${ano}-${String(mes).padStart(2, '0')}-${String(diasNoMes(ano, mes)).padStart(2, '0')}`;
+  return ocorrenciasEntre(banco, inicio, fim);
+}
+
+/** Saldo de uma lista de ocorrências. */
+export const saldoDeOcorrencias = (os: readonly Ocorrencia[]) =>
+  os.reduce((t, o) => t + efeitoDaOcorrencia(o), 0);
+
+/* ── Evolução ────────────────────────────────────────────────────────────── */
+
+export interface PontoDoMes {
+  ano: number;
+  mes: number;
+  /** `AAAA-MM` */
+  chave: string;
+  entradas: number;
+  saidas: number;
+  saldo: number;
+}
+
+/**
+ * O saldo mês a mês, terminando no mês informado.
+ *
+ * Inclui as repetições, que é o ponto: sem elas um aluguel lançado uma vez
+ * desapareceria do gráfico a partir do mês seguinte.
+ */
+export function evolucaoMensal(
+  banco: Banco,
+  ano: number,
+  mes: number,
+  quantos = 6,
+): PontoDoMes[] {
+  const pontos: PontoDoMes[] = [];
+
+  for (let i = quantos - 1; i >= 0; i--) {
+    const total = ano * 12 + (mes - 1) - i;
+    const a = Math.floor(total / 12);
+    const m = (total % 12) + 1;
+
+    let entradas = 0;
+    let saidas = 0;
+    for (const o of ocorrenciasDoMes(banco, a, m)) {
+      if (o.lancamento.tipo === 'entrada') entradas += o.lancamento.valor;
+      else saidas += o.lancamento.valor;
+    }
+
+    pontos.push({
+      ano: a,
+      mes: m,
+      chave: `${a}-${String(m).padStart(2, '0')}`,
+      entradas,
+      saidas,
+      saldo: entradas - saidas,
+    });
+  }
+
+  return pontos;
+}
+
+/** O que se repete todo mês, para a tela poder listar os compromissos fixos. */
+export function lancamentosRecorrentes(banco: Banco): Lancamento[] {
+  return banco.lancamentos
+    .filter((l) => l.recorrencia)
+    .sort((a, b) => b.valor - a.valor);
+}
+
+/** Quanto já está comprometido por mês antes de eu gastar qualquer coisa. */
+export function comprometidoPorMes(banco: Banco): { entradas: number; saidas: number } {
+  let entradas = 0;
+  let saidas = 0;
+  for (const l of banco.lancamentos) {
+    if (l.recorrencia?.periodo !== 'mensal') continue;
+    if (l.tipo === 'entrada') entradas += l.valor;
+    else saidas += l.valor;
+  }
+  return { entradas, saidas };
 }

@@ -12,6 +12,12 @@ import {
   ordenarLancamentos,
   validarValor,
   ValorInvalido,
+  ocorrenciasDe,
+  ocorrenciasDoMes,
+  saldoDeOcorrencias,
+  evolucaoMensal,
+  lancamentosRecorrentes,
+  comprometidoPorMes,
 } from './financeiro';
 import { formatarMoeda } from '../formato';
 import { bancoVazio, type Lancamento } from '../dados/esquema';
@@ -259,5 +265,154 @@ describe('validação do valor', () => {
 
   it('recusa fração de centavo', () => {
     expect(() => validarValor(10.5)).toThrow(/inteiro em centavos/);
+  });
+});
+
+describe('lançamento recorrente', () => {
+  const aluguel = lanc({
+    id: 'aluguel',
+    descricao: 'Aluguel',
+    valor: 250000,
+    tipo: 'saida',
+    categoria: 'moradia',
+    data: '2026-01-05',
+    recorrencia: { periodo: 'mensal' },
+  });
+
+  it('sem recorrência, aparece uma vez só', () => {
+    const unico = lanc({ data: '2026-01-10' });
+    expect(ocorrenciasDe(unico, '2026-01-01', '2026-12-31')).toHaveLength(1);
+    expect(ocorrenciasDe(unico, '2026-02-01', '2026-12-31')).toHaveLength(0);
+  });
+
+  it('mensal aparece todo mês, e só a primeira não é repetição', () => {
+    const os = ocorrenciasDe(aluguel, '2026-01-01', '2026-12-31');
+    expect(os).toHaveLength(12);
+    expect(os[0]).toMatchObject({ data: '2026-01-05', repeticao: false });
+    expect(os[1]).toMatchObject({ data: '2026-02-05', repeticao: true });
+    expect(os[11].data).toBe('2026-12-05');
+  });
+
+  it('a série é ancorada na data original, não na janela', () => {
+    // Olhar só agosto não pode deslocar a série. Sem a âncora, o aluguel
+    // "andaria" conforme o mês que eu estivesse vendo.
+    const so_agosto = ocorrenciasDe(aluguel, '2026-08-01', '2026-08-31');
+    expect(so_agosto).toHaveLength(1);
+    expect(so_agosto[0].data).toBe('2026-08-05');
+    expect(so_agosto[0].repeticao).toBe(true);
+  });
+
+  it('dia 31 cai no último dia dos meses curtos, em vez de sumir', () => {
+    const no31 = lanc({ id: 'x', data: '2026-01-31', recorrencia: { periodo: 'mensal' } });
+    const datas = ocorrenciasDe(no31, '2026-01-01', '2026-05-31').map((o) => o.data);
+    expect(datas).toEqual([
+      '2026-01-31',
+      '2026-02-28',
+      '2026-03-28',
+      '2026-04-28',
+      '2026-05-28',
+    ]);
+  });
+
+  it('semanal anda de sete em sete', () => {
+    const semanal = lanc({ id: 's', data: '2026-01-01', recorrencia: { periodo: 'semanal' } });
+    expect(ocorrenciasDe(semanal, '2026-01-01', '2026-01-31').map((o) => o.data)).toEqual([
+      '2026-01-01',
+      '2026-01-08',
+      '2026-01-15',
+      '2026-01-22',
+      '2026-01-29',
+    ]);
+  });
+
+  it('anual anda de ano em ano', () => {
+    const anual = lanc({ id: 'a', data: '2026-03-10', recorrencia: { periodo: 'anual' } });
+    expect(ocorrenciasDe(anual, '2026-01-01', '2029-12-31').map((o) => o.data)).toEqual([
+      '2026-03-10',
+      '2027-03-10',
+      '2028-03-10',
+      '2029-03-10',
+    ]);
+  });
+
+  it('respeita a data de término', () => {
+    const ate_junho = lanc({
+      id: 'f',
+      data: '2026-01-05',
+      recorrencia: { periodo: 'mensal', ate: '2026-06-30' },
+    });
+    const datas = ocorrenciasDe(ate_junho, '2026-01-01', '2026-12-31').map((o) => o.data);
+    expect(datas).toHaveLength(6);
+    expect(datas.at(-1)).toBe('2026-06-05');
+  });
+
+  it('não repete antes da data original', () => {
+    expect(ocorrenciasDe(aluguel, '2025-01-01', '2025-12-31')).toEqual([]);
+  });
+
+  it('uma janela enorme não trava', () => {
+    const semanal = lanc({ id: 's', data: '2026-01-01', recorrencia: { periodo: 'semanal' } });
+    const os = ocorrenciasDe(semanal, '2026-01-01', '2100-01-01');
+    expect(os.length).toBeLessThanOrEqual(520);
+  });
+});
+
+describe('ocorrências do mês e evolução', () => {
+  const banco = {
+    ...bancoVazio(),
+    lancamentos: [
+      lanc({
+        id: 'salario',
+        tipo: 'entrada',
+        valor: 900000,
+        categoria: 'receita',
+        data: '2026-01-05',
+        recorrencia: { periodo: 'mensal' },
+      }),
+      lanc({
+        id: 'aluguel',
+        tipo: 'saida',
+        valor: 250000,
+        categoria: 'moradia',
+        data: '2026-01-10',
+        recorrencia: { periodo: 'mensal' },
+      }),
+      lanc({ id: 'avulso', tipo: 'saida', valor: 50000, data: '2026-03-15' }),
+    ],
+  };
+
+  it('um mês futuro já traz o que se repete, sem eu lançar de novo', () => {
+    // A automação que o pilar ganhou: lancei uma vez, aparece todo mês.
+    const junho = ocorrenciasDoMes(banco, 2026, 6);
+    expect(junho.map((o) => o.lancamento.id).sort()).toEqual(['aluguel', 'salario']);
+    expect(junho.every((o) => o.repeticao)).toBe(true);
+    expect(saldoDeOcorrencias(junho)).toBe(650000);
+  });
+
+  it('o mês com lançamento avulso soma os dois', () => {
+    expect(saldoDeOcorrencias(ocorrenciasDoMes(banco, 2026, 3))).toBe(900000 - 250000 - 50000);
+  });
+
+  it('a evolução mostra o saldo mês a mês, com as repetições', () => {
+    const pontos = evolucaoMensal(banco, 2026, 6, 6);
+    expect(pontos).toHaveLength(6);
+    expect(pontos[0].chave).toBe('2026-01');
+    expect(pontos[5].chave).toBe('2026-06');
+    // Sem as repetições, todo mês depois de janeiro seria zero.
+    expect(pontos.every((p) => p.saldo !== 0)).toBe(true);
+    expect(pontos[2].saldo).toBe(900000 - 250000 - 50000); // março, com o avulso
+  });
+
+  it('lista o que é recorrente, do maior para o menor', () => {
+    expect(lancamentosRecorrentes(banco).map((l) => l.id)).toEqual(['salario', 'aluguel']);
+  });
+
+  it('diz quanto já está comprometido por mês', () => {
+    expect(comprometidoPorMes(banco)).toEqual({ entradas: 900000, saidas: 250000 });
+  });
+
+  it('avulso não conta como comprometido', () => {
+    const so_avulso = { ...bancoVazio(), lancamentos: [lanc({ valor: 1000 })] };
+    expect(comprometidoPorMes(so_avulso)).toEqual({ entradas: 0, saidas: 0 });
   });
 });
