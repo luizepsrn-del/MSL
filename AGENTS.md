@@ -56,9 +56,9 @@ design-system/         the component library (see its README for the map)
 src/
   casca/               the product shell: navigation, desktop and mobile
   dados/               schema, migrations, repository seam, React context
-  dominio/             the tested logic: rotina, tarefa, calendario,
-                       projeto, financeiro, pedido
-  telas/               one screen per pillar
+  dominio/             the tested logic: rotina, tarefa, calendario, projeto,
+                       financeiro, pedido, agente, preferencias
+  telas/               one screen per pillar (Agente.tsx serves /app/pedir)
   formato/             pt-BR formatting — dates, money, sorting
   routes/Showcase.tsx  the /design-system showcase page
 adherence.rules.json   the design-system lint rules, from the original export
@@ -96,6 +96,21 @@ reading its test is how the system starts lying.
   occurrences in the window being looked at, anchored to its original date.
   Storing twelve rents would create twelve records that age together. Same
   principle as the calendar.
+- **The agent is local, and answers only from the data.** `src/dominio/agente.ts`
+  calls no model and holds no API key. It maps a sentence to a **declared**
+  intent; anything else becomes a prompt for Claude Code rather than a guess.
+  Commands return an `efeito` for the screen to apply — no answer writes.
+  Ambiguity is never resolved silently: two tasks matching "renovar" make it
+  ask which one.
+- **`\b` in JavaScript only knows `[A-Za-z0-9_]`.** `/\bamanhã\b/` never
+  matches, because `ã` is not a word character. Use `(?!\p{L})` with the `u`
+  flag for word ends in Portuguese.
+- **Parse dates out of the original text, not the normalized one.** The
+  patterns tolerate accents; the text keeps them. Otherwise "pagar o IPVA do
+  carrão" comes back as "pagar o ipva do carrao".
+- **Interface preferences live in the bank, not in `localStorage`**, so they
+  travel in the backup. Unknown block ids from a newer export are dropped, not
+  fatal; an empty list is a choice, not an absence.
 - **A project's rhythm and forecast are measured, not declared.** With no
   pending task or no rhythm there is no forecast — dividing by zero would put
   a date on the screen that nothing backs.
