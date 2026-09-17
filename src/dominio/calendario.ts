@@ -1,4 +1,4 @@
-import type { Banco, Rotina, Tarefa } from '../dados/esquema';
+import type { Banco, Rotina, Tarefa, Contexto } from '../dados/esquema';
 import {
   deveOcorrerEm,
   diaDaSemana,
@@ -204,4 +204,153 @@ export function nomeDaSemana(dia: string): string {
 
   if (mesA === mesB) return `${diaDe(primeiro)} a ${diaDe(ultimo)} de ${MESES[mesA - 1]}`;
   return `${diaDe(primeiro)} de ${MESES[mesA - 1]} a ${diaDe(ultimo)} de ${MESES[mesB - 1]}`;
+}
+
+/* ── Hora ────────────────────────────────────────────────────────────────── */
+
+/** `HH:MM` de 00:00 a 23:59. Qualquer outra coisa é inválida, não corrigida. */
+export function horaValida(hora: string): boolean {
+  if (!/^\d{2}:\d{2}$/.test(hora)) return false;
+  const [h, m] = hora.split(':').map(Number);
+  return h >= 0 && h <= 23 && m >= 0 && m <= 59;
+}
+
+/**
+ * Ordena por hora, e quem não tem hora vai para o fim.
+ *
+ * O contrário — sem hora primeiro — colocaria "algum dia hoje" antes de
+ * "08:00", e a agenda deixaria de ser uma linha do tempo.
+ */
+export function compararHora(a?: string, b?: string): number {
+  const va = a && horaValida(a) ? a : null;
+  const vb = b && horaValida(b) ? b : null;
+  if (va === vb) return 0;
+  if (va === null) return 1;
+  if (vb === null) return -1;
+  return va < vb ? -1 : 1;
+}
+
+/* ── Filtro ──────────────────────────────────────────────────────────────── */
+
+export interface FiltroCalendario {
+  /** só este contexto, ou ausente para os dois */
+  contexto?: Contexto;
+  /** esconde rotina já cumprida e tarefa já concluída */
+  esconderFeitos: boolean;
+}
+
+export const SEM_FILTRO: FiltroCalendario = { esconderFeitos: false };
+
+export function filtrarDia(itens: ItensDoDia, filtro: FiltroCalendario): ItensDoDia {
+  const doContexto = <T extends { contexto: Contexto }>(x: T) =>
+    !filtro.contexto || x.contexto === filtro.contexto;
+
+  return {
+    rotinas: itens.rotinas.filter(
+      (r) => doContexto(r.rotina) && (!filtro.esconderFeitos || !r.feita),
+    ),
+    tarefas: itens.tarefas.filter(
+      (t) => doContexto(t) && (!filtro.esconderFeitos || !t.concluidaEm),
+    ),
+    lancamentos: itens.lancamentos.filter((o) => doContexto(o.lancamento)),
+  };
+}
+
+/* ── A agenda de um dia, em linha ────────────────────────────────────────── */
+
+export type TipoDeItem = 'rotina' | 'tarefa' | 'lancamento';
+
+export interface ItemDaAgenda {
+  /** único dentro do dia */
+  chave: string;
+  tipo: TipoDeItem;
+  /** `HH:MM`, ou ausente para o que não tem hora marcada */
+  hora?: string;
+  titulo: string;
+  contexto: Contexto;
+  feito: boolean;
+  /** o id do registro, para a tela saber o que alternar */
+  id: string;
+}
+
+/**
+ * Os itens de um dia numa lista só, na ordem do relógio.
+ *
+ * Rotina, tarefa e dinheiro deixam de ser três seções e viram uma linha do
+ * tempo — que é como o dia acontece. O que não tem hora vai para o fim, junto,
+ * em vez de ser espalhado como se tivesse.
+ */
+export function agendaEmLinha(itens: ItensDoDia): ItemDaAgenda[] {
+  const lista: ItemDaAgenda[] = [
+    ...itens.rotinas.map(({ rotina, feita }) => ({
+      chave: `rotina:${rotina.id}`,
+      tipo: 'rotina' as const,
+      hora: rotina.hora,
+      titulo: rotina.titulo,
+      contexto: rotina.contexto,
+      feito: feita,
+      id: rotina.id,
+    })),
+    ...itens.tarefas.map((t) => ({
+      chave: `tarefa:${t.id}`,
+      tipo: 'tarefa' as const,
+      hora: t.hora,
+      titulo: t.titulo,
+      contexto: t.contexto,
+      feito: !!t.concluidaEm,
+      id: t.id,
+    })),
+    ...itens.lancamentos.map((o) => ({
+      chave: `lancamento:${o.lancamento.id}@${o.data}`,
+      tipo: 'lancamento' as const,
+      titulo: o.lancamento.descricao,
+      contexto: o.lancamento.contexto,
+      feito: false,
+      id: o.lancamento.id,
+    })),
+  ];
+
+  // Empate de hora desempata pelo tipo e pelo título: a ordem não pode mudar
+  // entre dois carregamentos do mesmo dia.
+  const peso: Record<TipoDeItem, number> = { rotina: 0, tarefa: 1, lancamento: 2 };
+  return lista.sort((a, b) => {
+    const porHora = compararHora(a.hora, b.hora);
+    if (porHora !== 0) return porHora;
+    if (peso[a.tipo] !== peso[b.tipo]) return peso[a.tipo] - peso[b.tipo];
+    return a.titulo < b.titulo ? -1 : a.titulo > b.titulo ? 1 : 0;
+  });
+}
+
+/* ── A linha do tempo ────────────────────────────────────────────────────── */
+
+export interface DiaDaLinha {
+  dia: string;
+  itens: ItensDoDia;
+}
+
+/**
+ * O que vem pela frente, dia a dia, pulando os dias vazios.
+ *
+ * Diferente da grade: aqui não há buraco para interpretar, só o que existe, na
+ * ordem em que chega. Pular o dia vazio é o ponto — uma lista com trinta dias
+ * em branco esconde os três que importam.
+ */
+export function linhaDoTempo(
+  banco: Banco,
+  de: string,
+  dias: number,
+  filtro: FiltroCalendario = SEM_FILTRO,
+): DiaDaLinha[] {
+  const ate = somarDias(de, dias - 1);
+  const agenda = agendaDeIntervalo(banco, de, ate);
+
+  const linha: DiaDaLinha[] = [];
+  for (let i = 0; i < dias; i++) {
+    const dia = somarDias(de, i);
+    const itens = filtrarDia(agenda.get(dia) ?? { rotinas: [], tarefas: [], lancamentos: [] }, filtro);
+    if (itens.rotinas.length + itens.tarefas.length + itens.lancamentos.length > 0) {
+      linha.push({ dia, itens });
+    }
+  }
+  return linha;
 }

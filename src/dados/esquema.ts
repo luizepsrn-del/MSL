@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 5;
+export const VERSAO_ESQUEMA = 6;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -55,6 +55,8 @@ export interface Rotina extends Registro {
   inicioEm: string;
   /** arquivada some das listas sem perder o histórico */
   arquivada: boolean;
+  /** hora local `HH:MM` em que ela costuma acontecer, ou ausente */
+  hora?: string;
 }
 
 /**
@@ -112,6 +114,14 @@ export interface Tarefa extends Registro {
   projetoId?: string;
   /** coluna do quadro; ausente equivale a 'a-fazer' */
   estado?: EstadoTarefa;
+  /**
+   * Hora local `HH:MM`, ou ausente.
+   *
+   * Opcional de propósito: a maioria das tarefas não tem hora, e exigir uma
+   * inventaria compromisso onde só havia um prazo. Quem tem hora aparece na
+   * linha certa da agenda do dia; quem não tem fica em "a qualquer hora".
+   */
+  hora?: string;
 }
 
 /* ── Projeto ─────────────────────────────────────────────────────────────── */
@@ -216,6 +226,21 @@ export interface Lancamento extends Registro {
 
 /* ── O banco ─────────────────────────────────────────────────────────────── */
 
+/**
+ * O que eu escolhi sobre como o sistema se apresenta.
+ *
+ * Mora no banco, e não em `localStorage`, para viajar no backup: restaurar o
+ * arquivo em outro aparelho devolve o Início do jeito que eu deixei. Não é
+ * coleção — `COLECOES` continua sendo só a lista de arrays.
+ */
+export interface Preferencias {
+  /**
+   * Os blocos do Início, na ordem em que aparecem. Bloco que não está na lista
+   * fica escondido. Ausente quer dizer "tudo, na ordem de fábrica".
+   */
+  blocosDoInicio?: string[];
+}
+
 export interface Banco {
   versao: number;
   rotinas: Rotina[];
@@ -223,6 +248,7 @@ export interface Banco {
   tarefas: Tarefa[];
   projetos: Projeto[];
   lancamentos: Lancamento[];
+  preferencias?: Preferencias;
 }
 
 export const COLECOES = ['rotinas', 'execucoes', 'tarefas', 'projetos', 'lancamentos'] as const;

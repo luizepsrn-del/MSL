@@ -11,6 +11,12 @@ import {
   inicioDaSemana,
   semanaDe,
   nomeDaSemana,
+  horaValida,
+  compararHora,
+  agendaEmLinha,
+  filtrarDia,
+  linhaDoTempo,
+  SEM_FILTRO,
 } from './calendario';
 import { diaDaSemana } from './rotina';
 import {
@@ -352,5 +358,152 @@ describe('resumo do dia, com dinheiro', () => {
     // Antes o resumo só olhava rotina e tarefa: o dia do aluguel aparecia em
     // branco na grade.
     expect(resumoDoDia(banco, '2026-09-15', '2026-09-16').vazio).toBe(false);
+  });
+});
+
+describe('hora', () => {
+  it('aceita HH:MM e recusa o resto', () => {
+    expect(horaValida('00:00')).toBe(true);
+    expect(horaValida('23:59')).toBe(true);
+    expect(horaValida('9:00')).toBe(false);
+    expect(horaValida('24:00')).toBe(false);
+    expect(horaValida('12:60')).toBe(false);
+    expect(horaValida('meio-dia')).toBe(false);
+  });
+
+  it('quem não tem hora vai para o fim, e não para o começo', () => {
+    // Sem hora primeiro colocaria "algum dia hoje" antes de "08:00", e a
+    // agenda deixaria de ser uma linha do tempo.
+    expect(compararHora('08:00', undefined)).toBeLessThan(0);
+    expect(compararHora(undefined, '08:00')).toBeGreaterThan(0);
+    expect(compararHora('08:00', '09:00')).toBeLessThan(0);
+    expect(compararHora(undefined, undefined)).toBe(0);
+  });
+
+  it('hora inválida conta como sem hora, em vez de quebrar a ordem', () => {
+    expect(compararHora('25:00', '08:00')).toBeGreaterThan(0);
+  });
+});
+
+describe('a agenda de um dia em linha', () => {
+  const banco = {
+    ...bancoVazio(),
+    rotinas: [
+      rotina({ id: 'cedo', titulo: 'Academia', hora: '07:00' }),
+      rotina({ id: 'sem-hora', titulo: 'Ler' }),
+    ],
+    tarefas: [
+      tarefa({ id: 'reuniao', titulo: 'Reunião', prazo: '2026-09-16', hora: '14:00' }),
+      tarefa({ id: 'solta', titulo: 'Revisar', prazo: '2026-09-16' }),
+    ],
+    lancamentos: [lancamento({ id: 'conta', descricao: 'Conta de luz', data: '2026-09-16' })],
+  };
+
+  it('junta os três tipos numa lista só, na ordem do relógio', () => {
+    const linha = agendaEmLinha(itensDoDia(banco, '2026-09-16'));
+    expect(linha.map((i) => i.titulo)).toEqual([
+      'Academia', // 07:00
+      'Reunião', // 14:00
+      'Ler', // sem hora
+      'Revisar', // sem hora
+      'Conta de luz', // dinheiro nunca tem hora
+    ]);
+  });
+
+  it('cada item diz o que é e se já foi feito', () => {
+    const linha = agendaEmLinha(itensDoDia(banco, '2026-09-16'));
+    expect(linha[0]).toMatchObject({ tipo: 'rotina', hora: '07:00', feito: false });
+    expect(linha[4]).toMatchObject({ tipo: 'lancamento' });
+    // Dinheiro nunca tem hora: o campo nem existe no registro.
+    expect(linha[4].hora).toBeUndefined();
+  });
+
+  it('a chave é única dentro do dia', () => {
+    const linha = agendaEmLinha(itensDoDia(banco, '2026-09-16'));
+    expect(new Set(linha.map((i) => i.chave)).size).toBe(linha.length);
+  });
+
+  it('a ordem é estável entre dois carregamentos do mesmo dia', () => {
+    const uma = agendaEmLinha(itensDoDia(banco, '2026-09-16')).map((i) => i.chave);
+    const outra = agendaEmLinha(itensDoDia(banco, '2026-09-16')).map((i) => i.chave);
+    expect(uma).toEqual(outra);
+  });
+
+  it('dia vazio devolve lista vazia, e não quebra', () => {
+    expect(agendaEmLinha(itensDoDia(bancoVazio(), '2026-09-16'))).toEqual([]);
+  });
+});
+
+describe('filtrar o calendário', () => {
+  const banco = {
+    ...bancoVazio(),
+    rotinas: [
+      rotina({ id: 'pessoal', titulo: 'Academia', contexto: 'pessoal' }),
+      rotina({ id: 'trabalho', titulo: 'Revisar a agenda', contexto: 'profissional' }),
+    ],
+    execucoes: [execucao('pessoal', '2026-09-16')],
+    tarefas: [
+      tarefa({ id: 'aberta', prazo: '2026-09-16', contexto: 'profissional' }),
+      tarefa({
+        id: 'feita',
+        prazo: '2026-09-16',
+        contexto: 'profissional',
+        concluidaEm: '2026-09-16T12:00:00.000Z',
+      }),
+    ],
+  };
+
+  it('por contexto, corta tudo junto: rotina, tarefa e dinheiro', () => {
+    const so_trabalho = filtrarDia(itensDoDia(banco, '2026-09-16'), {
+      contexto: 'profissional',
+      esconderFeitos: false,
+    });
+    expect(so_trabalho.rotinas.map((r) => r.rotina.id)).toEqual(['trabalho']);
+    expect(so_trabalho.tarefas).toHaveLength(2);
+  });
+
+  it('esconder o que já foi feito tira rotina cumprida e tarefa concluída', () => {
+    const pendente = filtrarDia(itensDoDia(banco, '2026-09-16'), { esconderFeitos: true });
+    expect(pendente.rotinas.map((r) => r.rotina.id)).toEqual(['trabalho']);
+    expect(pendente.tarefas.map((t) => t.id)).toEqual(['aberta']);
+  });
+
+  it('sem filtro nada é escondido', () => {
+    const tudo = filtrarDia(itensDoDia(banco, '2026-09-16'), SEM_FILTRO);
+    expect(tudo.rotinas).toHaveLength(2);
+    expect(tudo.tarefas).toHaveLength(2);
+  });
+});
+
+describe('a linha do tempo', () => {
+  const banco = {
+    ...bancoVazio(),
+    rotinas: [rotina({ id: 'segunda', recorrencia: { tipo: 'semanal', dias: [1] } })],
+    tarefas: [
+      tarefa({ id: 'perto', prazo: '2026-09-17' }),
+      tarefa({ id: 'longe', prazo: '2026-10-20' }),
+    ],
+  };
+
+  it('pula os dias vazios, que é o ponto dela', () => {
+    // Uma lista com trinta dias em branco esconde os três que importam.
+    const linha = linhaDoTempo(banco, '2026-09-16', 14);
+    expect(linha.map((d) => d.dia)).toEqual(['2026-09-17', '2026-09-21', '2026-09-28']);
+  });
+
+  it('respeita o recorte de dias pedido', () => {
+    expect(linhaDoTempo(banco, '2026-09-16', 2).map((d) => d.dia)).toEqual(['2026-09-17']);
+  });
+
+  it('aceita o mesmo filtro da grade', () => {
+    const so_trabalho = linhaDoTempo(banco, '2026-09-16', 14, {
+      contexto: 'profissional',
+      esconderFeitos: false,
+    });
+    expect(so_trabalho).toEqual([]);
+  });
+
+  it('nada pela frente devolve lista vazia, não um erro', () => {
+    expect(linhaDoTempo(bancoVazio(), '2026-09-16', 30)).toEqual([]);
   });
 });

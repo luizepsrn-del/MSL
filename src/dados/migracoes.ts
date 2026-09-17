@@ -69,6 +69,15 @@ export const MIGRACOES: Record<number, Migracao> = {
    * novo, que é o melhor tipo de mudança de esquema.
    */
   4: (dados) => ({ ...dados, versao: 5 }),
+
+  /**
+   * 5 → 6: hora opcional na rotina e na tarefa, e as preferências da interface.
+   *
+   * Aditiva como as outras: quem não tem hora continua sem hora, e quem não
+   * tem preferência vê o Início de fábrica.
+   */
+  5: (dados) => ({ ...dados, versao: 6 }),
+
 };
 
 export class ErroDeMigracao extends Error {
