@@ -45,6 +45,16 @@ function bancoDeExemplo(): Banco {
         dia: '2026-01-05',
       },
     ],
+    tarefas: [
+      {
+        id: 't1',
+        criadoEm: '2026-01-04T09:00:00.000Z',
+        alteradoEm: '2026-01-04T09:00:00.000Z',
+        titulo: 'Renovar o contrato',
+        contexto: 'profissional',
+        prazo: '2026-01-20',
+      },
+    ],
   };
 }
 
@@ -92,6 +102,53 @@ describe('migração', () => {
     expect(() => migrar(null)).toThrow(ErroDeMigracao);
     expect(() => migrar('texto')).toThrow(ErroDeMigracao);
     expect(() => migrar([1, 2, 3])).toThrow(ErroDeMigracao);
+  });
+
+  it('sobe um banco v1 de verdade para v2 sem perder nada', () => {
+    // O caso que importa: um arquivo gravado antes de Tarefas existir. As
+    // rotinas e execuções precisam chegar do outro lado intactas, e a coleção
+    // nova precisa aparecer vazia em vez de ausente.
+    const v1 = {
+      versao: 1,
+      rotinas: [
+        {
+          id: 'r1',
+          criadoEm: '2026-01-01T00:00:00.000Z',
+          alteradoEm: '2026-01-01T00:00:00.000Z',
+          titulo: 'Ler 20 páginas',
+          contexto: 'pessoal',
+          icone: 'book-open',
+          inicioEm: '2026-01-01',
+          arquivada: false,
+          recorrencia: { tipo: 'diaria' },
+        },
+      ],
+      execucoes: [
+        {
+          id: 'e1',
+          criadoEm: '2026-01-05T12:00:00.000Z',
+          alteradoEm: '2026-01-05T12:00:00.000Z',
+          rotinaId: 'r1',
+          dia: '2026-01-05',
+        },
+      ],
+    };
+
+    const banco = migrar(v1);
+
+    expect(banco.versao).toBe(2);
+    expect(banco.rotinas).toHaveLength(1);
+    expect(banco.rotinas[0].titulo).toBe('Ler 20 páginas');
+    expect(banco.execucoes).toHaveLength(1);
+    expect(banco.execucoes[0].dia).toBe('2026-01-05');
+    expect(banco.tarefas).toEqual([]);
+  });
+
+  it('sobe do zero até a versão atual atravessando todos os degraus', () => {
+    // Sem versão nenhuma até a atual, passando por cada migração no caminho.
+    const banco = migrar({ rotinas: [], execucoes: [] });
+    expect(banco.versao).toBe(VERSAO_ESQUEMA);
+    expect(banco.tarefas).toEqual([]);
   });
 
   it('é idempotente — migrar duas vezes dá o mesmo banco', () => {

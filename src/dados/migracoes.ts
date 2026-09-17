@@ -26,6 +26,19 @@ export const MIGRACOES: Record<number, Migracao> = {
     execucoes: Array.isArray(dados.execucoes) ? dados.execucoes : [],
     versao: 1,
   }),
+
+  /**
+   * 1 → 2: entra o pilar Tarefas.
+   *
+   * Coleção nova começa vazia. Nada do que já existia é tocado — este é o
+   * formato que toda migração aditiva deve ter, e é o que torna seguro subir
+   * de versão sem medo de perder rotina ou execução.
+   */
+  1: (dados) => ({
+    ...dados,
+    tarefas: Array.isArray(dados.tarefas) ? dados.tarefas : [],
+    versao: 2,
+  }),
 };
 
 export class ErroDeMigracao extends Error {

@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 1;
+export const VERSAO_ESQUEMA = 2;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -69,19 +69,38 @@ export interface Execucao extends Registro {
   dia: string;
 }
 
+/* ── Tarefa ──────────────────────────────────────────────────────────────── */
+
+/**
+ * Uma tarefa é o que tem fim, ao contrário da rotina, que se repete.
+ *
+ * `prazo` é opcional de propósito: boa parte do que eu preciso fazer não tem
+ * data, e obrigar uma inventa urgência falsa.
+ */
+export interface Tarefa extends Registro {
+  titulo: string;
+  contexto: Contexto;
+  /** data local `AAAA-MM-DD`, ou ausente quando não há prazo */
+  prazo?: string;
+  /** ISO UTC do momento em que foi concluída; ausente enquanto pendente */
+  concluidaEm?: string;
+  anotacao?: string;
+}
+
 /* ── O banco ─────────────────────────────────────────────────────────────── */
 
 export interface Banco {
   versao: number;
   rotinas: Rotina[];
   execucoes: Execucao[];
+  tarefas: Tarefa[];
 }
 
-export const COLECOES = ['rotinas', 'execucoes'] as const;
+export const COLECOES = ['rotinas', 'execucoes', 'tarefas'] as const;
 export type NomeColecao = (typeof COLECOES)[number];
 
 export function bancoVazio(): Banco {
-  return { versao: VERSAO_ESQUEMA, rotinas: [], execucoes: [] };
+  return { versao: VERSAO_ESQUEMA, rotinas: [], execucoes: [], tarefas: [] };
 }
 
 /** Identificador estável e ordenável por criação. */

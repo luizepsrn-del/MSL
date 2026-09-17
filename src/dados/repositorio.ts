@@ -1,4 +1,11 @@
-import { VERSAO_ESQUEMA, bancoVazio, type Banco, type Rotina, type Execucao } from './esquema';
+import {
+  VERSAO_ESQUEMA,
+  bancoVazio,
+  type Banco,
+  type Rotina,
+  type Execucao,
+  type Tarefa,
+} from './esquema';
 import { migrar } from './migracoes';
 
 /**
@@ -113,6 +120,8 @@ export const rotinasAtivas = (b: Banco): Rotina[] => b.rotinas.filter((r) => !r.
 
 export const execucoesDoDia = (b: Banco, dia: string): Execucao[] =>
   b.execucoes.filter((e) => e.dia === dia);
+
+export const tarefasPendentes = (b: Banco): Tarefa[] => b.tarefas.filter((t) => !t.concluidaEm);
 
 function estruturado<T>(valor: T): T {
   return JSON.parse(JSON.stringify(valor)) as T;
