@@ -61,18 +61,49 @@ test('a gaveta do iPhone abre, navega e fecha', async ({ page }, info) => {
   await expect(page.getByRole('navigation')).toBeHidden();
 });
 
-test('a casca não vaza inglês na interface', async ({ page }) => {
-  await page.goto('/app');
+test('nenhuma rota do produto vaza inglês na interface', async ({ page }) => {
+  // Varre TODAS as rotas, não só a primeira.
+  //
+  // A versão anterior olhava só /app e por isso não pegou o "You" embutido no
+  // MessageBubble — que só aparece em /app/pedir, a última tela a usá-lo.
+  // Cada string visível presa na biblioteca some assim até alguém abrir a
+  // tela certa.
+  const rotas = [
+    'inicio',
+    'rotina',
+    'tarefas',
+    'calendario',
+    'projetos',
+    'financeiro',
+    'pedir',
+    'ajustes',
+  ];
 
-  // O campo de busca vinha com "Search" embutido dentro do Sidebar — string
-  // visível presa na biblioteca, que nenhum teste pegava porque nenhum olhava.
+  const proibidas = [
+    'Search',
+    'Overview',
+    'Orders',
+    'Carriers',
+    'Go Premium',
+    'Upgrade Now',
+    'Nothing here yet',
+    'Typing…',
+    'Card menu',
+  ];
+
+  for (const rota of rotas) {
+    await page.goto(`/app/${rota}`);
+    const texto = await page.evaluate(() => document.body.innerText);
+    for (const palavra of proibidas) {
+      expect(texto, `"${palavra}" apareceu em /app/${rota}`).not.toContain(palavra);
+    }
+    // "You" precisa de fronteira de palavra para não casar com outras coisas.
+    expect(texto, `"You" apareceu em /app/${rota}`).not.toMatch(/\bYou\b/);
+  }
+
+  await page.goto('/app/inicio');
   await expect(page.getByPlaceholder('Buscar')).toBeVisible();
   await expect(page.getByPlaceholder('Search')).toHaveCount(0);
-
-  const textoVisivel = await page.evaluate(() => document.body.innerText);
-  for (const palavra of ['Search', 'Overview', 'Orders', 'Carriers', 'Go Premium']) {
-    expect(textoVisivel, `"${palavra}" não aparece na interface`).not.toContain(palavra);
-  }
 });
 
 test('os rótulos de acessibilidade estão em português', async ({ page }, info) => {

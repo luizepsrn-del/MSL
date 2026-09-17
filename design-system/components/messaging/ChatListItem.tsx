@@ -11,8 +11,10 @@ export interface ChatListItemProps {
   role?: string;
   unread?: number;
   active?: boolean;
-  /** replaces the preview with a purple "Typing…" */
+  /** replaces the preview with a purple typing notice */
   typing?: boolean;
+  /** the typing notice itself; the English default keeps the kit unchanged */
+  typingLabel?: string;
   avatar?: string;
   onClick?: () => void;
   style?: React.CSSProperties;
@@ -26,6 +28,7 @@ export function ChatListItem({
   unread,
   active,
   typing,
+  typingLabel = 'Typing…',
   avatar,
   onClick,
   style,
@@ -89,7 +92,7 @@ export function ChatListItem({
             whiteSpace: 'nowrap',
           }}
         >
-          {typing ? 'Typing…' : preview}
+          {typing ? typingLabel : preview}
         </p>
       </div>
       <div

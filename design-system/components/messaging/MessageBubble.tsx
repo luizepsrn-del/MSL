@@ -24,6 +24,11 @@ export interface MessageBubbleProps {
   children?: React.ReactNode;
   quote?: MessageQuote;
   attachment?: MessageAttachment;
+  /**
+   * What to call the current user on their own messages. The English default
+   * keeps the logistics kit unchanged; a localized product passes its own.
+   */
+  ownLabel?: string;
   style?: React.CSSProperties;
 }
 
@@ -36,6 +41,7 @@ export function MessageBubble({
   children,
   quote,
   attachment,
+  ownLabel = 'You',
   style,
 }: MessageBubbleProps) {
   const bg = own ? 'var(--purple-500)' : 'var(--surface-raised)';
@@ -59,7 +65,7 @@ export function MessageBubble({
       >
         {avatar !== false && (
           <Avatar
-            name={author || (own ? 'You' : '')}
+            name={author || (own ? ownLabel : '')}
             src={typeof avatar === 'string' ? avatar : undefined}
             size={28}
           />
@@ -70,7 +76,7 @@ export function MessageBubble({
             color: 'var(--text-body)',
           }}
         >
-          {own ? 'You' : author}
+          {own ? ownLabel : author}
         </span>
         {time && (
           <span

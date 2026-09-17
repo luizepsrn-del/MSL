@@ -6,4 +6,4 @@ One chat message. Purple + right for own, raised surface + left for received.
 <MessageBubble author="Harrold Tafoya" time="09:44 PM" attachment={{ name: "I'm Invoice Ceva Bahn 21032023", kind: 'PDF' }} />
 ```
 
-Separate days with a centred pill reading "Today, Dec 25".
+Pass `ownLabel` to rename the sender on your own messages; the default is English. Separate days with a centred pill reading "Today, Dec 25".

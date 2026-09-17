@@ -135,7 +135,7 @@ export function Pedir() {
 
           {prompt && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
-              <MessageBubble own time="agora" avatar={false}>
+              <MessageBubble own time="agora" avatar={false} ownLabel="Eu">
                 {descricao}
               </MessageBubble>
 
