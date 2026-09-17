@@ -8,9 +8,11 @@ import {
   type Execucao,
   type Tarefa,
   type Projeto,
+  type Lancamento,
 } from './esquema';
 import { RepositorioLocal, type Repositorio } from './repositorio';
 import { removerProjeto as soltarEremover } from '../dominio/projeto';
+import { validarValor } from '../dominio/financeiro';
 
 /**
  * O banco, disponível para as telas.
@@ -35,6 +37,8 @@ interface Acoes {
   /** solta as tarefas do projeto; não as apaga */
   removerProjeto(id: string): Promise<void>;
   moverTarefa(tarefaId: string, projetoId: string | undefined): Promise<void>;
+  criarLancamento(dados: Omit<Lancamento, keyof BaseRegistro>): Promise<void>;
+  removerLancamento(id: string): Promise<void>;
   exportar(): Promise<string>;
   importar(json: string): Promise<void>;
 }
@@ -169,6 +173,19 @@ export function ProvedorBanco({
             tarefa.id === tarefaId ? { ...tarefa, projetoId, alteradoEm: t } : tarefa,
           ),
         });
+      },
+
+      async criarLancamento(dados) {
+        // A validação mora no domínio; a tela já barra antes, mas a porta de
+        // entrada do banco não confia na tela.
+        validarValor(dados.valor);
+        const t = agora();
+        const lancamento: Lancamento = { ...dados, id: novoId(), criadoEm: t, alteradoEm: t };
+        await gravar({ ...banco, lancamentos: [...banco.lancamentos, lancamento] });
+      },
+
+      async removerLancamento(id) {
+        await gravar({ ...banco, lancamentos: banco.lancamentos.filter((l) => l.id !== id) });
       },
 
       exportar: () => repo.exportar(),

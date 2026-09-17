@@ -17,6 +17,7 @@ import { Rotinas } from '../telas/Rotinas';
 import { Tarefas } from '../telas/Tarefas';
 import { Calendario } from '../telas/Calendario';
 import { Projetos } from '../telas/Projetos';
+import { Financeiro } from '../telas/Financeiro';
 
 /**
  * A casca do produto.
@@ -73,6 +74,8 @@ function Conteudo({ pilar }: { pilar: Pilar }) {
       return <Calendario />;
     case 'projetos':
       return <Projetos />;
+    case 'financeiro':
+      return <Financeiro />;
     default:
       return <TelaEmBranco pilar={pilar} />;
   }
