@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "My System Life \u2014 logistics admin dashboard built on the My System Life design system.",
+  "description": "My System Life — logistics admin dashboard built on the My System Life design system.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/copy-reference.mjs",
@@ -16,6 +16,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide": "^1.47.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4"

@@ -398,15 +398,26 @@ white → grey, in that order of importance.
 **Substitution flagged.** The source's glyphs are a thin, rounded, geometric outline
 set — in the Iconsax / Solar family — drawn at roughly 1.5px stroke on a 24px grid.
 No icon font, sprite sheet or SVG file was supplied (the icons exist only as pixels
-inside device mockups), so this system uses **Lucide 0.460.0 from CDN** as the closest
-available match: same outline-only construction, same round caps and joins, same
-optical weight. It is not identical — Lucide's corners are slightly squarer and a few
-logistics glyphs differ in drawing. *If you have the original icon files, send them and
-they will replace the CDN set.*
+inside device mockups), so this system uses **Lucide** as the closest available match:
+same outline-only construction, same round caps and joins, same optical weight. It is
+not identical — Lucide's corners are slightly squarer and a few logistics glyphs differ
+in drawing. *If you have the original icon files, send them and they will replace it.*
 
-```html
-<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.js"></script>
+It used to be loaded from a CDN. It now ships in the bundle, because the product is
+installed on a phone and has to open with no network: a CDN icon set makes every glyph
+a network request. `src/main.tsx` sets `window.lucide` before the first render.
+
+```ts
+import { createElement, icons } from 'lucide';
+window.lucide = { icons, createElement: /* narrowed */ };
 ```
+
+The whole set is imported, not a curated list. Half the names in use sit inside a
+ternary or a lookup table, where no text scan would find them, and a missing icon does
+not throw — it draws an empty square, silently. That already bit once here.
+
+The reference pages under `design-system/reference/` still load the CDN script: they are
+standalone HTML with no build step.
 
 **Rules.**
 
@@ -469,8 +480,8 @@ Components come from the barrel, never from a component file directly:
 import { Card, Button, StatCard, Badge } from '../design-system';
 ```
 
-Lucide is loaded once from CDN in `index.html`; the `Icon` component reads
-`window.lucide`.
+Lucide ships in the bundle and `src/main.tsx` sets `window.lucide` before the first
+render; the `Icon` component reads it from there.
 
 **The rules, enforced by `npm run lint`:**
 
