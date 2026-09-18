@@ -78,6 +78,9 @@ export const MIGRACOES: Record<number, Migracao> = {
    */
   5: (dados) => ({ ...dados, versao: 6 }),
 
+  /** 6 → 7: a data do último backup, dentro das preferências. Aditiva. */
+  6: (dados) => ({ ...dados, versao: 7 }),
+
 };
 
 export class ErroDeMigracao extends Error {

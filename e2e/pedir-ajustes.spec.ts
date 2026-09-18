@@ -170,3 +170,42 @@ test('as duas telas funcionam no iPhone', async ({ page }, info) => {
   );
   expect(vazamento, 'ajustes sem rolagem horizontal').toBeLessThanOrEqual(0);
 });
+
+test('o sistema cobra o backup com um número, e cala quando não há o que salvar', async ({
+  page,
+}) => {
+  // Sem registro nenhum, cobrar backup é o tipo de aviso que ensina a ignorar
+  // avisos.
+  await page.addInitScript(() => {
+    try {
+      if (!sessionStorage.getItem('teste-ja-limpou')) {
+        localStorage.removeItem('msl-banco');
+        sessionStorage.setItem('teste-ja-limpou', '1');
+      }
+    } catch {
+      /* janela privada */
+    }
+  });
+  await page.goto('/app/ajustes');
+  await expect(page.getByText('Nunca exportado')).toHaveCount(0);
+
+  // Com dado, ele cobra.
+  await page.goto('/app/tarefas');
+  await page.getByRole('button', { name: 'Nova tarefa' }).click();
+  await page.getByLabel('O que precisa ser feito').fill('Algo que vale salvar');
+  await page.getByRole('button', { name: 'Criar tarefa' }).click();
+
+  await page.goto('/app/ajustes');
+  await expect(page.getByText('Nunca exportado')).toBeVisible();
+
+  // Exportar zera a conta, e o arquivo carrega a data em que foi feito.
+  const baixando = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Exportar agora' }).click();
+  const arquivo = await baixando;
+
+  await expect(page.getByText('Exportado hoje')).toBeVisible();
+
+  const { readFileSync } = await import('node:fs');
+  const conteudo = JSON.parse(readFileSync((await arquivo.path())!, 'utf8'));
+  expect(conteudo.preferencias.ultimoBackupEm).toBeTruthy();
+});

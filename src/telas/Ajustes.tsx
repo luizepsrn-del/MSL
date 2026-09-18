@@ -3,6 +3,12 @@ import { Card, Button, Badge, Icon, SuccessDialog } from '../../design-system';
 import { useBanco } from '../dados/BancoContexto';
 import { VERSAO_ESQUEMA, COLECOES, nomearColecao } from '../dados/esquema';
 import { formatarData, formatarNumero } from '../formato';
+import {
+  descreverUltimoBackup,
+  precisaDeBackup,
+  diasSemBackup,
+  DIAS_ATE_COBRAR,
+} from '../dominio/backup';
 
 /**
  * Ajustes — e o backup, que é o que realmente importa aqui.
@@ -11,7 +17,7 @@ import { formatarData, formatarNumero } from '../formato';
  * tinha botão em lugar nenhum. Backup sem botão é backup que não existe.
  */
 export function Ajustes() {
-  const { banco, exportar, importar } = useBanco();
+  const { banco, exportar, importar, definirPreferencias } = useBanco();
   const entrada = React.useRef<HTMLInputElement>(null);
 
   const [aviso, setAviso] = React.useState<{ titulo: string; texto: string; erro?: boolean } | null>(
@@ -29,7 +35,14 @@ export function Ajustes() {
     0,
   );
 
+  const agora = new Date();
+  const atrasado = precisaDeBackup(banco.preferencias, agora);
+  const dias = diasSemBackup(banco.preferencias, agora);
+
   const baixar = async () => {
+    // Anota antes de gerar: assim o arquivo carrega a data em que ele mesmo
+    // foi feito, e não a do arquivo anterior.
+    await definirPreferencias({ ultimoBackupEm: new Date().toISOString() });
     const json = await exportar();
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -106,6 +119,62 @@ export function Ajustes() {
             </span>
           </div>
         </Card>
+      )}
+
+      {/*
+        O lembrete de exportar.
+
+        Mostra um número, e não um aviso genérico: "faça backup" a gente
+        aprende a ignorar, "há nove dias" não. Aparece mesmo com o sistema
+        instalado — instalar resolve os sete dias do Safari, não o aparelho
+        que quebra.
+
+        Some quando não há registro nenhum: cobrar backup de um sistema vazio
+        é o tipo de aviso que ensina a ignorar avisos.
+      */}
+      {totalRegistros > 0 && (
+      <Card>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-6)' }}>
+          <span
+            style={{
+              color: atrasado ? 'var(--orange-500)' : 'var(--green-500)',
+              display: 'flex',
+              flex: '0 0 auto',
+            }}
+          >
+            <Icon name={atrasado ? 'alert-triangle' : 'circle-check'} size={20} />
+          </span>
+          <span style={{ minWidth: 0, flex: 1 }}>
+            <span
+              style={{
+                display: 'block',
+                font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
+                color: 'var(--text-heading)',
+              }}
+            >
+              {descreverUltimoBackup(banco.preferencias, agora)}
+            </span>
+            <span
+              style={{
+                display: 'block',
+                font: 'var(--type-body)',
+                color: 'var(--text-muted)',
+                marginTop: 'var(--sp-3)',
+                lineHeight: 'var(--lh-normal)',
+              }}
+            >
+              {dias === null
+                ? `O seu dado vive só neste aparelho. Exporte uma vez e o sistema passa a cobrar a cada ${DIAS_ATE_COBRAR} dias.`
+                : atrasado
+                  ? 'O aparelho pode quebrar e o navegador pode ser limpo. Vale exportar de novo.'
+                  : `O sistema cobra de novo depois de ${DIAS_ATE_COBRAR} dias.`}
+            </span>
+          </span>
+          <Button variant={atrasado ? 'primary' : 'secondary'} iconLeft="download" onClick={baixar}>
+            Exportar agora
+          </Button>
+        </div>
+      </Card>
       )}
 
       <Card title="Meus dados" subtitle={`Esquema na versão ${VERSAO_ESQUEMA}`}>

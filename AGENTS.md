@@ -118,6 +118,28 @@ reading its test is how the system starts lying.
 Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `pedir`, `ajustes`. Each has its own URL.
 `/design-system` is the library showcase.
 
+## Storage
+
+The data lives in this device's browser, and there are three ways it can go:
+
+- **Safari erases local storage after seven days without visiting the site** —
+  but only for sites that are *not installed*. Installing to the home screen is
+  what removes that rule, which is why the manifest, the icons and the service
+  worker exist. `navigator.storage.persist()` does **not** help here.
+- The browser can be cleared, and the device can break. Only the exported file
+  covers those. `src/dominio/backup.ts` counts the days and the Settings screen
+  shows the number — a generic "back up your data" is a notice people learn to
+  ignore; "nine days ago" is not. It stays quiet while there is nothing to save.
+- `ultimoBackupEm` rides inside the exported file on purpose: the file carries
+  the moment it was made, so restoring on a new device tells the truth about
+  when that data was last saved.
+
+The service worker caches **files, not data**, and reads the hashed chunk names
+out of `index.html` at install: otherwise they only land in the cache on the
+second visit, and installing then boarding a plane opens a blank screen. It has
+no `skipWaiting` — a new version takes over on the next launch, never under an
+open session.
+
 ## Width traps on the phone, each one measured
 
 - **A grid track written `1fr` has min-content as its floor.** A card whose

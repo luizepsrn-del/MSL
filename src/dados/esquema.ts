@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 6;
+export const VERSAO_ESQUEMA = 7;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -239,6 +239,14 @@ export interface Preferencias {
    * fica escondido. Ausente quer dizer "tudo, na ordem de fábrica".
    */
   blocosDoInicio?: string[];
+  /**
+   * ISO UTC do último arquivo exportado, ou ausente se nunca houve um.
+   *
+   * Viaja dentro do próprio arquivo, e isso é de propósito: o arquivo carrega
+   * a data em que foi gerado, e restaurar num aparelho novo diz a verdade
+   * sobre quando aquele dado foi salvo pela última vez.
+   */
+  ultimoBackupEm?: string;
 }
 
 export interface Banco {
