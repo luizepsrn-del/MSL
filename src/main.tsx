@@ -37,6 +37,18 @@ window.lucide = {
   createElement: (node) => createElement(node as Parameters<typeof createElement>[0]),
 };
 
+/**
+ * O operário de serviço, só no que foi construído.
+ *
+ * Em desenvolvimento ele brigaria com a troca a quente do Vite, servindo
+ * pedaço velho e fazendo a tela mentir sobre o código que está rodando.
+ */
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js');
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider>

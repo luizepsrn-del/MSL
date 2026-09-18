@@ -5,6 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/design-system/assets/favicon.svg" />
     <title>My System Life</title>
+    <meta
+      name="description"
+      content="Rotina, tarefas, projetos, calendário e financeiro em um sistema só."
+    />
+
+    <!--
+      Instalação na tela de início. Isto é o que tira o sistema da regra dos
+      sete dias do Safari, que apaga o armazenamento local de sites não
+      instalados. Veja AGENTS.md → Armazenamento.
+
+      As duas cores são as da folha original, como no favicon: `theme-color`
+      não aceita `var()`, então o valor de `--ink-1000` aparece cru aqui.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#06071A" />
+    <link rel="apple-touch-icon" href="/icones/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="My System Life" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   </head>
   <body>
     <div id="root"></div>

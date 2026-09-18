@@ -106,13 +106,29 @@ export default tseslint.config(
     // trabalho deles. Um teste que garante que #682EC7 é a marca precisa
     // escrever #682EC7. As regras de valor cru continuam valendo para todo
     // o resto de src/.
-    files: ['**/*.{test,spec}.ts', 'e2e/**'],
+    files: ['**/*.{test,spec}.ts', 'e2e/**', 'e2e-instalado/**'],
     rules: { 'no-restricted-syntax': 'off' },
   },
 
   {
+    // O operário de serviço roda num worker, não na janela: `self`, `caches`,
+    // `fetch` e `Request` são globais dele, e `window` não existe.
+    files: ['public/sw.js'],
+    languageOptions: {
+      globals: {
+        self: 'readonly',
+        caches: 'readonly',
+        fetch: 'readonly',
+        Request: 'readonly',
+        URL: 'readonly',
+        Promise: 'readonly',
+      },
+    },
+  },
+
+  {
     // Build scripts run in Node, not the browser.
-    files: ['scripts/**', 'e2e/**', '*.config.js', '*.config.ts'],
+    files: ['scripts/**', 'e2e/**', 'e2e-instalado/**', '*.config.js', '*.config.ts'],
     languageOptions: { globals: { console: 'readonly', process: 'readonly' } },
   },
 );
