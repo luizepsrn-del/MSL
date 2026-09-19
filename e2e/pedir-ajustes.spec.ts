@@ -209,3 +209,44 @@ test('o sistema cobra o backup com um número, e cala quando não há o que salv
   const conteudo = JSON.parse(readFileSync((await arquivo.path())!, 'utf8'));
   expect(conteudo.preferencias.ultimoBackupEm).toBeTruthy();
 });
+
+test('exportar num aparelho e importar noutro traz tudo de volta', async ({ page }) => {
+  // É a única ponte entre o Mac e o telefone enquanto não há sincronização, e
+  // até agora só o botão era testado — o caminho inteiro, não.
+  await page.addInitScript(() => {
+    try {
+      if (!sessionStorage.getItem('teste-ja-limpou')) {
+        localStorage.removeItem('msl-banco');
+        sessionStorage.setItem('teste-ja-limpou', '1');
+      }
+    } catch {
+      /* janela privada */
+    }
+  });
+
+  await page.goto('/app/tarefas');
+  await page.getByRole('button', { name: 'Nova tarefa' }).click();
+  await page.getByLabel('O que precisa ser feito').fill('Tarefa que precisa atravessar');
+  await page.getByRole('button', { name: 'Criar tarefa' }).click();
+  await expect(page.getByText('Tarefa que precisa atravessar')).toBeVisible();
+
+  await page.goto('/app/ajustes');
+  const baixando = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Exportar tudo' }).click();
+  const arquivo = await baixando;
+  const caminho = (await arquivo.path())!;
+
+  // O outro aparelho: mesmo sistema, armazenamento vazio.
+  await page.evaluate(() => localStorage.removeItem('msl-banco'));
+  await page.reload();
+  await expect(page.getByText('Nada guardado ainda.')).toBeVisible();
+
+  await page.setInputFiles('input[type="file"]', caminho);
+  // Importar substitui tudo, então pede confirmação.
+  await page.getByRole('button', { name: 'Substituir', exact: true }).click();
+  await expect(page.getByText('Dados restaurados')).toBeVisible();
+  await page.getByRole('button', { name: 'Entendi' }).click();
+
+  await page.goto('/app/tarefas');
+  await expect(page.getByText('Tarefa que precisa atravessar')).toBeVisible();
+});
