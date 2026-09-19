@@ -75,6 +75,45 @@ local após sete dias sem uso do site** — sites adicionados à tela de início
 ficam de fora dessa regra. Exporte em `/app/ajustes`: o arquivo é JSON legível
 e a importação traz de volta, migrando de versões antigas se preciso.
 
+## Publicar
+
+O sistema é um site estático: qualquer hospedagem serve. O `vercel.json` já
+está pronto, e a Vercel funciona sem configurar nada na interface — ela lê o
+arquivo.
+
+**Precisa ser HTTPS.** Não é preferência: o operário de serviço só é registrado
+em contexto seguro, então num endereço `http://` da rede local o iPhone instala
+o atalho mas não abre sem rede. É o motivo principal de publicar.
+
+```sh
+git remote add origin git@github.com:SEU-USUARIO/my-system-life.git
+git push -u origin main          # só a main: a branch dump-original não precisa subir
+```
+
+Na Vercel: **Add New → Project → Import** o repositório. Framework *Other*,
+build `npm run build`, saída `dist` — tudo isso já vem do `vercel.json`. Cada
+`git push` na `main` publica.
+
+O que o `vercel.json` resolve, e por quê:
+
+| Regra | Motivo |
+| --- | --- |
+| tudo reescrito para `/index.html` | `/app/tarefas` é rota do roteador, não arquivo. A Vercel procura no sistema de arquivos primeiro, então os arquivos reais continuam sendo servidos por si — há teste para isso. |
+| `sw.js` sem cache | se o navegador servir a cópia velha do operário, a versão nova nunca assume e o sistema congela numa build antiga |
+| `/assets/*` imutável por um ano | o nome tem hash: mudou o conteúdo, mudou o nome |
+| `manifest.webmanifest` com tipo explícito | navegador que recusa o tipo não instala o aplicativo |
+| `index.html` sem cache | é a casca de todas as rotas |
+
+**O endereço é público, os dados não.** Quem abrir o link vê um sistema vazio:
+tudo fica no `localStorage` do navegador de quem acessa, e nada é enviado a
+lugar nenhum. Não há servidor, banco nem conta.
+
+Uma ressalva sobre o repositório: `design-system/reference/` guarda o material
+original recebido, incluindo um pacote compilado de terceiro. Se o repositório
+for público, esse material vai junto — vale conferir a licença dele antes, ou
+manter o repositório privado. A Vercel publica de repositório privado sem
+diferença nenhuma.
+
 ## Trabalhando nele
 
 Tudo que é visual vem de `design-system/`. Duas regras carregam quase todo o

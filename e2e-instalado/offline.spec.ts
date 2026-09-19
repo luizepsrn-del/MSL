@@ -8,11 +8,29 @@ import { test, expect } from '@playwright/test';
  * a tela existir sem sinal.
  */
 
-/** Espera o operário assumir o controle da página. */
+/**
+ * Espera o operário assumir o controle da página.
+ *
+ * Duas etapas, e não uma: `ready` garante que ele foi instalado e ativado, mas
+ * a página que carregou antes disso só passa a ser controlada quando o
+ * `clients.claim()` chega. Esperar direto pelo controlador tinha corrida na
+ * primeira visita — uma falha em três execuções, sempre depois de uma build
+ * nova. Se o controle não vier, uma volta resolve, que é o que o navegador
+ * faria de qualquer jeito.
+ */
 async function esperarOOperario(page: import('@playwright/test').Page) {
-  await page.waitForFunction(() => !!navigator.serviceWorker.controller, undefined, {
-    timeout: 20_000,
-  });
+  await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
+  const controlado = await page
+    .waitForFunction(() => !!navigator.serviceWorker.controller, undefined, { timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!controlado) {
+    await page.reload();
+    await page.waitForFunction(() => !!navigator.serviceWorker.controller, undefined, {
+      timeout: 10_000,
+    });
+  }
 }
 
 /**
@@ -157,4 +175,21 @@ test('a página declara o que o iPhone precisa para instalar', async ({ page }) 
   expect(cabeca.capaz).toBe('yes');
   // A cor da tela do sistema, a mesma do `--ink-1000`.
   expect(cabeca.cor).toBe('#06071A');
+});
+
+test('os arquivos de verdade continuam sendo servidos por si', async ({ request }) => {
+  // A reescrita manda tudo para o index, mas só quando não existe arquivo. Se
+  // ela passasse na frente, as páginas de referência e os ícones virariam a
+  // casca do aplicativo — e ninguém perceberia até abrir uma delas.
+  const referencia = await request.get('/design-system/reference/index.html');
+  expect(referencia.ok()).toBe(true);
+  expect(await referencia.text()).not.toContain('<div id="root"></div>');
+
+  const icone = await request.get('/icones/icone-512.png');
+  expect(icone.headers()['content-type']).toContain('image/png');
+
+  // E uma rota do roteador, que não é arquivo nenhum, recebe a casca.
+  const rota = await request.get('/app/calendario');
+  expect(rota.ok()).toBe(true);
+  expect(await rota.text()).toContain('<div id="root"></div>');
 });
