@@ -15,6 +15,7 @@ import {
 import { RepositorioLocal, type Repositorio } from './repositorio';
 import { removerProjeto as soltarEremover } from '../dominio/projeto';
 import { aoMoverPara } from '../dominio/tarefa';
+import { editarNaLista, type Edicao } from '../dominio/edicao';
 import { validarValor } from '../dominio/financeiro';
 
 /**
@@ -30,19 +31,24 @@ interface Acoes {
   carregando: boolean;
   hoje: string;
   criarRotina(dados: Omit<Rotina, keyof BaseRegistro>): Promise<void>;
+  /** corrige o que já existe; campo com `undefined` é apagado */
+  editarRotina(id: string, mudanca: Edicao<Rotina>): Promise<void>;
   arquivarRotina(id: string): Promise<void>;
   alternarExecucao(rotinaId: string, dia: string): Promise<void>;
   criarTarefa(dados: Omit<Tarefa, keyof BaseRegistro>): Promise<void>;
+  editarTarefa(id: string, mudanca: Edicao<Tarefa>): Promise<void>;
   alternarTarefa(id: string): Promise<void>;
   removerTarefa(id: string): Promise<void>;
   /** move a tarefa de coluna no quadro; entrar em "feito" conclui, sair reabre */
   mudarEstadoTarefa(id: string, estado: EstadoTarefa): Promise<void>;
   criarProjeto(dados: Omit<Projeto, keyof BaseRegistro>): Promise<void>;
+  editarProjeto(id: string, mudanca: Edicao<Projeto>): Promise<void>;
   arquivarProjeto(id: string): Promise<void>;
   /** solta as tarefas do projeto; não as apaga */
   removerProjeto(id: string): Promise<void>;
   moverTarefa(tarefaId: string, projetoId: string | undefined): Promise<void>;
   criarLancamento(dados: Omit<Lancamento, keyof BaseRegistro>): Promise<void>;
+  editarLancamento(id: string, mudanca: Edicao<Lancamento>): Promise<void>;
   removerLancamento(id: string): Promise<void>;
   /** grava o que eu escolhi sobre a interface; viaja no backup */
   definirPreferencias(mudanca: Partial<Preferencias>): Promise<void>;
@@ -100,6 +106,10 @@ export function ProvedorBanco({
         await gravar({ ...banco, rotinas: [...banco.rotinas, rotina] });
       },
 
+      async editarRotina(id, mudanca) {
+        await gravar({ ...banco, rotinas: editarNaLista(banco.rotinas, id, mudanca, agora()) });
+      },
+
       async arquivarRotina(id) {
         await gravar({
           ...banco,
@@ -127,6 +137,10 @@ export function ProvedorBanco({
         const t = agora();
         const tarefa: Tarefa = { ...dados, id: novoId(), criadoEm: t, alteradoEm: t };
         await gravar({ ...banco, tarefas: [...banco.tarefas, tarefa] });
+      },
+
+      async editarTarefa(id, mudanca) {
+        await gravar({ ...banco, tarefas: editarNaLista(banco.tarefas, id, mudanca, agora()) });
       },
 
       async alternarTarefa(id) {
@@ -171,6 +185,10 @@ export function ProvedorBanco({
         await gravar({ ...banco, projetos: [...banco.projetos, projeto] });
       },
 
+      async editarProjeto(id, mudanca) {
+        await gravar({ ...banco, projetos: editarNaLista(banco.projetos, id, mudanca, agora()) });
+      },
+
       async arquivarProjeto(id) {
         const t = agora();
         await gravar({
@@ -207,6 +225,15 @@ export function ProvedorBanco({
 
       async definirPreferencias(mudanca) {
         await gravar({ ...banco, preferencias: { ...banco.preferencias, ...mudanca } });
+      },
+
+      async editarLancamento(id, mudanca) {
+        // A mesma porta da criação: a validação não pode valer só na entrada.
+        if (mudanca.valor !== undefined) validarValor(mudanca.valor);
+        await gravar({
+          ...banco,
+          lancamentos: editarNaLista(banco.lancamentos, id, mudanca, agora()),
+        });
       },
 
       async removerLancamento(id) {

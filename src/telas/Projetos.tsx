@@ -207,16 +207,18 @@ export function Projetos() {
         </Card>
       )}
 
-      <FormularioTarefa
-        aberto={acrescentandoEm !== null}
-        projetos={projetosAtivos}
-        projetoFixo={acrescentandoEm ?? undefined}
-        aoFechar={() => setAcrescentandoEm(null)}
-        aoCriar={async (dados) => {
-          await criarTarefa(dados);
-          setAcrescentandoEm(null);
-        }}
-      />
+      {acrescentandoEm !== null && (
+        <FormularioTarefa
+          aberto
+          projetos={projetosAtivos}
+          projetoFixo={acrescentandoEm}
+          aoFechar={() => setAcrescentandoEm(null)}
+          aoEnviar={async (dados) => {
+            await criarTarefa(dados);
+            setAcrescentandoEm(null);
+          }}
+        />
+      )}
 
       <FormularioProjeto
         aberto={criando}

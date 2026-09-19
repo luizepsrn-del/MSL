@@ -44,9 +44,12 @@ const AGRUPAMENTOS: Agrupamento[] = ['estado', 'prazo', 'projeto', 'contexto'];
 
 /** Tarefa — o que tem fim, com prazo quando faz sentido ter. */
 export function Tarefas() {
-  const { banco, hoje, criarTarefa, alternarTarefa, removerTarefa, mudarEstadoTarefa } = useBanco();
+  const { banco, hoje, criarTarefa, editarTarefa, alternarTarefa, removerTarefa, mudarEstadoTarefa } =
+    useBanco();
   const projetosAtivos = banco.projetos.filter((p) => !p.arquivadoEm);
   const [criando, setCriando] = React.useState(false);
+  /** a tarefa aberta para correção, ou null */
+  const [corrigindo, setCorrigindo] = React.useState<Tarefa | null>(null);
   const [filtro, setFiltro] = React.useState<Filtro>('pendentes');
   const [visao, setVisao] = React.useState<Visao>('lista');
   const [agrupamento, setAgrupamento] = React.useState<Agrupamento>('estado');
@@ -144,6 +147,7 @@ export function Tarefas() {
           colunas={quadroPor(banco, agrupamento, hoje)}
           hoje={hoje}
           aoMover={mudarEstadoTarefa}
+          aoCorrigir={setCorrigindo}
           aoRemover={removerTarefa}
         />
       ) : visiveis.length === 0 ? (
@@ -172,6 +176,7 @@ export function Tarefas() {
                 tarefa={t}
                 hoje={hoje}
                 aoAlternar={() => alternarTarefa(t.id)}
+                aoCorrigir={() => setCorrigindo(t)}
                 aoRemover={() => removerTarefa(t.id)}
               />
             ))}
@@ -179,15 +184,32 @@ export function Tarefas() {
         </Card>
       )}
 
-      <FormularioTarefa
-        aberto={criando}
-        projetos={projetosAtivos}
-        aoFechar={() => setCriando(false)}
-        aoCriar={async (dados) => {
-          await criarTarefa(dados);
-          setCriando(false);
-        }}
-      />
+      {/* Montado só quando aberto: cada abertura começa do zero, sem efeito
+          de limpeza correndo atrás. */}
+      {criando && (
+        <FormularioTarefa
+          aberto
+          projetos={projetosAtivos}
+          aoFechar={() => setCriando(false)}
+          aoEnviar={async (dados) => {
+            await criarTarefa(dados);
+            setCriando(false);
+          }}
+        />
+      )}
+
+      {corrigindo && (
+        <FormularioTarefa
+          aberto
+          projetos={projetosAtivos}
+          tarefa={corrigindo}
+          aoFechar={() => setCorrigindo(null)}
+          aoEnviar={async (dados) => {
+            await editarTarefa(corrigindo.id, dados);
+            setCorrigindo(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -204,11 +226,13 @@ export function LinhaTarefa({
   tarefa,
   hoje,
   aoAlternar,
+  aoCorrigir,
   aoRemover,
 }: {
   tarefa: Tarefa;
   hoje: string;
   aoAlternar: () => void;
+  aoCorrigir?: () => void;
   aoRemover?: () => void;
 }) {
   const s = situacao(tarefa, hoje);
@@ -239,9 +263,9 @@ export function LinhaTarefa({
                 font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
                 color: feita ? 'var(--text-muted)' : 'var(--text-body)',
                 textDecoration: feita ? 'line-through' : 'none',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                // Quebra, não corta: no telefone sobram uns 100px para o
+                // título, e "Pagar o boleto…" não diz qual boleto.
+                overflowWrap: 'anywhere',
               }}
             >
               {tarefa.titulo}
@@ -267,6 +291,16 @@ export function LinhaTarefa({
       <Badge tone={tarefa.contexto === 'pessoal' ? 'ontime' : 'delivered'} dot={false}>
         {ROTULO_CONTEXTO[tarefa.contexto]}
       </Badge>
+
+      {aoCorrigir && (
+        <IconButton
+          icon="pencil"
+          label={`Corrigir ${tarefa.titulo}`}
+          variant="ghost"
+          size={34}
+          onClick={aoCorrigir}
+        />
+      )}
 
       {aoRemover && (
         <IconButton
@@ -299,38 +333,40 @@ const SEM_PROJETO = '';
  * Com `projetoFixo` o seletor de projeto some: quem abriu o formulário de
  * dentro de um projeto já disse a qual projeto a tarefa pertence, e oferecer a
  * escolha de novo seria convidar a contradizê-la.
+ *
+ * Com `tarefa` ele corrige em vez de criar. É o mesmo formulário de propósito:
+ * dois formulários para o mesmo registro divergem na primeira regra nova que
+ * só um dos dois receber.
  */
 export function FormularioTarefa({
   aberto,
   projetos,
   projetoFixo,
+  tarefa,
   aoFechar,
-  aoCriar,
+  aoEnviar,
 }: {
   aberto: boolean;
   projetos: Projeto[];
   projetoFixo?: string;
+  /** quando presente, o formulário corrige esta tarefa */
+  tarefa?: Tarefa;
   aoFechar: () => void;
-  aoCriar: (dados: DadosNovos) => Promise<void>;
+  aoEnviar: (dados: DadosNovos) => Promise<void>;
 }) {
-  const [titulo, setTitulo] = React.useState('');
-  const [contexto, setContexto] = React.useState<Contexto>('pessoal');
-  const [prazo, setPrazo] = React.useState('');
-  const [hora, setHora] = React.useState('');
-  const [anotacao, setAnotacao] = React.useState('');
-  const [projetoId, setProjetoId] = React.useState(SEM_PROJETO);
-  const [tentou, setTentou] = React.useState(false);
+  const corrigindo = !!tarefa;
 
-  React.useEffect(() => {
-    if (aberto) {
-      setTitulo('');
-      setPrazo('');
-      setHora('');
-      setAnotacao('');
-      setProjetoId(SEM_PROJETO);
-      setTentou(false);
-    }
-  }, [aberto]);
+  // O estado nasce do que já está gravado, e não de um efeito que corre depois
+  // de a janela abrir: assim era possível digitar no intervalo e ver o texto
+  // ser sobrescrito. Quem monta este formulário o monta só quando aberto, e
+  // cada abertura é uma montagem nova.
+  const [titulo, setTitulo] = React.useState(tarefa?.titulo ?? '');
+  const [contexto, setContexto] = React.useState<Contexto>(tarefa?.contexto ?? 'pessoal');
+  const [prazo, setPrazo] = React.useState(tarefa?.prazo ?? '');
+  const [hora, setHora] = React.useState(tarefa?.hora ?? '');
+  const [anotacao, setAnotacao] = React.useState(tarefa?.anotacao ?? '');
+  const [projetoId, setProjetoId] = React.useState(tarefa?.projetoId ?? SEM_PROJETO);
+  const [tentou, setTentou] = React.useState(false);
 
   const erroTitulo = tentou && titulo.trim() === '' ? 'Dê um nome à tarefa' : undefined;
   const erroPrazo =
@@ -344,7 +380,7 @@ export function FormularioTarefa({
     if (prazo !== '' && !diaValido(prazo)) return;
     if (hora !== '' && !horaValida(hora)) return;
 
-    await aoCriar({
+    await aoEnviar({
       titulo: titulo.trim(),
       contexto,
       prazo: prazo === '' ? undefined : prazo,
@@ -369,7 +405,7 @@ export function FormularioTarefa({
               color: 'var(--text-heading)',
             }}
           >
-            Nova tarefa
+            {corrigindo ? 'Corrigir tarefa' : 'Nova tarefa'}
           </h2>
           <p
             style={{
@@ -378,7 +414,9 @@ export function FormularioTarefa({
               marginTop: 'var(--sp-3)',
             }}
           >
-            O que tem fim. Prazo só quando faz sentido ter um
+            {corrigindo
+              ? 'O que estiver errado. Apagar um campo o deixa em branco'
+              : 'O que tem fim. Prazo só quando faz sentido ter um'}
           </p>
         </div>
       }
@@ -388,7 +426,7 @@ export function FormularioTarefa({
             Cancelar
           </Button>
           <Button variant="primary" size="lg" fullWidth onClick={enviar}>
-            Criar tarefa
+            {corrigindo ? 'Salvar' : 'Criar tarefa'}
           </Button>
         </>
       }
@@ -506,12 +544,14 @@ export function QuadroTarefas({
   colunas,
   hoje,
   aoMover,
+  aoCorrigir,
   aoRemover,
   colunasNaTela = 3,
 }: {
   colunas: ColunaAgrupada[];
   hoje: string;
   aoMover: (id: string, estado: EstadoTarefa) => Promise<void>;
+  aoCorrigir?: (tarefa: Tarefa) => void;
   aoRemover?: (id: string) => Promise<void>;
   /** quantas colunas cabem lado a lado no desktop */
   colunasNaTela?: number;
@@ -607,6 +647,7 @@ export function QuadroTarefas({
                   hoje={hoje}
                   arrastavel={desktop && coluna.soltavel}
                   aoMover={aoMover}
+                  aoCorrigir={aoCorrigir ? () => aoCorrigir(t) : undefined}
                   aoRemover={aoRemover ? () => aoRemover(t.id) : undefined}
                 />
               ))
@@ -623,12 +664,14 @@ function CartaoTarefa({
   hoje,
   arrastavel,
   aoMover,
+  aoCorrigir,
   aoRemover,
 }: {
   tarefa: Tarefa;
   hoje: string;
   arrastavel: boolean;
   aoMover: (id: string, estado: EstadoTarefa) => Promise<void>;
+  aoCorrigir?: () => void;
   aoRemover?: () => void;
 }) {
   const estado = estadoDe(tarefa);
@@ -696,6 +739,16 @@ function CartaoTarefa({
               onClick={() => void aoMover(tarefa.id, proximo)}
             />
           )}
+          {aoCorrigir && (
+            <IconButton
+              icon="pencil"
+              label={`Corrigir ${tarefa.titulo}`}
+              variant="ghost"
+              size={34}
+              onClick={aoCorrigir}
+            />
+          )}
+
           {aoRemover && (
             <IconButton
               icon="trash-2"

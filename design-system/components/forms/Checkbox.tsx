@@ -59,7 +59,14 @@ export function Checkbox({
           <Icon name="check" size={12} />
         ) : null}
       </span>
-      {label && <span style={{ font: 'var(--type-body)', color: 'var(--text-body)' }}>{label}</span>}
+      {/* `min-width: 0` porque este é um item de flex: sem ele o padrão é
+          `auto`, o rótulo comprido se recusa a encolher, transborda a caixa e
+          pinta por cima do que estiver ao lado. */}
+      {label && (
+        <span style={{ font: 'var(--type-body)', color: 'var(--text-body)', minWidth: 0 }}>
+          {label}
+        </span>
+      )}
     </label>
   );
 }

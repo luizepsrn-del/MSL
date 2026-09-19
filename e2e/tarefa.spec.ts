@@ -273,3 +273,64 @@ test('a hora aparece junto do prazo, e não só no calendário', async ({ page }
 
   await expect(page.getByText('Vence hoje às 14:30')).toBeVisible();
 });
+
+test('dá para corrigir uma tarefa sem apagar e refazer', async ({ page }) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  const { hoje, semanaQueVem } = datas();
+  await comecarLimpo(page);
+  await page.goto('/app/tarefas');
+  await criarTarefa(page, 'Entregar o relatorio', hoje);
+
+  await page.getByRole('button', { name: 'Corrigir Entregar o relatorio' }).click();
+  // Os campos vêm preenchidos com o que está gravado.
+  await expect(page.getByLabel('O que precisa ser feito')).toHaveValue('Entregar o relatorio');
+  await expect(page.getByLabel('Prazo')).toHaveValue(hoje);
+
+  await page.getByLabel('O que precisa ser feito').fill('Entregar o relatório');
+  await page.getByLabel('Prazo').fill(semanaQueVem);
+  await page.getByLabel('Hora').fill('14:30');
+  await page.getByRole('button', { name: 'Salvar' }).click();
+
+  await expect(page.getByText('Entregar o relatório')).toBeVisible();
+  await expect(page.getByText('Vence em 7 dias às 14:30')).toBeVisible();
+  // Uma só: corrigir não pode virar duas tarefas.
+  await expect(page.getByText('1 pendente', { exact: true })).toBeVisible();
+
+  expect(erros).toEqual([]);
+});
+
+test('corrigir uma tarefa concluída não a ressuscita', async ({ page }) => {
+  await comecarLimpo(page);
+  await page.goto('/app/tarefas');
+  await criarTarefa(page, 'Assinar o contrato');
+  await page.getByText('Assinar o contrato').click();
+  await expect(page.getByText('0 pendentes')).toBeVisible();
+
+  await escolher(page, 'Pendentes', 'Concluídas');
+  await page.getByRole('button', { name: 'Corrigir Assinar o contrato' }).click();
+  await page.getByLabel('O que precisa ser feito').fill('Assinar o contrato novo');
+  await page.getByRole('button', { name: 'Salvar' }).click();
+
+  // Consertar um nome não desfaz o trabalho.
+  await expect(page.getByText('Assinar o contrato novo')).toBeVisible();
+  await expect(page.getByText('0 pendentes')).toBeVisible();
+});
+
+test('apagar o prazo na correção deixa a tarefa sem prazo', async ({ page }) => {
+  // A diferença entre "não mandei" e "mandei vazio": sem ela, não haveria como
+  // tirar uma data que deixou de existir.
+  const { hoje } = datas();
+  await comecarLimpo(page);
+  await page.goto('/app/tarefas');
+  await criarTarefa(page, 'Ligar para o contador', hoje);
+  await expect(page.getByText('Vence hoje')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Corrigir Ligar para o contador' }).click();
+  await page.getByLabel('Prazo').fill('');
+  await page.getByRole('button', { name: 'Salvar' }).click();
+
+  await expect(page.getByText('Sem prazo')).toBeVisible();
+  await expect(page.getByText('Vence hoje')).toHaveCount(0);
+});
