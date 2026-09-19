@@ -238,3 +238,28 @@ test('apagar a série diz que apaga a série', async ({ page }) => {
   await apagar.click();
   await expect(page.getByText('Nada lançado neste mês.')).toBeVisible();
 });
+
+test('dá para corrigir um lançamento, e o valor passa pela mesma conferência', async ({ page }) => {
+  await comecarLimpo(page);
+  await page.goto('/app/financeiro');
+  await lancar(page, 'Mercado', '432,50', 'Saída');
+  await expect(page.getByText(`−${reais('432,50')}`)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Corrigir Mercado' }).click();
+  await expect(page.getByLabel('Descrição')).toHaveValue('Mercado');
+  await expect(page.getByLabel('Valor')).toHaveValue('432,50');
+
+  // Valor zero continua barrado na correção, como na entrada.
+  await page.getByLabel('Valor').fill('0');
+  await page.getByRole('button', { name: 'Salvar' }).click();
+  await expect(page.getByRole('alert')).toContainText('maior que zero');
+
+  await page.getByLabel('Valor').fill('532,50');
+  await page.getByLabel('Descrição').fill('Mercado do mês');
+  await page.getByRole('button', { name: 'Salvar' }).click();
+
+  await expect(page.getByText('Mercado do mês')).toBeVisible();
+  await expect(page.getByText(`−${reais('532,50')}`)).toBeVisible();
+  // Um só: corrigir não pode virar dois lançamentos.
+  await expect(page.getByText('1 lançamento')).toBeVisible();
+});

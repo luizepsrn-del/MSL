@@ -198,3 +198,28 @@ test('o conteúdo do Início é de uma coluna no telefone', async ({ page }, inf
   expect(Math.abs(hoje.x - divisao.x), 'os cartões começam na mesma coluna').toBeLessThan(4);
   expect(divisao.y, 'um está abaixo do outro').toBeGreaterThan(hoje.y);
 });
+
+test('corrigir a frequência muda o calendário e não apaga o que já foi marcado', async ({
+  page,
+}) => {
+  await comecarLimpo(page);
+  await page.goto('/app/rotina');
+  await criarRotina(page, 'Ler 20 páginas');
+
+  // Marca hoje: é este registro que não pode sumir numa correção de agenda.
+  // A sequência de um dia é o sinal visível de que a execução existe.
+  await page.getByText('Ler 20 páginas').click();
+  await expect(page.getByText('1', { exact: true }).first()).toBeVisible();
+
+  await page.getByRole('button', { name: 'Corrigir Ler 20 páginas' }).click();
+  await expect(page.getByLabel('O que é')).toHaveValue('Ler 20 páginas');
+  await page.getByLabel('O que é').fill('Ler 30 páginas');
+  await page.getByLabel('Hora').fill('22:00');
+  await page.getByRole('button', { name: 'Salvar' }).click();
+
+  await expect(page.getByText('Ler 30 páginas')).toBeVisible();
+  await expect(page.getByText('Todo dia · 22:00')).toBeVisible();
+  // A execução de hoje continua lá: corrigir o nome não desfaz o dia.
+  await page.goto('/app');
+  await expect(page.getByText('100%').first()).toBeVisible();
+});

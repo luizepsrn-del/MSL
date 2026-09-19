@@ -12,7 +12,13 @@ import {
   Modal,
 } from '../../design-system';
 import { useBanco } from '../dados/BancoContexto';
-import { CONTEXTOS, ROTULO_CONTEXTO, type Contexto, type Recorrencia } from '../dados/esquema';
+import {
+  CONTEXTOS,
+  ROTULO_CONTEXTO,
+  type Contexto,
+  type Recorrencia,
+  type Rotina,
+} from '../dados/esquema';
 import {
   DIAS_CURTOS,
   DIAS_DA_SEMANA,
@@ -28,8 +34,11 @@ import { ordenarPor } from '../formato';
 
 /** Rotina — a lista do que se repete, e o formulário para criar mais. */
 export function Rotinas() {
-  const { banco, hoje, criarRotina, arquivarRotina, alternarExecucao } = useBanco();
+  const { banco, hoje, criarRotina, editarRotina, arquivarRotina, alternarExecucao } =
+    useBanco();
   const [criando, setCriando] = React.useState(false);
+  /** a rotina aberta para correção, ou null */
+  const [corrigindo, setCorrigindo] = React.useState<Rotina | null>(null);
 
   const ativas = ordenarPor(
     banco.rotinas.filter((r) => !r.arquivada),
@@ -189,6 +198,14 @@ export function Rotinas() {
                   </Badge>
 
                   <IconButton
+                    icon="pencil"
+                    label={`Corrigir ${r.titulo}`}
+                    variant="ghost"
+                    size={34}
+                    onClick={() => setCorrigindo(r)}
+                  />
+
+                  <IconButton
                     icon="archive"
                     label={`Arquivar ${r.titulo}`}
                     variant="ghost"
@@ -202,15 +219,30 @@ export function Rotinas() {
         </Card>
       )}
 
-      <FormularioRotina
-        aberto={criando}
-        aoFechar={() => setCriando(false)}
-        aoCriar={async (dados) => {
-          await criarRotina(dados);
-          setCriando(false);
-        }}
-        hoje={hoje}
-      />
+      {criando && (
+        <FormularioRotina
+          aberto
+          aoFechar={() => setCriando(false)}
+          aoEnviar={async (dados) => {
+            await criarRotina(dados);
+            setCriando(false);
+          }}
+          hoje={hoje}
+        />
+      )}
+
+      {corrigindo && (
+        <FormularioRotina
+          aberto
+          rotina={corrigindo}
+          aoFechar={() => setCorrigindo(null)}
+          aoEnviar={async (dados) => {
+            await editarRotina(corrigindo.id, dados);
+            setCorrigindo(null);
+          }}
+          hoje={hoje}
+        />
+      )}
     </div>
   );
 }
@@ -236,35 +268,46 @@ const ICONES = [
   'moon',
 ];
 
+/**
+ * O formulário de rotina, nos dois modos.
+ *
+ * Corrigir a recorrência muda o passado e o futuro de uma vez, porque o
+ * calendário é derivado — e as execuções já marcadas **não** são apagadas.
+ * Uma rotina que deixe de ocorrer numa terça some das terças, e se voltar a
+ * ocorrer, a marca que estava lá reaparece. Apagar histórico por causa de uma
+ * correção de agenda seria perder trabalho registrado.
+ */
 function FormularioRotina({
   aberto,
+  rotina,
   aoFechar,
-  aoCriar,
+  aoEnviar,
   hoje,
 }: {
   aberto: boolean;
+  rotina?: Rotina;
   aoFechar: () => void;
-  aoCriar: (dados: DadosNovos) => Promise<void>;
+  aoEnviar: (dados: DadosNovos) => Promise<void>;
   hoje: string;
 }) {
-  const [titulo, setTitulo] = React.useState('');
-  const [contexto, setContexto] = React.useState<Contexto>('pessoal');
-  const [tipo, setTipo] = React.useState<Recorrencia['tipo']>('diaria');
-  const [dias, setDias] = React.useState<number[]>([1, 2, 3, 4, 5]);
-  const [diaDoMes, setDiaDoMes] = React.useState('1');
-  const [aCadaDias, setACadaDias] = React.useState('3');
-  const [inicioEm, setInicioEm] = React.useState(hoje);
-  const [icone, setIcone] = React.useState('repeat');
-  const [hora, setHora] = React.useState('');
+  const corrigindo = !!rotina;
+  const r = rotina?.recorrencia;
+  const [titulo, setTitulo] = React.useState(rotina?.titulo ?? '');
+  const [contexto, setContexto] = React.useState<Contexto>(rotina?.contexto ?? 'pessoal');
+  const [tipo, setTipo] = React.useState<Recorrencia['tipo']>(r?.tipo ?? 'diaria');
+  const [dias, setDias] = React.useState<number[]>(
+    r?.tipo === 'semanal' ? r.dias : [1, 2, 3, 4, 5],
+  );
+  const [diaDoMes, setDiaDoMes] = React.useState(
+    r?.tipo === 'mensal' ? String(r.diaDoMes) : '1',
+  );
+  const [aCadaDias, setACadaDias] = React.useState(
+    r?.tipo === 'intervalo' ? String(r.aCadaDias) : '3',
+  );
+  const [inicioEm, setInicioEm] = React.useState(rotina?.inicioEm ?? hoje);
+  const [icone, setIcone] = React.useState(rotina?.icone ?? 'repeat');
+  const [hora, setHora] = React.useState(rotina?.hora ?? '');
   const [tentou, setTentou] = React.useState(false);
-
-  React.useEffect(() => {
-    if (aberto) {
-      setTitulo('');
-      setTentou(false);
-      setInicioEm(hoje);
-    }
-  }, [aberto, hoje]);
 
   const erroTitulo = tentou && titulo.trim() === '' ? 'Dê um nome à rotina' : undefined;
   const erroDias =
@@ -291,7 +334,7 @@ function FormularioRotina({
     if (tipo === 'semanal' && dias.length === 0) return;
     if (hora !== '' && !horaValida(hora)) return;
 
-    await aoCriar({
+    await aoEnviar({
       titulo: titulo.trim(),
       contexto,
       icone,
@@ -316,7 +359,7 @@ function FormularioRotina({
               color: 'var(--text-heading)',
             }}
           >
-            Nova rotina
+            {corrigindo ? 'Corrigir rotina' : 'Nova rotina'}
           </h2>
           <p
             style={{
@@ -325,7 +368,9 @@ function FormularioRotina({
               marginTop: 'var(--sp-3)',
             }}
           >
-            O que se repete, e com que frequência
+            {corrigindo
+              ? 'Mudar a frequência muda o calendário inteiro — o que já foi marcado fica'
+              : 'O que se repete, e com que frequência'}
           </p>
         </div>
       }
@@ -335,7 +380,7 @@ function FormularioRotina({
             Cancelar
           </Button>
           <Button variant="primary" size="lg" fullWidth onClick={enviar}>
-            Criar rotina
+            {corrigindo ? 'Salvar' : 'Criar rotina'}
           </Button>
         </>
       }

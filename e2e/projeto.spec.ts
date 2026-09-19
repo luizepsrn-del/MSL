@@ -241,3 +241,21 @@ test('o prazo do projeto aparece no cartão dele', async ({ page }) => {
 
   await expect(page.getByText(/Prazo em \d+ dias/)).toBeVisible();
 });
+
+test('dá para corrigir um projeto', async ({ page }) => {
+  await comecarLimpo(page);
+  await page.goto('/app/projetos');
+  await criarProjeto(page, 'Proposta comercal');
+
+  await page.getByRole('button', { name: 'Corrigir Proposta comercal' }).click();
+  await expect(page.getByLabel('Nome do projeto')).toHaveValue('Proposta comercal');
+  await page.getByLabel('Nome do projeto').fill('Proposta comercial');
+  const daqui = new Date();
+  daqui.setDate(daqui.getDate() + 5);
+  await page.getByLabel('Prazo').fill(daqui.toISOString().slice(0, 10));
+  await page.getByRole('button', { name: 'Salvar' }).click();
+
+  await expect(page.getByText('Proposta comercial')).toBeVisible();
+  await expect(page.getByText(/Prazo em \d+ dias/)).toBeVisible();
+  await expect(page.getByText('2 projetos ativos')).toHaveCount(0);
+});

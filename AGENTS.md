@@ -118,6 +118,25 @@ reading its test is how the system starts lying.
 Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `pedir`, `ajustes`. Each has its own URL.
 `/design-system` is the library showcase.
 
+## Editing
+
+Every form serves two modes, create and correct — one form per record, never
+two. Two forms for the same record diverge on the first new rule only one of
+them gets.
+
+- `aplicarEdicao` in `src/dominio/edicao.ts` holds what a correction may *not*
+  do: it never touches `id` or `criadoEm`, always stamps `alteradoEm`, and
+  tells "I did not send this field" apart from "I sent it empty" — that
+  difference is how a deadline gets removed at all.
+- The form's state is born from the record, and the form is **mounted only
+  while open**. It used to be filled by an effect that ran after the dialog
+  appeared, and anything typed in that gap was overwritten by the stored value.
+- Correcting a routine's recurrence rewrites past and future at once, because
+  the calendar is derived — and the ticks already recorded are **not** deleted.
+  Losing recorded work to fix a schedule would be the worst kind of trade.
+- Money goes through the same `validarValor` on the way in and on the way
+  back: a check that only guards the front door is not a check.
+
 ## Storage
 
 The data lives in this device's browser, and there are three ways it can go:

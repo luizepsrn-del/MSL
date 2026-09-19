@@ -26,6 +26,7 @@ import {
   type TipoLancamento,
   type PeriodoRecorrencia,
   type RecorrenciaLancamento,
+  type Lancamento,
 } from '../dados/esquema';
 import {
   resumoFinanceiro,
@@ -48,12 +49,14 @@ const TONS = ['purple', 'green', 'orange', 'neutral', 'neutral'] as const;
 
 /** Financeiro — entradas, saídas e o saldo que já é, contra o que ainda vai ser. */
 export function Financeiro() {
-  const { banco, hoje, criarLancamento, removerLancamento } = useBanco();
+  const { banco, hoje, criarLancamento, editarLancamento, removerLancamento } = useBanco();
   const desktop = useLarguraDesktop() !== false;
 
   const [anoHoje, mesHoje] = anoMesDe(hoje);
   const [[ano, mes], setMes] = React.useState<[number, number]>([anoHoje, mesHoje]);
   const [criando, setCriando] = React.useState(false);
+  /** o lançamento aberto para correção, ou null */
+  const [corrigindo, setCorrigindo] = React.useState<Lancamento | null>(null);
 
   // Ocorrências, não lançamentos: o que se repete aparece no mês em que cai,
   // sem eu relançar. A repetição é derivada — guardar doze aluguéis criaria
@@ -344,6 +347,10 @@ export function Financeiro() {
                     style={{
                       display: 'flex',
                       alignItems: 'center',
+                      // Quebra em vez de espremer: com o lápis e a lixeira, a
+                      // descrição chegava a zero de largura no telefone e
+                      // sumia. Medido: 0px de largura para 163 de conteúdo.
+                      flexWrap: 'wrap',
                       gap: 'var(--sp-6)',
                       minHeight: 'var(--tap-min)',
                       padding: 'var(--sp-4) var(--sp-5)',
@@ -368,15 +375,13 @@ export function Financeiro() {
                       <Icon name={entrada ? 'arrow-down' : 'arrow-up'} size={16} />
                     </span>
 
-                    <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ flex: '1 1 var(--grid-min)', minWidth: 0 }}>
                       <span
                         style={{
                           display: 'block',
                           font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
                           color: 'var(--text-body)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
+                          overflowWrap: 'anywhere',
                         }}
                       >
                         {l.descricao}
@@ -417,6 +422,18 @@ export function Financeiro() {
                     {/* Não dá para apagar uma repetição sozinha: ela não
                         existe como registro. Apagar remove a série inteira, e
                         o rótulo diz isso antes do clique. */}
+                    <IconButton
+                      icon="pencil"
+                      label={
+                        l.recorrencia
+                          ? `Corrigir ${l.descricao} e todas as repetições`
+                          : `Corrigir ${l.descricao}`
+                      }
+                      variant="ghost"
+                      size={34}
+                      onClick={() => setCorrigindo(l)}
+                    />
+
                     <IconButton
                       icon="trash-2"
                       label={
@@ -480,15 +497,30 @@ export function Financeiro() {
         </Card>
       </div>
 
-      <FormularioLancamento
-        aberto={criando}
-        hoje={hoje}
-        aoFechar={() => setCriando(false)}
-        aoCriar={async (dados) => {
-          await criarLancamento(dados);
-          setCriando(false);
-        }}
-      />
+      {criando && (
+        <FormularioLancamento
+          aberto
+          hoje={hoje}
+          aoFechar={() => setCriando(false)}
+          aoEnviar={async (dados) => {
+            await criarLancamento(dados);
+            setCriando(false);
+          }}
+        />
+      )}
+
+      {corrigindo && (
+        <FormularioLancamento
+          aberto
+          hoje={hoje}
+          lancamento={corrigindo}
+          aoFechar={() => setCorrigindo(null)}
+          aoEnviar={async (dados) => {
+            await editarLancamento(corrigindo.id, dados);
+            setCorrigindo(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -552,43 +584,40 @@ const UMA_VEZ = 'uma-vez';
 
 const PERIODOS: PeriodoRecorrencia[] = ['semanal', 'mensal', 'anual'];
 
+/**
+ * O formulário de lançamento, nos dois modos.
+ *
+ * Nada de efeito de limpeza: o estado nasce do registro, e quem o monta só o
+ * monta quando aberto. O bug que o efeito existia para consertar — tipo e
+ * categoria pendurados do lançamento anterior, transformando uma saída em
+ * entrada — não volta, porque cada abertura é uma montagem nova.
+ */
 function FormularioLancamento({
   aberto,
   hoje,
+  lancamento,
   aoFechar,
-  aoCriar,
+  aoEnviar,
 }: {
   aberto: boolean;
   hoje: string;
+  lancamento?: Lancamento;
   aoFechar: () => void;
-  aoCriar: (dados: DadosNovos) => Promise<void>;
+  aoEnviar: (dados: DadosNovos) => Promise<void>;
 }) {
-  const [descricao, setDescricao] = React.useState('');
-  const [valor, setValor] = React.useState('');
-  const [tipo, setTipo] = React.useState<TipoLancamento>('saida');
-  const [categoria, setCategoria] = React.useState<Categoria>('outros');
-  const [contexto, setContexto] = React.useState<Contexto>('pessoal');
-  const [data, setData] = React.useState(hoje);
-  const [repete, setRepete] = React.useState<string>(UMA_VEZ);
+  const corrigindo = !!lancamento;
+  const [descricao, setDescricao] = React.useState(lancamento?.descricao ?? '');
+  const [valor, setValor] = React.useState(
+    lancamento ? (lancamento.valor / 100).toFixed(2).replace('.', ',') : '',
+  );
+  const [tipo, setTipo] = React.useState<TipoLancamento>(lancamento?.tipo ?? 'saida');
+  const [categoria, setCategoria] = React.useState<Categoria>(lancamento?.categoria ?? 'outros');
+  const [contexto, setContexto] = React.useState<Contexto>(lancamento?.contexto ?? 'pessoal');
+  const [data, setData] = React.useState(lancamento?.data ?? hoje);
+  const [repete, setRepete] = React.useState<string>(
+    lancamento?.recorrencia?.periodo ?? UMA_VEZ,
+  );
   const [tentou, setTentou] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!aberto) return;
-    // Reseta TUDO, não só o que se digita.
-    //
-    // Sem isto o tipo, a categoria e o contexto ficavam pendurados do
-    // lançamento anterior: quem registrasse uma entrada e depois uma saída
-    // gravava duas entradas. O campo mostra o valor herdado, mas ninguém
-    // relê um campo que não tocou — e em dinheiro esse erro custa caro.
-    setDescricao('');
-    setValor('');
-    setTipo('saida');
-    setCategoria('outros');
-    setContexto('pessoal');
-    setData(hoje);
-    setRepete(UMA_VEZ);
-    setTentou(false);
-  }, [aberto, hoje]);
 
   const centavos = lerMoeda(valor);
   const erroDescricao = tentou && descricao.trim() === '' ? 'Descreva o lançamento' : undefined;
@@ -604,7 +633,7 @@ function FormularioLancamento({
     setTentou(true);
     if (descricao.trim() === '' || centavos === null || centavos <= 0) return;
     if (!diaValido(data)) return;
-    await aoCriar({
+    await aoEnviar({
       descricao: descricao.trim(),
       valor: centavos,
       tipo,
@@ -632,7 +661,7 @@ function FormularioLancamento({
               color: 'var(--text-heading)',
             }}
           >
-            Novo lançamento
+            {corrigindo ? 'Corrigir lançamento' : 'Novo lançamento'}
           </h2>
           <p
             style={{
@@ -641,8 +670,9 @@ function FormularioLancamento({
               marginTop: 'var(--sp-3)',
             }}
           >
-            Data futura vira previsão. O que se repete aparece sozinho nos meses
-            seguintes
+            {corrigindo
+              ? 'O que estiver errado. O valor passa pela mesma conferência da entrada'
+              : 'Data futura vira previsão. O que se repete aparece sozinho nos meses seguintes'}
           </p>
         </div>
       }
@@ -652,7 +682,7 @@ function FormularioLancamento({
             Cancelar
           </Button>
           <Button variant="primary" size="lg" fullWidth onClick={enviar}>
-            Lançar
+            {corrigindo ? 'Salvar' : 'Lançar'}
           </Button>
         </>
       }

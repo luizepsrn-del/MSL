@@ -49,6 +49,7 @@ export function Projetos() {
     banco,
     hoje,
     criarProjeto,
+    editarProjeto,
     arquivarProjeto,
     removerProjeto,
     alternarTarefa,
@@ -58,6 +59,8 @@ export function Projetos() {
   } = useBanco();
   const [criando, setCriando] = React.useState(false);
   const [aRemover, setARemover] = React.useState<Projeto | null>(null);
+  /** o projeto aberto para correção, ou null */
+  const [corrigindo, setCorrigindo] = React.useState<Projeto | null>(null);
   const [aberto, setAberto] = React.useState<string | null>(null);
   /** id do projeto ao qual estou acrescentando uma tarefa, ou null */
   const [acrescentandoEm, setAcrescentandoEm] = React.useState<string | null>(null);
@@ -129,6 +132,7 @@ export function Projetos() {
             expandido={aberto === painel.projeto.id}
             aoExpandir={() => setAberto(aberto === painel.projeto.id ? null : painel.projeto.id)}
             aoArquivar={() => arquivarProjeto(painel.projeto.id)}
+            aoCorrigir={() => setCorrigindo(painel.projeto)}
             aoRemover={() => setARemover(painel.projeto)}
             aoAlternarTarefa={alternarTarefa}
             aoMoverEstado={mudarEstadoTarefa}
@@ -220,14 +224,28 @@ export function Projetos() {
         />
       )}
 
-      <FormularioProjeto
-        aberto={criando}
-        aoFechar={() => setCriando(false)}
-        aoCriar={async (dados) => {
-          await criarProjeto(dados);
-          setCriando(false);
-        }}
-      />
+      {criando && (
+        <FormularioProjeto
+          aberto
+          aoFechar={() => setCriando(false)}
+          aoEnviar={async (dados) => {
+            await criarProjeto(dados);
+            setCriando(false);
+          }}
+        />
+      )}
+
+      {corrigindo && (
+        <FormularioProjeto
+          aberto
+          projeto={corrigindo}
+          aoFechar={() => setCorrigindo(null)}
+          aoEnviar={async (dados) => {
+            await editarProjeto(corrigindo.id, dados);
+            setCorrigindo(null);
+          }}
+        />
+      )}
 
       <SuccessDialog
         open={!!aRemover}
@@ -251,6 +269,7 @@ function CartaoProjeto({
   expandido,
   aoExpandir,
   aoArquivar,
+  aoCorrigir,
   aoRemover,
   aoAlternarTarefa,
   aoMoverEstado,
@@ -261,6 +280,7 @@ function CartaoProjeto({
   expandido: boolean;
   aoExpandir: () => void;
   aoArquivar: () => void;
+  aoCorrigir: () => void;
   aoRemover: () => void;
   aoAlternarTarefa: (id: string) => void;
   aoMoverEstado: (id: string, estado: EstadoTarefa) => Promise<void>;
@@ -329,6 +349,13 @@ function CartaoProjeto({
               variant="ghost"
               size={34}
               onClick={aoAcrescentar}
+            />
+            <IconButton
+              icon="pencil"
+              label={`Corrigir ${projeto.titulo}`}
+              variant="ghost"
+              size={34}
+              onClick={aoCorrigir}
             />
             <IconButton
               icon="archive"
@@ -483,29 +510,29 @@ interface DadosNovos {
   prazo?: string;
 }
 
+/**
+ * O formulário de projeto, nos dois modos.
+ *
+ * Com `projeto` ele corrige em vez de criar. O estado nasce do registro, e
+ * quem o monta só o monta quando aberto — cada abertura é uma montagem nova.
+ */
 function FormularioProjeto({
   aberto,
+  projeto,
   aoFechar,
-  aoCriar,
+  aoEnviar,
 }: {
   aberto: boolean;
+  projeto?: Projeto;
   aoFechar: () => void;
-  aoCriar: (dados: DadosNovos) => Promise<void>;
+  aoEnviar: (dados: DadosNovos) => Promise<void>;
 }) {
-  const [titulo, setTitulo] = React.useState('');
-  const [contexto, setContexto] = React.useState<Contexto>('profissional');
-  const [descricao, setDescricao] = React.useState('');
-  const [prazo, setPrazo] = React.useState('');
+  const corrigindo = !!projeto;
+  const [titulo, setTitulo] = React.useState(projeto?.titulo ?? '');
+  const [contexto, setContexto] = React.useState<Contexto>(projeto?.contexto ?? 'profissional');
+  const [descricao, setDescricao] = React.useState(projeto?.descricao ?? '');
+  const [prazo, setPrazo] = React.useState(projeto?.prazo ?? '');
   const [tentou, setTentou] = React.useState(false);
-
-  React.useEffect(() => {
-    if (aberto) {
-      setTitulo('');
-      setDescricao('');
-      setPrazo('');
-      setTentou(false);
-    }
-  }, [aberto]);
 
   const erroTitulo = tentou && titulo.trim() === '' ? 'Dê um nome ao projeto' : undefined;
   const erroPrazo = tentou && prazo !== '' && !diaValido(prazo) ? 'Data inválida' : undefined;
@@ -514,7 +541,7 @@ function FormularioProjeto({
     setTentou(true);
     if (titulo.trim() === '') return;
     if (prazo !== '' && !diaValido(prazo)) return;
-    await aoCriar({
+    await aoEnviar({
       titulo: titulo.trim(),
       contexto,
       descricao: descricao.trim() === '' ? undefined : descricao.trim(),
@@ -536,7 +563,7 @@ function FormularioProjeto({
               color: 'var(--text-heading)',
             }}
           >
-            Novo projeto
+            {corrigindo ? 'Corrigir projeto' : 'Novo projeto'}
           </h2>
           <p
             style={{
@@ -545,7 +572,9 @@ function FormularioProjeto({
               marginTop: 'var(--sp-3)',
             }}
           >
-            Trabalho maior que uma tarefa, que termina quando as tarefas terminam
+            {corrigindo
+              ? 'O que estiver errado. Apagar um campo o deixa em branco'
+              : 'Trabalho maior que uma tarefa, que termina quando as tarefas terminam'}
           </p>
         </div>
       }
@@ -555,7 +584,7 @@ function FormularioProjeto({
             Cancelar
           </Button>
           <Button variant="primary" size="lg" fullWidth onClick={enviar}>
-            Criar projeto
+            {corrigindo ? 'Salvar' : 'Criar projeto'}
           </Button>
         </>
       }
