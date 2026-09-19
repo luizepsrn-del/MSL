@@ -81,6 +81,14 @@ export const MIGRACOES: Record<number, Migracao> = {
   /** 6 → 7: a data do último backup, dentro das preferências. Aditiva. */
   6: (dados) => ({ ...dados, versao: 7 }),
 
+  /**
+   * 7 → 8: as lápides.
+   *
+   * Aditiva: quem nunca apagou nada não tem lápide nenhuma, e um banco sem a
+   * lista se comporta como uma lista vazia.
+   */
+  7: (dados) => ({ ...dados, versao: 8 }),
+
 };
 
 export class ErroDeMigracao extends Error {

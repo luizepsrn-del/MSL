@@ -110,6 +110,8 @@ export function removerProjeto(banco: Banco, projetoId: string, agora: string): 
     tarefas: banco.tarefas.map((t) =>
       t.projetoId === projetoId ? { ...t, projetoId: undefined, alteradoEm: agora } : t,
     ),
+    // A lápide, para o outro aparelho não devolver o projeto na junção.
+    removidos: [...(banco.removidos ?? []), { colecao: 'projetos', id: projetoId, em: agora }],
   };
 }
 

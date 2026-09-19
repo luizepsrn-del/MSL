@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 7;
+export const VERSAO_ESQUEMA = 8;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -249,6 +249,24 @@ export interface Preferencias {
   ultimoBackupEm?: string;
 }
 
+/**
+ * A lápide de um registro apagado.
+ *
+ * Apagar não pode ser simplesmente sumir. Com dois aparelhos, o que não soube
+ * da remoção traz o registro de volta na próxima junção — e uma tarefa
+ * apagada ressuscitando é pior que uma tarefa a mais.
+ *
+ * A lápide fica **ao lado** das coleções, e não dentro delas, de propósito:
+ * assim nenhuma tela precisa aprender a filtrar registro morto. Quem apaga
+ * continua tirando da lista; só passa a anotar que tirou.
+ */
+export interface Removido {
+  colecao: NomeColecao;
+  id: string;
+  /** ISO UTC do momento da remoção */
+  em: string;
+}
+
 export interface Banco {
   versao: number;
   rotinas: Rotina[];
@@ -257,6 +275,8 @@ export interface Banco {
   projetos: Projeto[];
   lancamentos: Lancamento[];
   preferencias?: Preferencias;
+  /** o que foi apagado, para a junção entre aparelhos não ressuscitar nada */
+  removidos?: Removido[];
 }
 
 export const COLECOES = ['rotinas', 'execucoes', 'tarefas', 'projetos', 'lancamentos'] as const;
@@ -291,6 +311,21 @@ export function bancoVazio(): Banco {
     tarefas: [],
     projetos: [],
     lancamentos: [],
+    removidos: [],
+  };
+}
+
+/** Tira o registro da lista e anota a lápide, num passo só. */
+export function removerRegistro<T extends { id: string }>(
+  banco: Banco,
+  colecao: NomeColecao,
+  lista: readonly T[],
+  id: string,
+  agora: string,
+): { lista: T[]; removidos: Removido[] } {
+  return {
+    lista: lista.filter((r) => r.id !== id),
+    removidos: [...(banco.removidos ?? []), { colecao, id, em: agora }],
   };
 }
 

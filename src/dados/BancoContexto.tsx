@@ -3,6 +3,7 @@ import {
   bancoVazio,
   novoId,
   diaLocal,
+  removerRegistro,
   type Banco,
   type Rotina,
   type Execucao,
@@ -122,10 +123,16 @@ export function ProvedorBanco({
       async alternarExecucao(rotinaId, dia) {
         const existente = banco.execucoes.find((e) => e.rotinaId === rotinaId && e.dia === dia);
         if (existente) {
-          await gravar({
-            ...banco,
-            execucoes: banco.execucoes.filter((e) => e.id !== existente.id),
-          });
+          // Desmarcar apaga a execução, e apagar precisa deixar lápide: sem
+          // ela o outro aparelho remarcaria o dia na próxima junção.
+          const { lista, removidos } = removerRegistro(
+            banco,
+            'execucoes',
+            banco.execucoes,
+            existente.id,
+            agora(),
+          );
+          await gravar({ ...banco, execucoes: lista, removidos });
           return;
         }
         const t = agora();
@@ -162,7 +169,8 @@ export function ProvedorBanco({
       },
 
       async removerTarefa(id) {
-        await gravar({ ...banco, tarefas: banco.tarefas.filter((t) => t.id !== id) });
+        const { lista, removidos } = removerRegistro(banco, 'tarefas', banco.tarefas, id, agora());
+        await gravar({ ...banco, tarefas: lista, removidos });
       },
 
       async mudarEstadoTarefa(id, estado) {
@@ -237,7 +245,14 @@ export function ProvedorBanco({
       },
 
       async removerLancamento(id) {
-        await gravar({ ...banco, lancamentos: banco.lancamentos.filter((l) => l.id !== id) });
+        const { lista, removidos } = removerRegistro(
+          banco,
+          'lancamentos',
+          banco.lancamentos,
+          id,
+          agora(),
+        );
+        await gravar({ ...banco, lancamentos: lista, removidos });
       },
 
       exportar: () => repo.exportar(),

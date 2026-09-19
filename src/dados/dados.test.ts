@@ -11,6 +11,7 @@ import {
 
 function bancoDeExemplo(): Banco {
   return {
+    ...bancoVazio(),
     versao: VERSAO_ESQUEMA,
     rotinas: [
       {
