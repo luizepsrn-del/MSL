@@ -3,6 +3,11 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": null,
+  "functions": {
+    "api/**/*.ts": {
+      "includeFiles": "src/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/((?!api/).*)",
