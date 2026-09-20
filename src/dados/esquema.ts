@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 13;
+export const VERSAO_ESQUEMA = 14;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -400,6 +400,18 @@ export interface Preferencias {
     url: string;
     /** o nome que a própria agenda declara, quando declara */
     nome?: string;
+  };
+  /**
+   * A janela em que o dia aceita trabalho, para o plano automático.
+   *
+   * Sem ela, `JORNADA_PADRAO`. O bloco é o mesmo para toda tarefa de
+   * propósito: um número por tarefa que ninguém mediu é precisão inventada.
+   */
+  jornada?: {
+    /** `HH:MM` */
+    de: string;
+    ate: string;
+    minutosPorItem: number;
   };
   /**
    * Os blocos do Início, na ordem em que aparecem. Bloco que não está na lista

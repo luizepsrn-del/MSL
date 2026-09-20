@@ -19,6 +19,8 @@ import {
   DIAS_ATE_COBRAR,
 } from '../dominio/backup';
 import { limparCache } from '../dados/agendaExterna';
+import { JORNADA_PADRAO } from '../dominio/plano';
+import { horaValida } from '../dominio/calendario';
 
 /**
  * Ajustes — e o backup, que é o que realmente importa aqui.
@@ -207,6 +209,11 @@ export function Ajustes() {
         aoSalvar={(nome) => definirPreferencias({ nome: nome.trim() || undefined })}
       />
 
+      <AJornada
+        atual={banco.preferencias?.jornada ?? JORNADA_PADRAO}
+        aoSalvar={(jornada) => definirPreferencias({ jornada })}
+      />
+
       <AgendaDoGoogle
         atual={banco.preferencias?.agendaExterna?.url ?? ''}
         aoSalvar={(url) => {
@@ -363,6 +370,93 @@ function NomeNoInicio({ nome, aoSalvar }: { nome: string; aoSalvar: (nome: strin
         <Button variant="secondary" size="lg" onClick={() => aoSalvar(texto)}>
           Salvar
         </Button>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * A que horas o dia aceita trabalho.
+ *
+ * Só isso: nada de estimativa por tarefa. Todas pedem o mesmo bloco, porque
+ * um número por tarefa que ninguém mediu é precisão inventada — e "cabem
+ * cinco coisas hoje" é a informação que serve.
+ */
+function AJornada({
+  atual,
+  aoSalvar,
+}: {
+  atual: { de: string; ate: string; minutosPorItem: number };
+  aoSalvar: (j: { de: string; ate: string; minutosPorItem: number }) => Promise<void>;
+}) {
+  const [de, setDe] = React.useState(atual.de);
+  const [ate, setAte] = React.useState(atual.ate);
+  const [bloco, setBloco] = React.useState(String(atual.minutosPorItem));
+
+  const minutos = Math.max(Math.trunc(Number(bloco)) || 0, 0);
+  const erroHoras =
+    !horaValida(de) || !horaValida(ate)
+      ? 'Use o formato 08:00'
+      : de >= ate
+        ? 'O fim precisa vir depois do começo'
+        : undefined;
+  const erroBloco = minutos < 5 ? 'Pelo menos 5 minutos' : undefined;
+
+  return (
+    <Card title="O seu dia" subtitle="A janela que o plano automático usa">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-8)' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(var(--grid-min), 1fr))',
+            gap: 'var(--sp-8)',
+          }}
+        >
+          <Field label="Começa às" htmlFor="jor-de" error={erroHoras}>
+            <TextInput id="jor-de" type="time" value={de} onChange={setDe} size="lg" fullWidth />
+          </Field>
+          <Field label="Termina às" htmlFor="jor-ate">
+            <TextInput id="jor-ate" type="time" value={ate} onChange={setAte} size="lg" fullWidth />
+          </Field>
+          <Field
+            label="Cada tarefa ocupa"
+            htmlFor="jor-bloco"
+            error={erroBloco}
+            help="Em minutos"
+          >
+            <TextInput
+              id="jor-bloco"
+              type="number"
+              value={bloco}
+              onChange={setBloco}
+              size="lg"
+              fullWidth
+            />
+          </Field>
+        </div>
+
+        <div style={{ display: 'flex', gap: 'var(--sp-6)', flexWrap: 'wrap' }}>
+          <Button
+            variant="secondary"
+            size="lg"
+            disabled={!!erroHoras || !!erroBloco}
+            onClick={() => void aoSalvar({ de, ate, minutosPorItem: minutos })}
+          >
+            Salvar
+          </Button>
+          <Button
+            variant="ghost"
+            size="lg"
+            onClick={() => {
+              setDe(JORNADA_PADRAO.de);
+              setAte(JORNADA_PADRAO.ate);
+              setBloco(String(JORNADA_PADRAO.minutosPorItem));
+              void aoSalvar(JORNADA_PADRAO);
+            }}
+          >
+            Voltar ao padrão
+          </Button>
+        </div>
       </div>
     </Card>
   );

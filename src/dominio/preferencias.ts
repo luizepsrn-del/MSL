@@ -41,6 +41,12 @@ export const BLOCOS_DO_INICIO: BlocoDoInicio[] = [
     largura: 'inteira',
   },
   {
+    id: 'plano',
+    rotulo: 'O dia montado',
+    descricao: 'O que tem hora na hora, e o resto encaixado nos buracos',
+    largura: 'metade',
+  },
+  {
     id: 'metas',
     rotulo: 'Metas em curso',
     descricao: 'Quantas estão no alvo, e a distância de cada uma',

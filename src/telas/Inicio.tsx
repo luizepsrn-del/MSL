@@ -51,6 +51,9 @@ import {
 } from '../dominio/calendario';
 import { ocorrenciasDoMes, resumoFinanceiro, evolucaoMensal } from '../dominio/financeiro';
 import { precisaDeVoce, saudacao, comoEstaODia, type ItemDoFoco } from '../dominio/foco';
+import { montarODia, resumirPlano, duracao, JORNADA_PADRAO } from '../dominio/plano';
+import { useAgendaExterna } from '../dados/agendaExterna';
+import { itensDoDia } from '../dominio/calendario';
 import { metasEmCurso, resumoDeMetas, emDinheiro } from '../dominio/meta';
 import {
   formatarDataLonga,
@@ -197,6 +200,35 @@ export function Inicio() {
   const evolucao = evolucaoMensal(banco, anoAtual, mesAtual, 6);
 
   const fila = precisaDeVoce(banco, hoje);
+
+  // O dia montado: o que tem hora vira compromisso, o resto vai para a fila.
+  // A agenda externa entra junto — um plano que ignora a reunião do Google
+  // encaixaria trabalho em cima dela.
+  const externa = useAgendaExterna(hoje, hoje);
+  const doDia = itensDoDia(banco, hoje);
+  const compromissos = [
+    ...(externa.agenda?.eventos ?? [])
+      .filter((e) => e.hora)
+      .map((e) => ({ chave: e.chave, titulo: e.titulo, inicio: e.hora!, fim: e.fim })),
+    ...doDia.rotinas
+      .filter(({ rotina, feita }) => rotina.hora && !feita)
+      .map(({ rotina }) => ({ chave: `rotina:${rotina.id}`, titulo: rotina.titulo, inicio: rotina.hora! })),
+    ...doDia.tarefas
+      .filter((t) => t.hora && !t.concluidaEm)
+      .map((t) => ({ chave: `tarefa:${t.id}`, titulo: t.titulo, inicio: t.hora! })),
+  ];
+  const semHora = fila
+    .filter((i) => !i.hora && i.marcavel)
+    .map((i) => ({ chave: i.chave, titulo: i.titulo }));
+  const agoraNoRelogio = `${String(new Date().getHours()).padStart(2, '0')}:${String(
+    new Date().getMinutes(),
+  ).padStart(2, '0')}`;
+  const plano = montarODia(
+    compromissos,
+    semHora,
+    banco.preferencias?.jornada ?? JORNADA_PADRAO,
+    agoraNoRelogio,
+  );
   const metas = metasEmCurso(banco, hoje);
   const resumoMetas = resumoDeMetas(metas);
 
@@ -366,6 +398,57 @@ export function Inicio() {
               />
             ))}
           </div>
+        )}
+      </Card>
+      </>
+    ),
+    plano: (
+      <>
+      {/* O dia montado.
+          É uma **proposta**, e nada aqui é gravado: um horário sugerido que
+          virasse dado seria compromisso onde havia palpite. */}
+      <Card
+        style={{ height: '100%' }}
+        title="O dia montado"
+        subtitle={resumirPlano(plano)}
+        action={
+          <Link to="/app/calendario" style={{ textDecoration: 'none' }}>
+            <Button variant="secondary" size="sm" iconRight="arrow-right">
+              Ver o dia
+            </Button>
+          </Link>
+        }
+      >
+        {plano.blocos.length === 0 ? (
+          <p
+            style={{
+              padding: 'var(--sp-12) 0',
+              textAlign: 'center',
+              font: 'var(--type-body)',
+              color: 'var(--text-subtle)',
+            }}
+          >
+            Nada marcado e nada pendente. O dia é seu para preencher.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+            {plano.blocos.map((b) => (
+              <LinhaDoPlano key={b.chave} bloco={b} />
+            ))}
+          </div>
+        )}
+
+        {plano.naoCoube.length > 0 && (
+          <p
+            style={{
+              marginTop: 'var(--sp-8)',
+              font: 'var(--type-body)',
+              color: 'var(--text-subtle)',
+              lineHeight: 'var(--lh-normal)',
+            }}
+          >
+            Não coube hoje: {plano.naoCoube.map((i) => i.titulo).join(', ')}.
+          </p>
         )}
       </Card>
       </>
@@ -984,6 +1067,76 @@ function Saudacao({
       >
         Personalizar
       </Button>
+    </div>
+  );
+}
+
+/**
+ * Uma linha do dia montado.
+ *
+ * O compromisso é fato e vem sólido; o trabalho é proposta e vem apagado; o
+ * vago é o espaço que sobra. A diferença precisa ser visível, ou a sugestão
+ * passa a parecer agenda.
+ */
+function LinhaDoPlano({ bloco }: { bloco: ReturnType<typeof montarODia>['blocos'][number] }) {
+  const proposta = bloco.tipo !== 'compromisso';
+  const vago = bloco.tipo === 'vago';
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--sp-6)',
+        minHeight: 'var(--tap-min)',
+        padding: 'var(--sp-3) var(--sp-5)',
+        borderRadius: 'var(--r-nav)',
+        background: vago ? 'transparent' : 'var(--surface-raised)',
+        border: vago
+          ? 'var(--bw-hairline) dashed var(--border-hairline)'
+          : 'var(--bw-hairline) solid transparent',
+        opacity: vago ? 0.7 : 1,
+      }}
+    >
+      <span
+        style={{
+          flex: '0 0 auto',
+          font: 'var(--fw-medium) var(--fs-body)/1 var(--font-mono)',
+          color: proposta ? 'var(--text-subtle)' : 'var(--text-muted)',
+        }}
+      >
+        {bloco.inicio}
+      </span>
+
+      <span
+        style={{
+          flex: 1,
+          minWidth: 0,
+          font: `${proposta ? 'var(--fw-regular)' : 'var(--fw-medium)'} var(--fs-md)/1.3 var(--font-core)`,
+          color: proposta ? 'var(--text-muted)' : 'var(--text-body)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {bloco.titulo}
+      </span>
+
+      <span
+        style={{
+          flex: '0 0 auto',
+          font: 'var(--type-body)',
+          color: 'var(--text-subtle)',
+        }}
+      >
+        {vago
+          ? duracao(
+              Number(bloco.fim.slice(0, 2)) * 60 +
+                Number(bloco.fim.slice(3)) -
+                (Number(bloco.inicio.slice(0, 2)) * 60 + Number(bloco.inicio.slice(3))),
+            )
+          : bloco.fim}
+      </span>
     </div>
   );
 }

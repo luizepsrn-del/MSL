@@ -139,6 +139,14 @@ export const MIGRACOES: Record<number, Migracao> = {
     modelos: Array.isArray(dados.modelos) ? dados.modelos : [],
     versao: 13,
   }),
+
+  /**
+   * 13 → 14: a jornada, dentro das preferências.
+   *
+   * Aditiva: quem não disser a que horas o dia começa fica com a jornada
+   * padrão, que é uma escolha razoável e não uma falta.
+   */
+  13: (dados) => ({ ...dados, versao: 14 }),
 };
 
 export class ErroDeMigracao extends Error {
