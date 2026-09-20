@@ -19,6 +19,7 @@ import {
   ROTULO_CONTEXTO,
   type Contexto,
   type Projeto,
+  type Modelo,
   type EstadoTarefa,
 } from '../dados/esquema';
 import {
@@ -32,7 +33,8 @@ import {
 } from '../dominio/projeto';
 import { situacao, descreverPrazo, quadroPor } from '../dominio/tarefa';
 import { diaValido, distanciaEmDias } from '../dominio/rotina';
-import { formatarPorcento, formatarDataMedia, formatarNumero } from '../formato';
+import { formatarPorcento, formatarDataMedia, formatarNumero, ordenarPor } from '../formato';
+import { aplicarModelo, descreverModelo } from '../dominio/modelo';
 import { FormularioTarefa, QuadroTarefas } from './Tarefas';
 
 const TOM: Record<SituacaoProjeto, 'delay' | 'ontime' | 'delivered' | 'neutral'> = {
@@ -56,6 +58,10 @@ export function Projetos() {
     criarTarefa,
     moverTarefa,
     mudarEstadoTarefa,
+    criarModelo,
+    removerModelo,
+    aplicarModeloDeProjeto,
+    guardarComoModelo,
   } = useBanco();
   const [criando, setCriando] = React.useState(false);
   const [aRemover, setARemover] = React.useState<Projeto | null>(null);
@@ -64,6 +70,11 @@ export function Projetos() {
   const [aberto, setAberto] = React.useState<string | null>(null);
   /** id do projeto ao qual estou acrescentando uma tarefa, ou null */
   const [acrescentandoEm, setAcrescentandoEm] = React.useState<string | null>(null);
+  /** o modelo que estou prestes a usar, ou null */
+  const [usando, setUsando] = React.useState<Modelo | null>(null);
+  const [criandoModelo, setCriandoModelo] = React.useState(false);
+  /** o aviso de que um projeto não pôde virar modelo */
+  const [recusa, setRecusa] = React.useState<string | null>(null);
 
   const resumo = resumoProjetos(banco, hoje);
   const paineis = painelDosProjetos(banco, hoje);
@@ -109,6 +120,19 @@ export function Projetos() {
           </Button>
         </div>
       </Card>
+
+      <Modelos
+        modelos={banco.modelos}
+        aoUsar={setUsando}
+        aoCriar={() => setCriandoModelo(true)}
+        aoRemover={removerModelo}
+      />
+
+      {recusa && (
+        <Card>
+          <p style={{ font: 'var(--type-body)', color: 'var(--orange-500)' }}>{recusa}</p>
+        </Card>
+      )}
 
       {paineis.length === 0 ? (
         <Card>
@@ -243,6 +267,38 @@ export function Projetos() {
           aoEnviar={async (dados) => {
             await editarProjeto(corrigindo.id, dados);
             setCorrigindo(null);
+          }}
+        />
+      )}
+
+      {usando && (
+        <UsarModelo
+          modelo={usando}
+          hoje={hoje}
+          aoFechar={() => setUsando(null)}
+          aoAplicar={async (entrega, titulo) => {
+            await aplicarModeloDeProjeto(usando.id, entrega, titulo);
+            setUsando(null);
+          }}
+        />
+      )}
+
+      {criandoModelo && (
+        <FormularioDeModelo
+          projetos={projetosAtivos}
+          aoFechar={() => setCriandoModelo(false)}
+          aoCriar={async (dados) => {
+            await criarModelo(dados);
+            setCriandoModelo(false);
+          }}
+          aoGuardarProjeto={async (projetoId) => {
+            const deu = await guardarComoModelo(projetoId);
+            setCriandoModelo(false);
+            if (!deu) {
+              setRecusa(
+                'Esse projeto não vira modelo ainda: ele precisa de uma data de entrega e de pelo menos uma tarefa, para eu ter de onde contar os dias.',
+              );
+            }
           }}
         />
       )}
@@ -780,4 +836,430 @@ function descreverPrazoDoProjeto(prazo: string, hoje: string): string {
 /** `AAAA-MM-DD` → Date no meio-dia UTC, longe de qualquer virada de fuso. */
 function comoData(dia: string): Date {
   return new Date(`${dia}T12:00:00Z`);
+}
+
+/* ── Modelos ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Os modelos, acima da lista de projetos.
+ *
+ * Some inteiro quando não há nenhum e o botão de criar vive dentro — um cartão
+ * permanente vazio ocupa a primeira tela com nada.
+ */
+function Modelos({
+  modelos,
+  aoUsar,
+  aoCriar,
+  aoRemover,
+}: {
+  modelos: Modelo[];
+  aoUsar: (m: Modelo) => void;
+  aoCriar: () => void;
+  aoRemover: (id: string) => void;
+}) {
+  return (
+    <Card
+      title="Modelos"
+      subtitle={
+        modelos.length === 0
+          ? 'Um projeto que você já sabe fazer, pronto para repetir'
+          : `${modelos.length} ${modelos.length === 1 ? 'modelo' : 'modelos'}`
+      }
+      action={
+        <Button variant="secondary" size="sm" iconRight="plus" onClick={aoCriar}>
+          Novo modelo
+        </Button>
+      }
+    >
+      {modelos.length === 0 ? (
+        <p
+          style={{
+            padding: 'var(--sp-10) 0',
+            font: 'var(--type-body)',
+            color: 'var(--text-subtle)',
+            lineHeight: 'var(--lh-normal)',
+          }}
+        >
+          Monte a lista uma vez — "escrever a página, 14 dias antes; revisar, 3 dias antes;
+          publicar, no dia" — e toda entrega nova nasce com os prazos já contados. Um projeto que
+          você já tem também vira modelo num clique.
+        </p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+          {ordenarPor<Modelo>(modelos, (m) => m.titulo).map((m) => (
+            <div
+              key={m.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                // Quebra em vez de espremer: com dois botões à direita, o nome
+                // do modelo ia a zero no telefone, como já aconteceu na linha
+                // de tarefa e na do financeiro.
+                flexWrap: 'wrap',
+                gap: 'var(--sp-6)',
+                minHeight: 'var(--tap-min)',
+                padding: 'var(--sp-4) var(--sp-5)',
+                borderRadius: 'var(--r-nav)',
+                background: 'var(--surface-raised)',
+              }}
+            >
+              <span style={{ flex: '1 1 var(--grid-min)', minWidth: 0 }}>
+                <span
+                  style={{
+                    display: 'block',
+                    font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
+                    color: 'var(--text-body)',
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {m.titulo}
+                </span>
+                <span
+                  style={{ display: 'block', font: 'var(--type-body)', color: 'var(--text-muted)' }}
+                >
+                  {descreverModelo(m)} · {ROTULO_CONTEXTO[m.contexto]}
+                </span>
+              </span>
+
+              <span style={{ display: 'flex', gap: 'var(--sp-3)', flex: '0 0 auto' }}>
+                <Button variant="secondary" size="sm" onClick={() => aoUsar(m)}>
+                  Usar
+                </Button>
+                <IconButton
+                  icon="trash-2"
+                  label={`Apagar o modelo ${m.titulo}`}
+                  variant="ghost"
+                  size={34}
+                  onClick={() => aoRemover(m.id)}
+                />
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Usar um modelo: só a entrega e o nome desta vez.
+ *
+ * A prévia mostra os prazos já calculados antes de criar nada. Um modelo que
+ * cria oito tarefas sem mostrar quais é uma surpresa, não uma automação.
+ */
+function UsarModelo({
+  modelo,
+  hoje,
+  aoFechar,
+  aoAplicar,
+}: {
+  modelo: Modelo;
+  hoje: string;
+  aoFechar: () => void;
+  aoAplicar: (entrega: string, titulo: string) => Promise<void>;
+}) {
+  const [entrega, setEntrega] = React.useState(hoje);
+  const [titulo, setTitulo] = React.useState(modelo.titulo);
+  const [tentou, setTentou] = React.useState(false);
+
+  const erroEntrega = tentou && !diaValido(entrega) ? 'Data inválida' : undefined;
+  const previa = diaValido(entrega) ? aplicarModelo(modelo, entrega, titulo).tarefas : [];
+
+  return (
+    <Modal
+      open
+      onClose={aoFechar}
+      closeLabel="Fechar"
+      width={560}
+      header={
+        <div>
+          <h2
+            style={{
+              font: 'var(--fw-semibold) var(--fs-heading)/1.25 var(--font-core)',
+              color: 'var(--text-heading)',
+            }}
+          >
+            Usar "{modelo.titulo}"
+          </h2>
+          <p
+            style={{
+              font: 'var(--type-page-subtitle)',
+              color: 'var(--text-muted)',
+              marginTop: 'var(--sp-3)',
+            }}
+          >
+            Diga a entrega e eu conto os prazos para trás
+          </p>
+        </div>
+      }
+      footer={
+        <>
+          <Button variant="secondary" size="lg" fullWidth onClick={aoFechar}>
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            size="lg"
+            fullWidth
+            onClick={() => {
+              setTentou(true);
+              if (!diaValido(entrega)) return;
+              void aoAplicar(entrega, titulo);
+            }}
+          >
+            Criar o projeto
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
+        <Field label="Nome desta vez" htmlFor="mod-titulo" help="O modelo é a receita; isto é o prato">
+          <TextInput id="mod-titulo" value={titulo} onChange={setTitulo} size="lg" fullWidth />
+        </Field>
+
+        <Field label="Entrega" htmlFor="mod-entrega" required error={erroEntrega}>
+          <TextInput
+            id="mod-entrega"
+            type="date"
+            value={entrega}
+            onChange={setEntrega}
+            invalid={!!erroEntrega}
+            size="lg"
+            fullWidth
+          />
+        </Field>
+
+        {previa.length > 0 && (
+          <div>
+            <p
+              style={{
+                font: 'var(--fw-regular) var(--fs-micro)/1 var(--font-core)',
+                color: 'var(--text-subtle)',
+                letterSpacing: 'var(--ls-caps)',
+                textTransform: 'uppercase',
+                marginBottom: 'var(--sp-5)',
+              }}
+            >
+              O que vai ser criado
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+              {previa.map((t) => (
+                <span
+                  key={t.titulo}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 'var(--sp-6)',
+                    font: 'var(--type-body)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{t.titulo}</span>
+                  <span style={{ flex: '0 0 auto', color: 'var(--text-subtle)' }}>
+                    {formatarDataMedia(new Date(`${t.prazo}T12:00:00`))}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Criar um modelo: do zero, ou a partir de um projeto que já existe.
+ *
+ * O caminho do projeto vem primeiro porque é como um modelo bom nasce —
+ * primeiro eu faço, depois percebo que vou repetir.
+ */
+function FormularioDeModelo({
+  projetos,
+  aoFechar,
+  aoCriar,
+  aoGuardarProjeto,
+}: {
+  projetos: Projeto[];
+  aoFechar: () => void;
+  aoCriar: (dados: Omit<Modelo, 'id' | 'criadoEm' | 'alteradoEm'>) => Promise<void>;
+  aoGuardarProjeto: (projetoId: string) => Promise<void>;
+}) {
+  const [titulo, setTitulo] = React.useState('');
+  const [contexto, setContexto] = React.useState<Contexto>('profissional');
+  const [linhas, setLinhas] = React.useState<{ titulo: string; diasAntes: string }[]>([
+    { titulo: '', diasAntes: '0' },
+  ]);
+  const [deProjeto, setDeProjeto] = React.useState('');
+  const [tentou, setTentou] = React.useState(false);
+
+  const itens = linhas
+    .filter((l) => l.titulo.trim() !== '')
+    .map((l) => ({ titulo: l.titulo.trim(), diasAntes: Math.trunc(Number(l.diasAntes)) || 0 }));
+
+  const erroTitulo = tentou && titulo.trim() === '' ? 'Dê um nome ao modelo' : undefined;
+  const erroItens = tentou && itens.length === 0 ? 'Um modelo sem tarefa não cria nada' : undefined;
+
+  return (
+    <Modal
+      open
+      onClose={aoFechar}
+      closeLabel="Fechar"
+      width={620}
+      header={
+        <div>
+          <h2
+            style={{
+              font: 'var(--fw-semibold) var(--fs-heading)/1.25 var(--font-core)',
+              color: 'var(--text-heading)',
+            }}
+          >
+            Novo modelo
+          </h2>
+          <p
+            style={{
+              font: 'var(--type-page-subtitle)',
+              color: 'var(--text-muted)',
+              marginTop: 'var(--sp-3)',
+            }}
+          >
+            Os prazos são contados a partir da entrega, nunca datas fixas
+          </p>
+        </div>
+      }
+      footer={
+        <>
+          <Button variant="secondary" size="lg" fullWidth onClick={aoFechar}>
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            size="lg"
+            fullWidth
+            onClick={() => {
+              setTentou(true);
+              if (titulo.trim() === '' || itens.length === 0) return;
+              void aoCriar({ titulo: titulo.trim(), contexto, itens });
+            }}
+          >
+            Criar modelo
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
+        {projetos.length > 0 && (
+          <Field
+            label="A partir de um projeto que já existe"
+            htmlFor="mod-de-projeto"
+            help="Os prazos dele viram distâncias até a entrega"
+          >
+            <div style={{ display: 'flex', gap: 'var(--sp-6)', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 var(--grid-min)', minWidth: 0 }}>
+                <Select
+                  id="mod-de-projeto"
+                  value={deProjeto}
+                  onChange={setDeProjeto}
+                  size="lg"
+                  fullWidth
+                  options={[
+                    { value: '', label: 'Escolha um projeto' },
+                    ...projetos.map((p) => ({ value: p.id, label: p.titulo })),
+                  ]}
+                />
+              </div>
+              <Button
+                variant="secondary"
+                size="lg"
+                disabled={deProjeto === ''}
+                onClick={() => void aoGuardarProjeto(deProjeto)}
+              >
+                Guardar como modelo
+              </Button>
+            </div>
+          </Field>
+        )}
+
+        <Field label="Nome do modelo" htmlFor="mod-nome" required error={erroTitulo}>
+          <TextInput
+            id="mod-nome"
+            value={titulo}
+            onChange={setTitulo}
+            placeholder="Lançar um produto"
+            invalid={!!erroTitulo}
+            size="lg"
+            fullWidth
+          />
+        </Field>
+
+        <Field label="Contexto" htmlFor="mod-contexto">
+          <Select
+            id="mod-contexto"
+            value={contexto}
+            onChange={(v) => setContexto(v as Contexto)}
+            size="lg"
+            fullWidth
+            options={CONTEXTOS.map((c) => ({ value: c, label: ROTULO_CONTEXTO[c] }))}
+          />
+        </Field>
+
+        <Field label="As tarefas" htmlFor="mod-item-0" error={erroItens}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-5)' }}>
+            {linhas.map((linha, i) => (
+              <div key={i} style={{ display: 'flex', gap: 'var(--sp-5)', flexWrap: 'wrap' }}>
+                {/* Três para um: no desktop o título fica com o triplo do
+                    espaço extra, e no telefone os dois quebram. A largura
+                    mínima é o mesmo token de sempre — número cru de pixel é o
+                    que o lint da biblioteca recusa, e com razão. */}
+                <div style={{ flex: '3 1 var(--grid-min)', minWidth: 0 }}>
+                  <TextInput
+                    id={`mod-item-${i}`}
+                    value={linha.titulo}
+                    onChange={(v) =>
+                      setLinhas((ls) => ls.map((l, j) => (i === j ? { ...l, titulo: v } : l)))
+                    }
+                    placeholder="Escrever a página"
+                    size="lg"
+                    fullWidth
+                  />
+                </div>
+                <div style={{ flex: '1 1 var(--grid-min)', minWidth: 0 }}>
+                  <TextInput
+                    id={`mod-dias-${i}`}
+                    type="number"
+                    value={linha.diasAntes}
+                    onChange={(v) =>
+                      setLinhas((ls) => ls.map((l, j) => (i === j ? { ...l, diasAntes: v } : l)))
+                    }
+                    size="lg"
+                    fullWidth
+                  />
+                </div>
+                <IconButton
+                  icon="trash-2"
+                  label={`Tirar a linha ${i + 1}`}
+                  variant="ghost"
+                  size={40}
+                  disabled={linhas.length === 1}
+                  onClick={() => setLinhas((ls) => ls.filter((_, j) => j !== i))}
+                />
+              </div>
+            ))}
+            <Button
+              variant="ghost"
+              size="sm"
+              iconLeft="plus"
+              onClick={() => setLinhas((ls) => [...ls, { titulo: '', diasAntes: '0' }])}
+            >
+              Mais uma tarefa
+            </Button>
+            <p style={{ font: 'var(--type-body)', color: 'var(--text-subtle)' }}>
+              O número é quantos dias <strong>antes</strong> da entrega. Zero é no dia; negativo é
+              depois, para o que só acontece com a coisa no ar.
+            </p>
+          </div>
+        </Field>
+      </div>
+    </Modal>
+  );
 }

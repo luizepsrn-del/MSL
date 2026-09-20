@@ -259,3 +259,50 @@ test('dá para corrigir um projeto', async ({ page }) => {
   await expect(page.getByText(/Prazo em \d+ dias/)).toBeVisible();
   await expect(page.getByText('2 projetos ativos')).toHaveCount(0);
 });
+
+test('um modelo cria o projeto com os prazos contados para trás', async ({ page }) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  await comecarLimpo(page);
+  await page.goto('/app/projetos');
+
+  await page.getByRole('button', { name: 'Novo modelo' }).click();
+  await page.getByLabel('Nome do modelo').fill('Lançar um produto');
+  await page.locator('#mod-item-0').fill('Escrever a página');
+  await page.locator('#mod-dias-0').fill('14');
+  await page.getByRole('button', { name: 'Mais uma tarefa' }).click();
+  await page.locator('#mod-item-1').fill('Publicar');
+  await page.locator('#mod-dias-1').fill('0');
+  await page.getByRole('button', { name: 'Criar modelo' }).click();
+
+  await expect(page.getByText('Lançar um produto')).toBeVisible();
+  await expect(page.getByText(/2 tarefas/)).toBeVisible();
+
+  // Usar mostra a prévia antes de criar qualquer coisa.
+  await page.getByRole('button', { name: 'Usar' }).click();
+  await page.locator('#mod-entrega').fill('2026-10-01');
+  await page.getByLabel('Nome desta vez').fill('Lançar o curso de março');
+  await expect(page.getByText('O que vai ser criado')).toBeVisible();
+  await page.getByRole('button', { name: 'Criar o projeto' }).click();
+
+  await expect(page.getByText('Lançar o curso de março')).toBeVisible();
+
+  const criado = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('msl-banco') ?? '{}');
+    const projeto = (b.projetos as { id: string; titulo: string; prazo?: string }[]).find(
+      (p) => p.titulo === 'Lançar o curso de março',
+    )!;
+    const tarefas = (b.tarefas as { titulo: string; prazo?: string; projetoId?: string }[])
+      .filter((t) => t.projetoId === projeto.id)
+      .map((t) => `${t.prazo} ${t.titulo}`)
+      .sort();
+    return { prazo: projeto.prazo, tarefas };
+  });
+
+  expect(criado.prazo).toBe('2026-10-01');
+  // 14 dias antes de 01/10 é 17/09 — e outubro tem 31 dias, o que já derrubou
+  // uma conta minha de distância entre datas.
+  expect(criado.tarefas).toEqual(['2026-09-17 Escrever a página', '2026-10-01 Publicar']);
+  expect(erros, 'nenhum erro de JavaScript').toEqual([]);
+});

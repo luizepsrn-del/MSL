@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 12;
+export const VERSAO_ESQUEMA = 13;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -169,6 +169,39 @@ export interface Projeto extends Registro {
   prazo?: string;
   /** ISO UTC; arquivado some das listas sem perder o histórico */
   arquivadoEm?: string;
+}
+
+/* ── Modelo de projeto ───────────────────────────────────────────────────── */
+
+/**
+ * Uma tarefa dentro de um modelo.
+ *
+ * O prazo é **relativo à entrega**, e não uma data: um modelo com datas fixas
+ * serviria uma vez só. "Revisar o texto, 3 dias antes" vale para toda entrega
+ * que existir.
+ */
+export interface ItemDoModelo {
+  titulo: string;
+  /**
+   * Dias **antes** da entrega. Positivo é antes; negativo é depois, para o que
+   * só acontece com a coisa no ar.
+   */
+  diasAntes: number;
+  /** hora local `HH:MM`, ou ausente */
+  hora?: string;
+}
+
+/**
+ * Um projeto que eu já sei fazer.
+ *
+ * Monto a lista uma vez e uso em toda entrega: o projeto nasce com as tarefas
+ * na ordem e com os prazos já contados para trás a partir da data de entrega.
+ */
+export interface Modelo extends Registro {
+  titulo: string;
+  contexto: Contexto;
+  descricao?: string;
+  itens: ItemDoModelo[];
 }
 
 /* ── Financeiro ──────────────────────────────────────────────────────────── */
@@ -410,6 +443,7 @@ export interface Banco {
   lancamentos: Lancamento[];
   metas: Meta[];
   marcos: Marco[];
+  modelos: Modelo[];
   preferencias?: Preferencias;
   /** o que foi apagado, para a junção entre aparelhos não ressuscitar nada */
   removidos?: Removido[];
@@ -423,6 +457,7 @@ export const COLECOES = [
   'lancamentos',
   'metas',
   'marcos',
+  'modelos',
 ] as const;
 export type NomeColecao = (typeof COLECOES)[number];
 
@@ -441,6 +476,7 @@ export const ROTULO_COLECAO: Record<NomeColecao, [string, string]> = {
   lancamentos: ['lançamento', 'lançamentos'],
   metas: ['meta', 'metas'],
   marcos: ['marco', 'marcos'],
+  modelos: ['modelo', 'modelos'],
 };
 
 /** `1 rotina`, `25 execuções` — o número e o nome concordando. */
@@ -459,6 +495,7 @@ export function bancoVazio(): Banco {
     lancamentos: [],
     metas: [],
     marcos: [],
+    modelos: [],
     removidos: [],
   };
 }

@@ -127,6 +127,18 @@ export const MIGRACOES: Record<number, Migracao> = {
    * vez só", que é o que toda tarefa existente é.
    */
   11: (dados) => ({ ...dados, versao: 12 }),
+
+  /**
+   * 12 → 13: os modelos de projeto.
+   *
+   * Coleção nova, começa vazia — o formato de sempre para uma adição que não
+   * toca em nada do que já existe.
+   */
+  12: (dados) => ({
+    ...dados,
+    modelos: Array.isArray(dados.modelos) ? dados.modelos : [],
+    versao: 13,
+  }),
 };
 
 export class ErroDeMigracao extends Error {

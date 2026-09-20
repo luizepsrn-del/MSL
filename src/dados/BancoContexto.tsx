@@ -12,6 +12,7 @@ import {
   type Lancamento,
   type Meta,
   type Marco,
+  type Modelo,
   type EstadoTarefa,
   type Preferencias,
 } from './esquema';
@@ -29,6 +30,7 @@ import {
 import { validarValor } from '../dominio/financeiro';
 import { validarMeta } from '../dominio/meta';
 import { proximaOcorrencia, aoPular } from '../dominio/repeticao';
+import { aplicarModelo, modeloDeProjeto, validarModelo } from '../dominio/modelo';
 
 /**
  * O banco, disponível para as telas.
@@ -75,6 +77,18 @@ interface Acoes {
   marcarMeta(metaId: string, dia: string, quanto: number): Promise<void>;
   /** desfaz o último avanço marcado naquele dia */
   desmarcarMeta(metaId: string, dia: string): Promise<void>;
+  criarModelo(dados: Omit<Modelo, keyof BaseRegistro>): Promise<void>;
+  editarModelo(id: string, mudanca: Edicao<Modelo>): Promise<void>;
+  removerModelo(id: string): Promise<void>;
+  /**
+   * Cria projeto e tarefas a partir de um modelo, num passo só.
+   *
+   * Num passo porque meio projeto — criado sem as tarefas — seria pior que
+   * nenhum: quem vê a lista vazia acha que o modelo estava vazio.
+   */
+  aplicarModeloDeProjeto(modeloId: string, entrega: string, titulo?: string): Promise<void>;
+  /** guarda um projeto existente como modelo; devolve false quando não dá */
+  guardarComoModelo(projetoId: string): Promise<boolean>;
   /** grava o que eu escolhi sobre a interface; viaja no backup */
   definirPreferencias(mudanca: Partial<Preferencias>): Promise<void>;
   exportar(): Promise<string>;
@@ -437,6 +451,66 @@ export function ProvedorBanco({
         if (!ultimo) return;
         const { lista, removidos } = removerRegistro(banco, 'marcos', banco.marcos, ultimo.id, agora());
         await gravar({ ...banco, marcos: lista, removidos });
+      },
+
+      async criarModelo(dados) {
+        validarModelo(dados);
+        const t = agora();
+        const modelo: Modelo = { ...dados, id: novoId(), criadoEm: t, alteradoEm: t };
+        await gravar({ ...banco, modelos: [...banco.modelos, modelo] });
+      },
+
+      async editarModelo(id, mudanca) {
+        const atual = banco.modelos.find((m) => m.id === id);
+        if (atual) validarModelo({ ...atual, ...mudanca } as Modelo);
+        await gravar({ ...banco, modelos: editarNaLista(banco.modelos, id, mudanca, agora()) });
+      },
+
+      async removerModelo(id) {
+        const { lista, removidos } = removerRegistro(banco, 'modelos', banco.modelos, id, agora());
+        await gravar({ ...banco, modelos: lista, removidos });
+      },
+
+      async aplicarModeloDeProjeto(modeloId, entrega, titulo) {
+        const modelo = banco.modelos.find((m) => m.id === modeloId);
+        if (!modelo) return;
+
+        const t = agora();
+        const { projeto, tarefas } = aplicarModelo(modelo, entrega, titulo);
+        const id = novoId();
+
+        // Projeto e tarefas na mesma gravação: meio projeto seria pior que
+        // nenhum, porque quem vê a lista vazia acha que o modelo estava vazio.
+        await gravar({
+          ...banco,
+          projetos: [...banco.projetos, { ...projeto, id, criadoEm: t, alteradoEm: t }],
+          tarefas: [
+            ...banco.tarefas,
+            ...tarefas.map((tarefa) => ({
+              ...tarefa,
+              projetoId: id,
+              id: novoId(),
+              criadoEm: t,
+              alteradoEm: t,
+            })),
+          ],
+        });
+      },
+
+      async guardarComoModelo(projetoId) {
+        const projeto = banco.projetos.find((p) => p.id === projetoId);
+        if (!projeto) return false;
+        const semente = modeloDeProjeto(projeto, banco.tarefas, diaLocal(new Date()));
+        // `null` quando o projeto não tem prazo ou não tem tarefa: sem uma
+        // entrega não há de onde contar os dias, e o modelo sairia torto.
+        if (!semente) return false;
+
+        const t = agora();
+        await gravar({
+          ...banco,
+          modelos: [...banco.modelos, { ...semente, id: novoId(), criadoEm: t, alteradoEm: t }],
+        });
+        return true;
       },
 
       exportar: () => repo.exportar(),
