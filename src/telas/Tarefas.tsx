@@ -343,6 +343,7 @@ export function FormularioTarefa({
   projetos,
   projetoFixo,
   tarefa,
+  diaInicial,
   aoFechar,
   aoEnviar,
 }: {
@@ -351,6 +352,13 @@ export function FormularioTarefa({
   projetoFixo?: string;
   /** quando presente, o formulário corrige esta tarefa */
   tarefa?: Tarefa;
+  /**
+   * O prazo com que uma tarefa **nova** nasce.
+   *
+   * Existe para o calendário: clicar no dia 23 e criar uma tarefa tem que
+   * criá-la para o dia 23. Não vale na correção — ali o prazo gravado manda.
+   */
+  diaInicial?: string;
   aoFechar: () => void;
   aoEnviar: (dados: DadosNovos) => Promise<void>;
 }) {
@@ -362,7 +370,7 @@ export function FormularioTarefa({
   // cada abertura é uma montagem nova.
   const [titulo, setTitulo] = React.useState(tarefa?.titulo ?? '');
   const [contexto, setContexto] = React.useState<Contexto>(tarefa?.contexto ?? 'pessoal');
-  const [prazo, setPrazo] = React.useState(tarefa?.prazo ?? '');
+  const [prazo, setPrazo] = React.useState(tarefa?.prazo ?? diaInicial ?? '');
   const [hora, setHora] = React.useState(tarefa?.hora ?? '');
   const [anotacao, setAnotacao] = React.useState(tarefa?.anotacao ?? '');
   const [projetoId, setProjetoId] = React.useState(tarefa?.projetoId ?? SEM_PROJETO);

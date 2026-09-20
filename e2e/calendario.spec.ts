@@ -312,3 +312,35 @@ test('"o que vem" pula os dias vazios e deixa a rotina de fora por padrão', asy
   await page.getByText('Incluir as rotinas').click();
   await expect(page.getByText('Ler 20 páginas').first()).toBeVisible();
 });
+
+test('criar no dia escolhido nasce com o prazo daquele dia', async ({ page }) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  await semear(page);
+  await page.goto('/app/calendario');
+
+  // Escolhe um dia que não é hoje: com hoje, um prazo em branco passaria no
+  // teste por acidente. Dois dias à frente cai sempre no mesmo mês da grade
+  // ou no seguinte, e a grade mostra os dois.
+  const alvo = diaLocal(2);
+  await page.getByRole('button', { name: `Dia ${Number(alvo.slice(8))}`, exact: false }).first().click();
+
+  await page.getByRole('button', { name: 'Adicionar' }).first().click();
+  await page.getByRole('button', { name: /Uma tarefa/ }).click();
+
+  await page.getByLabel('O que precisa ser feito').fill('Comprar a passagem');
+  await page.getByRole('button', { name: 'Criar tarefa' }).click();
+
+  // Ela aparece no dia escolhido, e não em hoje.
+  await expect(page.getByText('Comprar a passagem')).toBeVisible();
+  await expect(page.getByText('Vencem neste dia')).toBeVisible();
+
+  // E o prazo gravado é mesmo o do dia clicado.
+  const prazo = await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem('msl-banco') ?? '{}');
+    return b.tarefas?.find((t: { titulo: string }) => t.titulo === 'Comprar a passagem')?.prazo;
+  });
+  expect(prazo).toBe(alvo);
+  expect(erros, 'nenhum erro de JavaScript').toEqual([]);
+});

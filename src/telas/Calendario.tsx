@@ -8,7 +8,12 @@ import {
   Checkbox,
   Select,
   Switch,
+  Modal,
+  OptionCard,
 } from '../../design-system';
+import { FormularioTarefa } from './Tarefas';
+import { FormularioRotina } from './Rotinas';
+import { FormularioLancamento } from './Financeiro';
 import { useBanco } from '../dados/BancoContexto';
 import { CONTEXTOS, ROTULO_CONTEXTO, type Contexto } from '../dados/esquema';
 import {
@@ -63,9 +68,15 @@ const ROTULO_PROXIMO: Record<Visao, string> = {
   linha: 'Próximo',
 };
 
+/** O que dá para criar a partir de um dia do calendário. */
+type OQueCriar = 'tarefa' | 'rotina' | 'lancamento';
+
 export function Calendario() {
-  const { banco, hoje, alternarExecucao, alternarTarefa } = useBanco();
+  const { banco, hoje, alternarExecucao, alternarTarefa, criarTarefa, criarRotina, criarLancamento } =
+    useBanco();
   const desktop = useLarguraDesktop() !== false;
+  /** o dia para o qual estou criando algo, e o quê; null quando não estou */
+  const [criando, setCriando] = React.useState<{ dia: string; o?: OQueCriar } | null>(null);
 
   const [anoHoje, mesHoje] = anoMesDe(hoje);
   const [[ano, mes], setMes] = React.useState<[number, number]>([anoHoje, mesHoje]);
@@ -226,6 +237,18 @@ export function Calendario() {
                   ]}
                 />
               </div>
+              {/* Na visão de dia o painel lateral não existe, e sem isto o
+                  botão de adicionar sumiria justo onde o dia está aberto. */}
+              {visao === 'dia' && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  iconRight="plus"
+                  onClick={() => setCriando({ dia: selecionado })}
+                >
+                  Adicionar
+                </Button>
+              )}
               {!noPresente && visao !== 'linha' && (
                 <Button variant="secondary" size="sm" onClick={irParaHoje}>
                   Hoje
@@ -336,6 +359,16 @@ export function Calendario() {
         <Card
           title={selecionado === hoje ? 'Hoje' : formatarDiaDaSemana(comoData(selecionado))}
           subtitle={formatarDataLonga(comoData(selecionado))}
+          action={
+            <Button
+              variant="primary"
+              size="sm"
+              iconRight="plus"
+              onClick={() => setCriando({ dia: selecionado })}
+            >
+              Adicionar
+            </Button>
+          }
         >
           {detalhe.rotinas.length === 0 &&
           detalhe.tarefas.length === 0 &&
@@ -413,6 +446,101 @@ export function Calendario() {
         </Card>
       )}
       </div>
+
+      {/* Escolher o quê, antes de abrir o formulário.
+          Três botões soltos no cabeçalho do cartão não cabiam no telefone, e
+          um `Select` para uma escolha que acontece uma vez é pior que três
+          cartões que dizem o que cada coisa é. */}
+      <Modal
+        open={criando !== null && criando.o === undefined}
+        onClose={() => setCriando(null)}
+        closeLabel="Fechar"
+        width={480}
+        header={
+          <div>
+            <h2
+              style={{
+                font: 'var(--fw-semibold) var(--fs-heading)/1.25 var(--font-core)',
+                color: 'var(--text-heading)',
+              }}
+            >
+              Adicionar
+            </h2>
+            <p
+              style={{
+                font: 'var(--type-page-subtitle)',
+                color: 'var(--text-muted)',
+                marginTop: 'var(--sp-3)',
+              }}
+            >
+              {criando ? formatarDataLonga(comoData(criando.dia)) : ''}
+            </p>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-5)' }}>
+          <OptionCard
+            icon="clipboard-check"
+            title="Uma tarefa"
+            description="Tem fim, e vence neste dia"
+            onClick={() => setCriando((c) => (c ? { ...c, o: 'tarefa' } : c))}
+          />
+          <OptionCard
+            icon="repeat"
+            title="Uma rotina"
+            description="Se repete, e passa a valer a partir deste dia"
+            onClick={() => setCriando((c) => (c ? { ...c, o: 'rotina' } : c))}
+          />
+          <OptionCard
+            icon="wallet"
+            title="Um lançamento"
+            description="Entrada ou saída com data neste dia"
+            onClick={() => setCriando((c) => (c ? { ...c, o: 'lancamento' } : c))}
+          />
+        </div>
+      </Modal>
+
+      {/* Os formulários são os mesmos das telas de cada pilar, com `diaInicial`.
+          Escrever um formulário de tarefa aqui seria o segundo formulário do
+          mesmo registro, e eles divergem na primeira regra que só um receber. */}
+      {criando?.o === 'tarefa' && (
+        <FormularioTarefa
+          aberto
+          projetos={banco.projetos.filter((p) => !p.arquivadoEm)}
+          diaInicial={criando.dia}
+          aoFechar={() => setCriando(null)}
+          aoEnviar={async (dados) => {
+            await criarTarefa(dados);
+            setCriando(null);
+          }}
+        />
+      )}
+
+      {criando?.o === 'rotina' && (
+        <FormularioRotina
+          aberto
+          hoje={hoje}
+          diaInicial={criando.dia}
+          aoFechar={() => setCriando(null)}
+          aoEnviar={async (dados) => {
+            await criarRotina(dados);
+            setCriando(null);
+          }}
+        />
+      )}
+
+      {criando?.o === 'lancamento' && (
+        <FormularioLancamento
+          aberto
+          hoje={hoje}
+          diaInicial={criando.dia}
+          aoFechar={() => setCriando(null)}
+          aoEnviar={async (dados) => {
+            await criarLancamento(dados);
+            setCriando(null);
+          }}
+        />
+      )}
     </div>
   );
 }

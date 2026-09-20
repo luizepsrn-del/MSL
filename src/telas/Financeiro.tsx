@@ -592,16 +592,19 @@ const PERIODOS: PeriodoRecorrencia[] = ['semanal', 'mensal', 'anual'];
  * categoria pendurados do lançamento anterior, transformando uma saída em
  * entrada — não volta, porque cada abertura é uma montagem nova.
  */
-function FormularioLancamento({
+export function FormularioLancamento({
   aberto,
   hoje,
   lancamento,
+  diaInicial,
   aoFechar,
   aoEnviar,
 }: {
   aberto: boolean;
   hoje: string;
   lancamento?: Lancamento;
+  /** a data com que um lançamento **novo** nasce; sem ela, hoje */
+  diaInicial?: string;
   aoFechar: () => void;
   aoEnviar: (dados: DadosNovos) => Promise<void>;
 }) {
@@ -613,7 +616,7 @@ function FormularioLancamento({
   const [tipo, setTipo] = React.useState<TipoLancamento>(lancamento?.tipo ?? 'saida');
   const [categoria, setCategoria] = React.useState<Categoria>(lancamento?.categoria ?? 'outros');
   const [contexto, setContexto] = React.useState<Contexto>(lancamento?.contexto ?? 'pessoal');
-  const [data, setData] = React.useState(lancamento?.data ?? hoje);
+  const [data, setData] = React.useState(lancamento?.data ?? diaInicial ?? hoje);
   const [repete, setRepete] = React.useState<string>(
     lancamento?.recorrencia?.periodo ?? UMA_VEZ,
   );

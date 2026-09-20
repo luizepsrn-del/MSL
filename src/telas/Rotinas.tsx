@@ -277,18 +277,21 @@ const ICONES = [
  * ocorrer, a marca que estava lá reaparece. Apagar histórico por causa de uma
  * correção de agenda seria perder trabalho registrado.
  */
-function FormularioRotina({
+export function FormularioRotina({
   aberto,
   rotina,
   aoFechar,
   aoEnviar,
   hoje,
+  diaInicial,
 }: {
   aberto: boolean;
   rotina?: Rotina;
   aoFechar: () => void;
   aoEnviar: (dados: DadosNovos) => Promise<void>;
   hoje: string;
+  /** o dia em que uma rotina **nova** passa a valer; sem ele, hoje */
+  diaInicial?: string;
 }) {
   const corrigindo = !!rotina;
   const r = rotina?.recorrencia;
@@ -304,7 +307,7 @@ function FormularioRotina({
   const [aCadaDias, setACadaDias] = React.useState(
     r?.tipo === 'intervalo' ? String(r.aCadaDias) : '3',
   );
-  const [inicioEm, setInicioEm] = React.useState(rotina?.inicioEm ?? hoje);
+  const [inicioEm, setInicioEm] = React.useState(rotina?.inicioEm ?? diaInicial ?? hoje);
   const [icone, setIcone] = React.useState(rotina?.icone ?? 'repeat');
   const [hora, setHora] = React.useState(rotina?.hora ?? '');
   const [tentou, setTentou] = React.useState(false);
