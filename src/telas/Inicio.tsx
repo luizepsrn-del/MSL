@@ -52,6 +52,7 @@ import {
 import { ocorrenciasDoMes, resumoFinanceiro, evolucaoMensal } from '../dominio/financeiro';
 import { precisaDeVoce, saudacao, comoEstaODia, type ItemDoFoco } from '../dominio/foco';
 import { montarODia, resumirPlano, duracao, JORNADA_PADRAO } from '../dominio/plano';
+import { oQueAsRegrasQuerem } from '../dominio/regra';
 import { useAgendaExterna } from '../dados/agendaExterna';
 import { itensDoDia } from '../dominio/calendario';
 import { metasEmCurso, resumoDeMetas, emDinheiro } from '../dominio/meta';
@@ -200,6 +201,7 @@ export function Inicio() {
   const evolucao = evolucaoMensal(banco, anoAtual, mesAtual, 6);
 
   const fila = precisaDeVoce(banco, hoje);
+  const regrasQuerem = oQueAsRegrasQuerem(banco, hoje);
 
   // O dia montado: o que tem hora vira compromisso, o resto vai para a fila.
   // A agenda externa entra junto — um plano que ignora a reunião do Google
@@ -944,6 +946,44 @@ export function Inicio() {
         recado={comoEstaODia(banco, hoje)}
         aoPersonalizar={() => setPersonalizando(true)}
       />
+
+      {/* As regras não escrevem sozinhas — elas esperam aqui.
+          Uma linha só, e só quando há o que propor: um aviso permanente
+          dizendo "nada por enquanto" é ruído que se aprende a não ler. */}
+      {regrasQuerem.length > 0 && (
+        <Card>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--sp-6)',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{ color: 'var(--purple-300)', display: 'flex', flex: '0 0 auto' }}>
+              <Icon name="zap" size={20} />
+            </span>
+            <span
+              style={{
+                flex: '1 1 var(--grid-min)',
+                minWidth: 0,
+                font: 'var(--type-body)',
+                color: 'var(--text-body)',
+              }}
+            >
+              {regrasQuerem.length === 1
+                ? 'Uma regra sua quer fazer algo.'
+                : `${regrasQuerem.length} regras suas querem fazer algo.`}{' '}
+              Nada acontece até você olhar.
+            </span>
+            <Link to="/app/regras" style={{ textDecoration: 'none', flex: '0 0 auto' }}>
+              <Button variant="secondary" size="sm" iconRight="arrow-right">
+                Ver
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      )}
 
       {visiveis.length === 0 ? (
         <Card>

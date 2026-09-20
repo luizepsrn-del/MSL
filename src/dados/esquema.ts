@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 14;
+export const VERSAO_ESQUEMA = 15;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -364,6 +364,48 @@ export interface Marco extends Registro {
   quanto: number;
 }
 
+/* ── Regras ──────────────────────────────────────────────────────────────── */
+
+/**
+ * O que faz a regra olhar.
+ *
+ * Cada gatilho é uma pergunta que o sistema já sabe responder a partir do que
+ * está gravado — nenhum deles precisa de um relógio rodando por trás.
+ */
+export type Gatilho =
+  /** projeto ativo sem nenhuma tarefa concluída há N dias */
+  | { tipo: 'projeto-parado'; dias: number }
+  /** projeto ativo com todas as tarefas concluídas */
+  | { tipo: 'projeto-terminado' }
+  /** tarefa pendente com prazo vencido há N dias ou mais */
+  | { tipo: 'tarefa-atrasada'; dias: number }
+  /** meta em curso andando mais devagar que o calendário */
+  | { tipo: 'meta-atrasada' };
+
+/** O que a regra propõe fazer. */
+export type Acao =
+  /** cria uma tarefa; `{projeto}` no título vira o nome do projeto */
+  | { tipo: 'criar-tarefa'; titulo: string; contexto: Contexto }
+  /** arquiva o projeto */
+  | { tipo: 'arquivar-projeto' }
+  /** traz o prazo da tarefa para hoje */
+  | { tipo: 'trazer-para-hoje' };
+
+/**
+ * Uma regra minha: quando tal coisa acontecer, faça tal outra.
+ *
+ * **A regra nunca escreve sozinha.** Ela calcula o que faria e mostra; quem
+ * aplica sou eu, num toque. Um sistema que edita os meus dados enquanto eu
+ * durmo é exatamente o que "não suponha em silêncio" proíbe — e desfazer uma
+ * automação que rodou sozinha é bem mais caro que confirmar uma que não rodou.
+ */
+export interface Regra extends Registro {
+  titulo: string;
+  gatilho: Gatilho;
+  acao: Acao;
+  ativa: boolean;
+}
+
 /* ── O banco ─────────────────────────────────────────────────────────────── */
 
 /**
@@ -456,6 +498,7 @@ export interface Banco {
   metas: Meta[];
   marcos: Marco[];
   modelos: Modelo[];
+  regras: Regra[];
   preferencias?: Preferencias;
   /** o que foi apagado, para a junção entre aparelhos não ressuscitar nada */
   removidos?: Removido[];
@@ -470,6 +513,7 @@ export const COLECOES = [
   'metas',
   'marcos',
   'modelos',
+  'regras',
 ] as const;
 export type NomeColecao = (typeof COLECOES)[number];
 
@@ -489,6 +533,7 @@ export const ROTULO_COLECAO: Record<NomeColecao, [string, string]> = {
   metas: ['meta', 'metas'],
   marcos: ['marco', 'marcos'],
   modelos: ['modelo', 'modelos'],
+  regras: ['regra', 'regras'],
 };
 
 /** `1 rotina`, `25 execuções` — o número e o nome concordando. */
@@ -508,6 +553,7 @@ export function bancoVazio(): Banco {
     metas: [],
     marcos: [],
     modelos: [],
+    regras: [],
     removidos: [],
   };
 }

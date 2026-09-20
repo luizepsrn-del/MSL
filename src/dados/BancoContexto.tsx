@@ -13,6 +13,7 @@ import {
   type Meta,
   type Marco,
   type Modelo,
+  type Regra,
   type EstadoTarefa,
   type Preferencias,
 } from './esquema';
@@ -31,6 +32,7 @@ import { validarValor } from '../dominio/financeiro';
 import { validarMeta } from '../dominio/meta';
 import { proximaOcorrencia, aoPular } from '../dominio/repeticao';
 import { aplicarModelo, modeloDeProjeto, validarModelo } from '../dominio/modelo';
+import { oQueAsRegrasQuerem, aplicarEfeitos, validarRegra } from '../dominio/regra';
 
 /**
  * O banco, disponível para as telas.
@@ -89,6 +91,17 @@ interface Acoes {
   aplicarModeloDeProjeto(modeloId: string, entrega: string, titulo?: string): Promise<void>;
   /** guarda um projeto existente como modelo; devolve false quando não dá */
   guardarComoModelo(projetoId: string): Promise<boolean>;
+  criarRegra(dados: Omit<Regra, keyof BaseRegistro>): Promise<void>;
+  editarRegra(id: string, mudanca: Edicao<Regra>): Promise<void>;
+  removerRegra(id: string): Promise<void>;
+  /**
+   * Aplica o que as regras propõem.
+   *
+   * Recebe as chaves de propósito: eu escolho o que aplicar, e a lista é
+   * recalculada aqui a partir do banco de agora — passar os efeitos prontos
+   * deixaria uma tela velha escrever com base no que já mudou.
+   */
+  aplicarRegras(chaves: readonly string[]): Promise<void>;
   /** grava o que eu escolhi sobre a interface; viaja no backup */
   definirPreferencias(mudanca: Partial<Preferencias>): Promise<void>;
   exportar(): Promise<string>;
@@ -511,6 +524,35 @@ export function ProvedorBanco({
           modelos: [...banco.modelos, { ...semente, id: novoId(), criadoEm: t, alteradoEm: t }],
         });
         return true;
+      },
+
+      async criarRegra(dados) {
+        validarRegra(dados);
+        const t = agora();
+        const regra: Regra = { ...dados, id: novoId(), criadoEm: t, alteradoEm: t };
+        await gravar({ ...banco, regras: [...banco.regras, regra] });
+      },
+
+      async editarRegra(id, mudanca) {
+        const atual = banco.regras.find((r) => r.id === id);
+        if (atual) validarRegra({ ...atual, ...mudanca } as Regra);
+        await gravar({ ...banco, regras: editarNaLista(banco.regras, id, mudanca, agora()) });
+      },
+
+      async removerRegra(id) {
+        const { lista, removidos } = removerRegistro(banco, 'regras', banco.regras, id, agora());
+        await gravar({ ...banco, regras: lista, removidos });
+      },
+
+      async aplicarRegras(chaves) {
+        const hoje = diaLocal(new Date());
+        // Recalcula aqui: a tela pode estar mostrando uma lista de alguns
+        // segundos atrás, e escrever com base nela seria agir sobre um estado
+        // que já mudou.
+        const querem = oQueAsRegrasQuerem(banco, hoje);
+        const escolhidos = querem.filter((e) => chaves.includes(e.chave));
+        if (escolhidos.length === 0) return;
+        await gravar(aplicarEfeitos(banco, escolhidos, agora(), novoId));
       },
 
       exportar: () => repo.exportar(),

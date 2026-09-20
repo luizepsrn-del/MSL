@@ -77,6 +77,19 @@ export const EXTENSAO: Pilar = {
   subtitulo: 'Pergunte, peça um relatório, mande fazer',
 };
 
+/**
+ * As regras.
+ *
+ * Fica em Ferramentas, e não entre os pilares: não é um lugar onde eu guardo
+ * coisa, é um lugar onde eu ensino o sistema a reparar em coisa.
+ */
+export const REGRAS: Pilar = {
+  id: 'regras',
+  rotulo: 'Automações',
+  icone: 'zap',
+  subtitulo: 'Quando tal coisa acontecer, faça tal outra',
+};
+
 export const AJUSTES: Pilar = {
   id: 'ajustes',
   rotulo: 'Ajustes',
@@ -92,11 +105,11 @@ export const SECOES: SidebarSection[] = [
   },
   {
     label: 'Ferramentas',
-    items: [EXTENSAO, AJUSTES].map((p) => ({ id: p.id, label: p.rotulo, icon: p.icone })),
+    items: [EXTENSAO, REGRAS, AJUSTES].map((p) => ({ id: p.id, label: p.rotulo, icon: p.icone })),
   },
 ];
 
-const TODOS = [...PILARES, EXTENSAO, AJUSTES];
+const TODOS = [...PILARES, EXTENSAO, REGRAS, AJUSTES];
 
 export const porId = (id: string): Pilar | undefined => TODOS.find((p) => p.id === id);
 

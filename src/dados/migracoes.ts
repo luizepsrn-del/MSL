@@ -147,6 +147,18 @@ export const MIGRACOES: Record<number, Migracao> = {
    * padrão, que é uma escolha razoável e não uma falta.
    */
   13: (dados) => ({ ...dados, versao: 14 }),
+
+  /**
+   * 14 → 15: as regras "quando X, faça Y".
+   *
+   * Coleção nova, começa vazia. Quem não escrever regra nenhuma não vê
+   * diferença — e nenhuma regra escreve sozinha, então nem quem escrever.
+   */
+  14: (dados) => ({
+    ...dados,
+    regras: Array.isArray(dados.regras) ? dados.regras : [],
+    versao: 15,
+  }),
 };
 
 export class ErroDeMigracao extends Error {
