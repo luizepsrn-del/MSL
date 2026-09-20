@@ -56,6 +56,12 @@ export const PILARES: Pilar[] = [
     icone: 'wallet',
     subtitulo: 'Entradas, saídas e o saldo previsto',
   },
+  {
+    id: 'metas',
+    rotulo: 'Metas',
+    icone: 'target',
+    subtitulo: 'O alvo, e a distância até ele',
+  },
 ];
 
 /**

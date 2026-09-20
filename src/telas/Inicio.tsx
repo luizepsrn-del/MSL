@@ -60,6 +60,7 @@ import {
 } from '../formato';
 import { Link } from 'react-router-dom';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
+import { GRADE_DE_TILES, TRILHO_DE_TILES, ITEM_TRILHO } from '../casca/trilho';
 
 /**
  * Início — a parte central.
@@ -114,8 +115,6 @@ function Legenda({ cor, texto }: { cor: string; texto: string }) {
   );
 }
 
-/** Cresce para preencher no desktop, transborda em trilho no telefone. */
-const ITEM_TRILHO = { flex: '1 0 var(--grid-min)', scrollSnapAlign: 'start' } as const;
 
 export function Inicio() {
   const { banco, hoje, alternarExecucao, alternarTarefa, definirPreferencias } = useBanco();
@@ -194,35 +193,7 @@ export function Inicio() {
         primeira tela. Sem media query e sem JavaScript — o próprio flex
         decide.
       */}
-      <div
-        style={
-          desktop
-            ? {
-                // No desktop o trilho não tem para onde rolar sem barra, e o
-                // último tile aparecia cortado na borda — media-se: com cinco
-                // tiles de --grid-min já não cabia.
-                //
-                // Flex que quebra, e não grade: a grade deixava a segunda
-                // fileira com dois tiles e um vão do tamanho de dois. Com
-                // `flex-grow`, a última fileira estica e fecha a largura.
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 'var(--card-gap)',
-              }
-            : {
-                display: 'flex',
-                gap: 'var(--card-gap)',
-                overflowX: 'auto',
-                scrollSnapType: 'x mandatory',
-                margin: '0 calc(-1 * var(--shell-gutter))',
-                padding: '0 var(--shell-gutter)',
-                // Sem isto o encaixe ignora a goteira e cola o primeiro tile na
-                // borda da tela, desalinhado de todos os outros cartões.
-                scrollPaddingLeft: 'var(--shell-gutter)',
-                scrollbarWidth: 'none',
-              }
-        }
-      >
+      <div style={desktop ? GRADE_DE_TILES : TRILHO_DE_TILES}>
         <StatCard
           glow
           style={ITEM_TRILHO}

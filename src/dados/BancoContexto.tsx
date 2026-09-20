@@ -10,6 +10,8 @@ import {
   type Tarefa,
   type Projeto,
   type Lancamento,
+  type Meta,
+  type Marco,
   type EstadoTarefa,
   type Preferencias,
 } from './esquema';
@@ -25,6 +27,7 @@ import {
   type SessaoDeAparelho,
 } from './sincronia';
 import { validarValor } from '../dominio/financeiro';
+import { validarMeta } from '../dominio/meta';
 
 /**
  * O banco, disponível para as telas.
@@ -58,6 +61,17 @@ interface Acoes {
   criarLancamento(dados: Omit<Lancamento, keyof BaseRegistro>): Promise<void>;
   editarLancamento(id: string, mudanca: Edicao<Lancamento>): Promise<void>;
   removerLancamento(id: string): Promise<void>;
+  criarMeta(dados: Omit<Meta, keyof BaseRegistro>): Promise<void>;
+  editarMeta(id: string, mudanca: Edicao<Meta>): Promise<void>;
+  arquivarMeta(id: string): Promise<void>;
+  removerMeta(id: string): Promise<void>;
+  /**
+   * Anota um avanço num dia. Só vale para meta de fonte manual — as outras já
+   * leem o dado de onde ele mora, e marcar à mão contaria duas vezes.
+   */
+  marcarMeta(metaId: string, dia: string, quanto: number): Promise<void>;
+  /** desfaz o último avanço marcado naquele dia */
+  desmarcarMeta(metaId: string, dia: string): Promise<void>;
   /** grava o que eu escolhi sobre a interface; viaja no backup */
   definirPreferencias(mudanca: Partial<Preferencias>): Promise<void>;
   exportar(): Promise<string>;
@@ -346,6 +360,59 @@ export function ProvedorBanco({
           agora(),
         );
         await gravar({ ...banco, lancamentos: lista, removidos });
+      },
+
+      async criarMeta(dados) {
+        // A mesma porta da edição: a tela já barra antes, mas a entrada do
+        // banco não confia na tela.
+        validarMeta(dados);
+        const t = agora();
+        const meta: Meta = { ...dados, id: novoId(), criadoEm: t, alteradoEm: t };
+        await gravar({ ...banco, metas: [...banco.metas, meta] });
+      },
+
+      async editarMeta(id, mudanca) {
+        const atual = banco.metas.find((m) => m.id === id);
+        if (atual) validarMeta({ ...atual, ...mudanca } as Meta);
+        await gravar({ ...banco, metas: editarNaLista(banco.metas, id, mudanca, agora()) });
+      },
+
+      async arquivarMeta(id) {
+        const t = agora();
+        await gravar({
+          ...banco,
+          metas: banco.metas.map((m) => (m.id === id ? { ...m, arquivada: true, alteradoEm: t } : m)),
+        });
+      },
+
+      async removerMeta(id) {
+        // Os marcos vão junto: sem a meta eles não significam nada, e ficariam
+        // no banco para sempre sem ninguém para lê-los.
+        const t = agora();
+        let atual = banco;
+        for (const marco of banco.marcos.filter((m) => m.metaId === id)) {
+          const { lista, removidos } = removerRegistro(atual, 'marcos', atual.marcos, marco.id, t);
+          atual = { ...atual, marcos: lista, removidos };
+        }
+        const { lista, removidos } = removerRegistro(atual, 'metas', atual.metas, id, t);
+        await gravar({ ...atual, metas: lista, removidos });
+      },
+
+      async marcarMeta(metaId, dia, quanto) {
+        if (quanto <= 0) return;
+        const t = agora();
+        const marco: Marco = { id: novoId(), criadoEm: t, alteradoEm: t, metaId, dia, quanto };
+        await gravar({ ...banco, marcos: [...banco.marcos, marco] });
+      },
+
+      async desmarcarMeta(metaId, dia) {
+        // O último daquele dia, e não todos: marquei três vezes e quero tirar
+        // uma. Apagar precisa deixar lápide, ou o outro aparelho remarca.
+        const doDia = banco.marcos.filter((m) => m.metaId === metaId && m.dia === dia);
+        const ultimo = doDia[doDia.length - 1];
+        if (!ultimo) return;
+        const { lista, removidos } = removerRegistro(banco, 'marcos', banco.marcos, ultimo.id, agora());
+        await gravar({ ...banco, marcos: lista, removidos });
       },
 
       exportar: () => repo.exportar(),
