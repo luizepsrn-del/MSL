@@ -122,6 +122,7 @@ export default tseslint.config(
         Request: 'readonly',
         URL: 'readonly',
         Promise: 'readonly',
+        Response: 'readonly',
       },
     },
   },

@@ -103,7 +103,16 @@ self.addEventListener('fetch', (evento) => {
     evento.respondWith(
       fetch(pedido)
         .then((resposta) => guardar(pedido, resposta))
-        .catch(() => caches.match('/index.html').then((r) => r ?? caches.match('/'))),
+        .catch(async () => {
+          // Nunca devolver `undefined`: `respondWith` exige uma resposta, e o
+          // que acontece é a aba morrer com "Failed to convert value to
+          // 'Response'" em vez de mostrar a tela guardada.
+          const guardada = (await caches.match('/index.html')) ?? (await caches.match('/'));
+          return guardada ?? new Response('Sem conexão e sem cópia guardada.', {
+            status: 503,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          });
+        }),
     );
     return;
   }
@@ -113,7 +122,10 @@ self.addEventListener('fetch', (evento) => {
     evento.respondWith(
       caches.match(pedido).then(
         (guardado) =>
-          guardado ?? fetch(pedido).then((resposta) => guardar(pedido, resposta)),
+          guardado ??
+          fetch(pedido)
+            .then((resposta) => guardar(pedido, resposta))
+            .catch(() => new Response('', { status: 504 })),
       ),
     );
     return;
@@ -123,6 +135,9 @@ self.addEventListener('fetch', (evento) => {
   evento.respondWith(
     fetch(pedido)
       .then((resposta) => guardar(pedido, resposta))
-      .catch(() => caches.match(pedido)),
+      .catch(async () => {
+        const guardada = await caches.match(pedido);
+        return guardada ?? new Response('', { status: 504 });
+      }),
   );
 });
