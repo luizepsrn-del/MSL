@@ -1,4 +1,4 @@
-import type { Armazem } from './armazem';
+import type { Armazem } from './armazem.ts';
 import {
   cadastrar,
   entrar,
@@ -8,10 +8,10 @@ import {
   revogar,
   chaveBanco,
   type Falha,
-} from './contas';
-import { migrar } from '../dados/migracoes';
-import { juntar, podarLapides } from '../dominio/sincronizacao';
-import { bancoVazio } from '../dados/esquema';
+} from './contas.ts';
+import { migrar } from '../dados/migracoes.ts';
+import { juntar, podarLapides } from '../dominio/sincronizacao.ts';
+import { bancoVazio } from '../dados/esquema.ts';
 
 /**
  * As rotas, como funções puras de `Request` para `Response`.

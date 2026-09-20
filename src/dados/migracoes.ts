@@ -1,4 +1,4 @@
-import { VERSAO_ESQUEMA, bancoVazio, type Banco } from './esquema';
+import { VERSAO_ESQUEMA, bancoVazio, type Banco } from './esquema.ts';
 
 /**
  * Migração de esquema.

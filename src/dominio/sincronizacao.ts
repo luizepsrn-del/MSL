@@ -5,7 +5,7 @@ import {
   type NomeColecao,
   type Registro,
   type Removido,
-} from '../dados/esquema';
+} from '../dados/esquema.ts';
 
 /**
  * Juntar o que dois aparelhos fizeram.

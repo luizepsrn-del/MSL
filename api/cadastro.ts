@@ -1,6 +1,6 @@
-import { rotaCadastro } from '../src/servidor/rotas';
-import { armazem } from './_armazem';
-import { proteger } from './_proteger';
+import { rotaCadastro } from '../src/servidor/rotas.ts';
+import { armazem } from './_armazem.ts';
+import { proteger } from './_proteger.ts';
 
 /**
  * Exportação por método, e não `export default`.

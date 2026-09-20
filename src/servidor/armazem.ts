@@ -29,9 +29,12 @@ export interface Armazem {
 
 export class ArmazemMemoria implements Armazem {
   private dados = new Map<string, { valor: string; expiraEm?: number }>();
+  private agora: () => number;
 
   /** Injetável para o teste poder envelhecer uma sessão sem esperar. */
-  constructor(private agora: () => number = () => Date.now()) {}
+  constructor(agora: () => number = () => Date.now()) {
+    this.agora = agora;
+  }
 
   private vivo(chave: string): string | null {
     const item = this.dados.get(chave);
@@ -79,10 +82,21 @@ export class ArmazemMemoria implements Armazem {
  * caminho que carrega a senha e o dado de uma vida inteira.
  */
 export class ArmazemRedis implements Armazem {
-  constructor(
-    private url: string,
-    private token: string,
-  ) {}
+  private url: string;
+  private token: string;
+
+  /**
+   * Campos escritos à mão, e não propriedades de parâmetro.
+   *
+   * `private url: string` no construtor é açúcar que exige transformação, não
+   * só remoção de tipos — e o Node se recusa a carregar o arquivo em modo de
+   * remoção pura. Escrever à mão custa duas linhas e deixa este módulo
+   * carregável por Node puro, que é como eu confiro antes de publicar.
+   */
+  constructor(url: string, token: string) {
+    this.url = url;
+    this.token = token;
+  }
 
   /**
    * As variáveis mudam de nome conforme como o banco foi ligado ao projeto:

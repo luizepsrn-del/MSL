@@ -1,4 +1,4 @@
-import { ArmazemRedis } from '../src/servidor/armazem';
+import { ArmazemRedis } from '../src/servidor/armazem.ts';
 
 /**
  * O armazém de produção, montado a partir do ambiente.

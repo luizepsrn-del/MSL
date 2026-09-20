@@ -1,5 +1,5 @@
-import type { Armazem } from './armazem';
-import { embaralhar, conferir, precisaReforcar, segredo } from './senha';
+import type { Armazem } from './armazem.ts';
+import { embaralhar, conferir, precisaReforcar, segredo } from './senha.ts';
 
 /**
  * Contas, entrada e sessão.
