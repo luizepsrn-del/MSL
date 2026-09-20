@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 8;
+export const VERSAO_ESQUEMA = 9;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -224,6 +224,86 @@ export interface Lancamento extends Registro {
   recorrencia?: RecorrenciaLancamento;
 }
 
+/* ── Meta ────────────────────────────────────────────────────────────────── */
+
+/**
+ * A janela em que a meta é medida.
+ *
+ * `sempre` é a meta que não zera — conta de `inicioEm` até hoje. As outras
+ * recomeçam sozinhas quando a semana, o mês ou o ano viram, e é por isso que o
+ * progresso **não pode ser um número guardado**: um "18 de 20" gravado
+ * atravessaria a virada do mês dizendo que já estava quase lá.
+ */
+export type PeriodoDaMeta = 'semana' | 'mes' | 'ano' | 'sempre';
+
+export const PERIODOS_DA_META: PeriodoDaMeta[] = ['semana', 'mes', 'ano', 'sempre'];
+
+export const ROTULO_PERIODO_META: Record<PeriodoDaMeta, string> = {
+  semana: 'Nesta semana',
+  mes: 'Neste mês',
+  ano: 'Neste ano',
+  sempre: 'Desde o começo',
+};
+
+/**
+ * De onde sai o número da meta.
+ *
+ * Três das quatro fontes leem dado que já existe: a meta se preenche sozinha
+ * enquanto eu uso o sistema como sempre usei. Só `manual` pede que eu marque —
+ * e existe para o que o sistema não tem como saber.
+ */
+export type FonteDaMeta =
+  | { tipo: 'manual' }
+  /** conta as execuções desta rotina que caem no período */
+  | { tipo: 'rotina'; rotinaId: string }
+  /** conta as tarefas concluídas no período, opcionalmente de um projeto só */
+  | { tipo: 'tarefas'; projetoId?: string; contexto?: Contexto }
+  /** soma os lançamentos do período, em centavos */
+  | { tipo: 'dinheiro'; movimento: TipoLancamento; categoria?: Categoria };
+
+/**
+ * Para que lado a meta é boa.
+ *
+ * `atingir` quer chegar ao alvo ou passar dele; `limitar` quer ficar abaixo.
+ * Sem esta distinção não existe "gastar menos de R$ 800 em lazer" — a barra
+ * cheia diria sucesso onde é o contrário.
+ */
+export type DirecaoDaMeta = 'atingir' | 'limitar';
+
+export const ROTULO_DIRECAO: Record<DirecaoDaMeta, string> = {
+  atingir: 'Chegar a',
+  limitar: 'Não passar de',
+};
+
+export interface Meta extends Registro {
+  titulo: string;
+  contexto: Contexto;
+  /** o alvo: vezes, ou centavos inteiros quando a fonte é dinheiro */
+  alvo: number;
+  periodo: PeriodoDaMeta;
+  direcao: DirecaoDaMeta;
+  fonte: FonteDaMeta;
+  /** data local `AAAA-MM-DD` a partir da qual a meta vale */
+  inicioEm: string;
+  /** arquivada some das listas sem perder o histórico */
+  arquivada: boolean;
+}
+
+/**
+ * Um avanço marcado à mão, num dia.
+ *
+ * É o `Execucao` da meta, e pelo mesmo motivo: guardar um total acumulado no
+ * próprio registro faria o número atravessar a virada do período. Um marco tem
+ * dia, então a janela sabe quais contar e quais deixar para trás.
+ */
+export interface Marco extends Registro {
+  metaId: string;
+  /** data local `AAAA-MM-DD` a que o avanço se refere */
+  dia: string;
+  /** quanto avançou: vezes, ou centavos quando a meta é de dinheiro. Sempre > 0 */
+  quanto: number;
+}
+
 /* ── O banco ─────────────────────────────────────────────────────────────── */
 
 /**
@@ -274,12 +354,22 @@ export interface Banco {
   tarefas: Tarefa[];
   projetos: Projeto[];
   lancamentos: Lancamento[];
+  metas: Meta[];
+  marcos: Marco[];
   preferencias?: Preferencias;
   /** o que foi apagado, para a junção entre aparelhos não ressuscitar nada */
   removidos?: Removido[];
 }
 
-export const COLECOES = ['rotinas', 'execucoes', 'tarefas', 'projetos', 'lancamentos'] as const;
+export const COLECOES = [
+  'rotinas',
+  'execucoes',
+  'tarefas',
+  'projetos',
+  'lancamentos',
+  'metas',
+  'marcos',
+] as const;
 export type NomeColecao = (typeof COLECOES)[number];
 
 /**
@@ -295,6 +385,8 @@ export const ROTULO_COLECAO: Record<NomeColecao, [string, string]> = {
   tarefas: ['tarefa', 'tarefas'],
   projetos: ['projeto', 'projetos'],
   lancamentos: ['lançamento', 'lançamentos'],
+  metas: ['meta', 'metas'],
+  marcos: ['marco', 'marcos'],
 };
 
 /** `1 rotina`, `25 execuções` — o número e o nome concordando. */
@@ -311,6 +403,8 @@ export function bancoVazio(): Banco {
     tarefas: [],
     projetos: [],
     lancamentos: [],
+    metas: [],
+    marcos: [],
     removidos: [],
   };
 }

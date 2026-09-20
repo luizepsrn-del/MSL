@@ -89,6 +89,20 @@ export const MIGRACOES: Record<number, Migracao> = {
    */
   7: (dados) => ({ ...dados, versao: 8 }),
 
+  /**
+   * 8 → 9: entra o pilar Metas, com as duas coleções que ele precisa.
+   *
+   * `marcos` é separada de `metas` pelo mesmo motivo que `execucoes` é separada
+   * de `rotinas`: o avanço tem dia, e um total guardado dentro da meta
+   * atravessaria a virada do mês mentindo. Aditiva — quem não tem meta nenhuma
+   * fica com as duas listas vazias.
+   */
+  8: (dados) => ({
+    ...dados,
+    metas: Array.isArray(dados.metas) ? dados.metas : [],
+    marcos: Array.isArray(dados.marcos) ? dados.marcos : [],
+    versao: 9,
+  }),
 };
 
 export class ErroDeMigracao extends Error {
