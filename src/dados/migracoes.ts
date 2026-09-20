@@ -119,6 +119,14 @@ export const MIGRACOES: Record<number, Migracao> = {
    * se comporta exatamente como antes.
    */
   10: (dados) => ({ ...dados, versao: 11 }),
+
+  /**
+   * 11 → 12: a tarefa que se repete.
+   *
+   * Aditiva e sem valor de partida: tarefa sem `repeticao` já significa "uma
+   * vez só", que é o que toda tarefa existente é.
+   */
+  11: (dados) => ({ ...dados, versao: 12 }),
 };
 
 export class ErroDeMigracao extends Error {

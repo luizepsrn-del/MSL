@@ -20,6 +20,9 @@ import {
   type Tarefa,
   type Projeto,
   type EstadoTarefa,
+  type RepeticaoDaTarefa,
+  type PeriodoRecorrencia,
+  ROTULO_PERIODO,
 } from '../dados/esquema';
 import {
   ordenarTarefas,
@@ -35,6 +38,7 @@ import {
 } from '../dominio/tarefa';
 import { diaValido } from '../dominio/rotina';
 import { horaValida } from '../dominio/calendario';
+import { descreverRepeticao, ehAUltima } from '../dominio/repeticao';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 
 type Filtro = 'pendentes' | 'todas' | 'concluidas';
@@ -44,7 +48,16 @@ const AGRUPAMENTOS: Agrupamento[] = ['estado', 'prazo', 'projeto', 'contexto'];
 
 /** Tarefa — o que tem fim, com prazo quando faz sentido ter. */
 export function Tarefas() {
-  const { banco, hoje, criarTarefa, editarTarefa, alternarTarefa, removerTarefa, mudarEstadoTarefa } =
+  const {
+    banco,
+    hoje,
+    criarTarefa,
+    editarTarefa,
+    alternarTarefa,
+    pularTarefa,
+    removerTarefa,
+    mudarEstadoTarefa,
+  } =
     useBanco();
   const projetosAtivos = banco.projetos.filter((p) => !p.arquivadoEm);
   const [criando, setCriando] = React.useState(false);
@@ -176,6 +189,7 @@ export function Tarefas() {
                 tarefa={t}
                 hoje={hoje}
                 aoAlternar={() => alternarTarefa(t.id)}
+                aoPular={() => pularTarefa(t.id)}
                 aoCorrigir={() => setCorrigindo(t)}
                 aoRemover={() => removerTarefa(t.id)}
               />
@@ -228,12 +242,15 @@ export function LinhaTarefa({
   aoAlternar,
   aoCorrigir,
   aoRemover,
+  aoPular: aoPularTarefa,
 }: {
   tarefa: Tarefa;
   hoje: string;
   aoAlternar: () => void;
   aoCorrigir?: () => void;
   aoRemover?: () => void;
+  /** empurra a ocorrência sem marcá-la como feita; só para as que repetem */
+  aoPular?: () => void;
 }) {
   const s = situacao(tarefa, hoje);
   const feita = s === 'concluida';
@@ -243,6 +260,14 @@ export function LinhaTarefa({
       style={{
         display: 'flex',
         alignItems: 'center',
+        // Quebra, e não uma linha só.
+        //
+        // Com duas etiquetas e até três botões à direita, `flex: 1` no título
+        // o espremia até zero e o texto descia uma letra por linha no iPhone —
+        // fotografado. É o mesmo defeito que a linha do Financeiro teve quando
+        // ganhou o lápis, e a correção é a mesma: a coluna do texto pede
+        // `--grid-min` e a linha quebra quando não cabe.
+        flexWrap: 'wrap',
         gap: 'var(--sp-6)',
         minHeight: 'var(--tap-min)',
         padding: 'var(--sp-4) var(--sp-5)',
@@ -254,7 +279,7 @@ export function LinhaTarefa({
       <Checkbox
         checked={feita}
         onChange={aoAlternar}
-        style={{ flex: 1, minWidth: 0, alignItems: 'center' }}
+        style={{ flex: '1 1 var(--grid-min)', minWidth: 0, alignItems: 'center' }}
         label={
           <span style={{ minWidth: 0, display: 'block' }}>
             <span
@@ -278,6 +303,7 @@ export function LinhaTarefa({
               }}
             >
               {descreverPrazo(tarefa, hoje)}
+              {tarefa.repeticao ? ` · ${descreverRepeticao(tarefa.repeticao).toLowerCase()}` : ''}
               {tarefa.anotacao ? ` · ${tarefa.anotacao}` : ''}
             </span>
           </span>
@@ -291,6 +317,18 @@ export function LinhaTarefa({
       <Badge tone={tarefa.contexto === 'pessoal' ? 'ontime' : 'delivered'} dot={false}>
         {ROTULO_CONTEXTO[tarefa.contexto]}
       </Badge>
+
+      {/* Pular empurra a ocorrência sem fingir que ela foi feita: marcar como
+          concluído o que não aconteceu estragaria sequência, meta e gráfico. */}
+      {aoPularTarefa && tarefa.repeticao && !feita && !ehAUltima(tarefa) && (
+        <IconButton
+          icon="skip-forward"
+          label={`Pular esta ocorrência de ${tarefa.titulo}`}
+          variant="ghost"
+          size={34}
+          onClick={aoPularTarefa}
+        />
+      )}
 
       {aoCorrigir && (
         <IconButton
@@ -322,6 +360,7 @@ export interface DadosNovos {
   hora?: string;
   anotacao?: string;
   projetoId?: string;
+  repeticao?: RepeticaoDaTarefa;
 }
 
 /** Valor do Select quando a tarefa não pertence a projeto nenhum. */
@@ -374,6 +413,11 @@ export function FormularioTarefa({
   const [hora, setHora] = React.useState(tarefa?.hora ?? '');
   const [anotacao, setAnotacao] = React.useState(tarefa?.anotacao ?? '');
   const [projetoId, setProjetoId] = React.useState(tarefa?.projetoId ?? SEM_PROJETO);
+  const [repete, setRepete] = React.useState<PeriodoRecorrencia | ''>(
+    tarefa?.repeticao?.periodo ?? '',
+  );
+  const [aCada, setACada] = React.useState(String(tarefa?.repeticao?.intervalo ?? 1));
+  const [repeteAte, setRepeteAte] = React.useState(tarefa?.repeticao?.ate ?? '');
   const [tentou, setTentou] = React.useState(false);
 
   const erroTitulo = tentou && titulo.trim() === '' ? 'Dê um nome à tarefa' : undefined;
@@ -381,12 +425,25 @@ export function FormularioTarefa({
     tentou && prazo !== '' && !diaValido(prazo) ? 'Data inválida' : undefined;
   const erroHora =
     tentou && hora !== '' && !horaValida(hora) ? 'Hora inválida' : undefined;
+  // "Todo mês" sem data não quer dizer nada: a repetição anda a partir do prazo.
+  const erroRepete =
+    tentou && repete !== '' && prazo === ''
+      ? 'Para repetir, a tarefa precisa de um prazo'
+      : undefined;
+  const erroAte =
+    tentou && repeteAte !== '' && !diaValido(repeteAte)
+      ? 'Data inválida'
+      : tentou && repeteAte !== '' && prazo !== '' && repeteAte < prazo
+        ? 'O fim não pode vir antes do primeiro prazo'
+        : undefined;
 
   const enviar = async () => {
     setTentou(true);
     if (titulo.trim() === '') return;
     if (prazo !== '' && !diaValido(prazo)) return;
     if (hora !== '' && !horaValida(hora)) return;
+    if (repete !== '' && prazo === '') return;
+    if (repeteAte !== '' && (!diaValido(repeteAte) || (prazo !== '' && repeteAte < prazo))) return;
 
     await aoEnviar({
       titulo: titulo.trim(),
@@ -396,6 +453,15 @@ export function FormularioTarefa({
       hora: prazo === '' || hora === '' ? undefined : hora,
       anotacao: anotacao.trim() === '' ? undefined : anotacao.trim(),
       projetoId: projetoFixo ?? (projetoId === SEM_PROJETO ? undefined : projetoId),
+      // `undefined` apaga o campo na correção — é assim que se para de repetir.
+      repeticao:
+        repete === '' || prazo === ''
+          ? undefined
+          : {
+              periodo: repete,
+              intervalo: Math.max(Math.trunc(Number(aCada)) || 1, 1),
+              ate: repeteAte === '' ? undefined : repeteAte,
+            },
     });
   };
 
@@ -520,6 +586,68 @@ export function FormularioTarefa({
               ]}
             />
           </Field>
+        )}
+
+        {/* Repetir.
+            A próxima ocorrência nasce ao concluir esta, e não antes: o futuro
+            não enche de tarefas que ninguém pediu, e pular três semanas deixa
+            uma pendência atrasada em vez de três. */}
+        <Field
+          label="Repete"
+          htmlFor="tar-repete"
+          error={erroRepete}
+          help={
+            repete === ''
+              ? 'Opcional — uma tarefa que volta, como pagar o IPVA'
+              : 'A próxima nasce quando você concluir esta'
+          }
+        >
+          <Select
+            id="tar-repete"
+            value={repete}
+            onChange={(v) => setRepete(v as PeriodoRecorrencia | '')}
+            size="lg"
+            fullWidth
+            options={[
+              { value: '', label: 'Não repete' },
+              ...(['semanal', 'mensal', 'anual'] as PeriodoRecorrencia[]).map((p) => ({
+                value: p,
+                label: ROTULO_PERIODO[p],
+              })),
+            ]}
+          />
+        </Field>
+
+        {repete !== '' && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(var(--grid-min), 1fr))',
+              gap: 'var(--sp-8)',
+            }}
+          >
+            <Field label="A cada quantos" htmlFor="tar-acada">
+              <TextInput
+                id="tar-acada"
+                type="number"
+                value={aCada}
+                onChange={setACada}
+                size="lg"
+                fullWidth
+              />
+            </Field>
+            <Field label="Até" htmlFor="tar-ate" error={erroAte} help="Opcional — em branco, sem fim">
+              <TextInput
+                id="tar-ate"
+                type="date"
+                value={repeteAte}
+                onChange={setRepeteAte}
+                invalid={!!erroAte}
+                size="lg"
+                fullWidth
+              />
+            </Field>
+          </div>
         )}
 
         <Field label="Anotação" htmlFor="tar-nota" help="Opcional">

@@ -28,6 +28,7 @@ import {
 } from './sincronia';
 import { validarValor } from '../dominio/financeiro';
 import { validarMeta } from '../dominio/meta';
+import { proximaOcorrencia, aoPular } from '../dominio/repeticao';
 
 /**
  * O banco, disponível para as telas.
@@ -49,6 +50,8 @@ interface Acoes {
   criarTarefa(dados: Omit<Tarefa, keyof BaseRegistro>): Promise<void>;
   editarTarefa(id: string, mudanca: Edicao<Tarefa>): Promise<void>;
   alternarTarefa(id: string): Promise<void>;
+  /** empurra a ocorrência de uma tarefa que se repete, sem marcá-la como feita */
+  pularTarefa(id: string): Promise<void>;
   removerTarefa(id: string): Promise<void>;
   /** move a tarefa de coluna no quadro; entrar em "feito" conclui, sair reabre */
   mudarEstadoTarefa(id: string, estado: EstadoTarefa): Promise<void>;
@@ -259,20 +262,41 @@ export function ProvedorBanco({
 
       async alternarTarefa(id) {
         const t = agora();
-        await gravar({
-          ...banco,
-          tarefas: banco.tarefas.map((tarefa) =>
-            tarefa.id === id
-              ? {
-                  ...tarefa,
-                  // Desmarcar apaga o instante em vez de guardar um falso:
-                  // "concluída" é a existência da marca, não um booleano.
-                  concluidaEm: tarefa.concluidaEm ? undefined : t,
-                  alteradoEm: t,
-                }
-              : tarefa,
-          ),
-        });
+        const alvo = banco.tarefas.find((tarefa) => tarefa.id === id);
+
+        const tarefas = banco.tarefas.map((tarefa) =>
+          tarefa.id === id
+            ? {
+                ...tarefa,
+                // Desmarcar apaga o instante em vez de guardar um falso:
+                // "concluída" é a existência da marca, não um booleano.
+                concluidaEm: tarefa.concluidaEm ? undefined : t,
+                alteradoEm: t,
+              }
+            : tarefa,
+        );
+
+        // Concluir uma que se repete cria a próxima, na hora. Ela nasce aqui e
+        // não antes: o futuro não enche de tarefas que ninguém pediu, e pular
+        // três semanas deixa uma pendência atrasada em vez de três.
+        //
+        // Só ao **concluir**: desmarcar não pode criar uma segunda ocorrência,
+        // ou marcar e desmarcar duas vezes encheria o mês.
+        const semente = alvo && !alvo.concluidaEm ? proximaOcorrencia(alvo) : null;
+        if (semente) {
+          tarefas.push({ ...semente, id: novoId(), criadoEm: t, alteradoEm: t });
+        }
+
+        await gravar({ ...banco, tarefas });
+      },
+
+      async pularTarefa(id) {
+        const alvo = banco.tarefas.find((tarefa) => tarefa.id === id);
+        const mudanca = alvo ? aoPular(alvo) : null;
+        // Pular empurra a própria tarefa: registrar como concluído o que não
+        // foi feito estragaria toda conta que o sistema faz a partir daí.
+        if (!mudanca) return;
+        await gravar({ ...banco, tarefas: editarNaLista(banco.tarefas, id, mudanca, agora()) });
       },
 
       async removerTarefa(id) {

@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 11;
+export const VERSAO_ESQUEMA = 12;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -97,6 +97,19 @@ export const ROTULO_ESTADO: Record<EstadoTarefa, string> = {
   feito: 'Feito',
 };
 
+/**
+ * Como uma tarefa se repete.
+ *
+ * Só existe com prazo: "todo mês" sem data não quer dizer nada.
+ */
+export interface RepeticaoDaTarefa {
+  periodo: PeriodoRecorrencia;
+  /** a cada quantos períodos; 1 é todo mês, 3 é de três em três */
+  intervalo: number;
+  /** data local `AAAA-MM-DD` da última ocorrência; ausente = sem fim */
+  ate?: string;
+}
+
 export interface Tarefa extends Registro {
   titulo: string;
   contexto: Contexto;
@@ -122,6 +135,20 @@ export interface Tarefa extends Registro {
    * linha certa da agenda do dia; quem não tem fica em "a qualquer hora".
    */
   hora?: string;
+  /**
+   * Quando presente, concluir esta tarefa cria a próxima.
+   *
+   * **Aqui a repetição é gerada, e não derivada** — ao contrário do calendário
+   * e do lançamento recorrente, e de propósito. Uma ocorrência de tarefa
+   * precisa de identidade: ela atrasa, acumula anotação, anda no quadro. Uma
+   * ocorrência derivada não teria onde guardar nada disso, e "pagar o IPVA"
+   * não pode deixar de ficar atrasado só porque ninguém marcou.
+   *
+   * A próxima nasce ao concluir a atual, e não antes: assim o futuro não
+   * enche de tarefas que ninguém pediu, e pular três semanas deixa uma
+   * pendência atrasada em vez de três.
+   */
+  repeticao?: RepeticaoDaTarefa;
 }
 
 /* ── Projeto ─────────────────────────────────────────────────────────────── */
