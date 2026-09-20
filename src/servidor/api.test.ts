@@ -20,7 +20,7 @@ const rodar = promisify(execFile);
  */
 
 const FUNCOES = readdirSync('api')
-  .filter((arquivo) => arquivo.endsWith('.ts') && !arquivo.startsWith('_'))
+  .filter((arquivo) => arquivo.endsWith('.ts'))
   .sort();
 
 /** Os métodos HTTP que cada função precisa expor para a Vercel achar. */
@@ -34,6 +34,12 @@ const METODOS: Record<string, string[]> = {
 };
 
 describe('as funções da Vercel', () => {
+  it('nenhum arquivo com underline em api/', () => {
+    // A Vercel exclui da publicação os arquivos com underline. Eles sumiam do
+    // pacote e a função quebrava ao carregar, sem pista nenhuma.
+    expect(FUNCOES.filter((a) => a.startsWith('_'))).toEqual([]);
+  });
+
   it('a lista de funções é a esperada', () => {
     // Função nova sem entrada aqui passaria sem ser conferida.
     expect(FUNCOES).toEqual(Object.keys(METODOS).sort());

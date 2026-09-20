@@ -1,3 +1,17 @@
+import { ArmazemRedis } from './armazem.ts';
+
+/**
+ * As duas peças que todo adaptador da Vercel usa.
+ *
+ * Moram aqui, e não em `api/_alguma-coisa.ts`, porque a Vercel **exclui da
+ * publicação** os arquivos com underline em `api/`. Eles sumiam do pacote e a
+ * função quebrava ao carregar, com `FUNCTION_INVOCATION_FAILED` e nenhuma
+ * pista — enquanto `/api/saude`, que não importava nenhum deles, respondia.
+ */
+
+/** O armazém de produção, montado a partir do ambiente. */
+export const armazem = () => ArmazemRedis.doAmbiente(process.env);
+
 /**
  * O guarda-chuva das funções.
  *
