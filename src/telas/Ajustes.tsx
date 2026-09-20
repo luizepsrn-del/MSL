@@ -201,6 +201,11 @@ export function Ajustes() {
       </Card>
       )}
 
+      <NomeNoInicio
+        nome={banco.preferencias?.nome ?? ''}
+        aoSalvar={(nome) => definirPreferencias({ nome: nome.trim() || undefined })}
+      />
+
       <Card title="Meus dados" subtitle={`Esquema na versão ${VERSAO_ESQUEMA}`}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
           <div style={{ display: 'flex', gap: 'var(--sp-5)', flexWrap: 'wrap' }}>
@@ -315,6 +320,43 @@ export function Ajustes() {
  * isso é dito com todas as letras em vez de deixar a pessoa descobrir no
  * telefone que nada atravessou.
  */
+/**
+ * Como eu quero ser chamado.
+ *
+ * Mora nas preferências, e não no código, por dois motivos: o repositório é
+ * público, e a escolha é minha — ela viaja no backup e na sincronização como
+ * qualquer outra. Em branco, o Início mostra só a data, sem nome pendurado.
+ *
+ * Salva ao sair do campo, e não a cada tecla: gravar por letra digitada
+ * dispararia uma sincronização por letra.
+ */
+function NomeNoInicio({ nome, aoSalvar }: { nome: string; aoSalvar: (nome: string) => void }) {
+  const [texto, setTexto] = React.useState(nome);
+
+  return (
+    <Card title="Como quer ser chamado" subtitle="Aparece na saudação do Início">
+      <div style={{ display: 'flex', gap: 'var(--sp-6)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 var(--grid-min)', minWidth: 0 }}>
+          <Field label="Nome" htmlFor="ajustes-nome">
+            <TextInput
+              id="ajustes-nome"
+              value={texto}
+              onChange={setTexto}
+              onBlur={() => aoSalvar(texto)}
+              placeholder="Deixe em branco para não usar nome"
+              size="lg"
+              fullWidth
+            />
+          </Field>
+        </div>
+        <Button variant="secondary" size="lg" onClick={() => aoSalvar(texto)}>
+          Salvar
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function Conta({
   conta,
   sincronizando,

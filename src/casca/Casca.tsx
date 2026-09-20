@@ -9,6 +9,7 @@ import {
   SearchInput,
 } from '../../design-system';
 import { useTheme } from '../theme';
+import { useBanco } from '../dados/BancoContexto';
 import { useLarguraDesktop } from './useLarguraDesktop';
 import { SECOES, porId, PILAR_INICIAL, type Pilar } from './navegacao';
 import { TelaEmBranco } from './TelaEmBranco';
@@ -90,8 +91,22 @@ function Conteudo({ pilar }: { pilar: Pilar }) {
   }
 }
 
+/**
+ * Quem está usando.
+ *
+ * Vem das preferências, nunca do código: o repositório é público, e o nome de
+ * quem usa o sistema não é dado de programa. Sem nome escolhido, a casca usa o
+ * nome do produto — que é verdade, e não um lugar vazio.
+ */
+function useQuemUsa(): { name: string; role: string } {
+  const { banco } = useBanco();
+  const nome = banco.preferencias?.nome?.trim();
+  return { name: nome || 'My System Life', role: 'Pessoal e profissional' };
+}
+
 function CascaDesktop({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: string) => void }) {
   const { theme, setTheme } = useTheme();
+  const quem = useQuemUsa();
 
   return (
     <div
@@ -109,7 +124,7 @@ function CascaDesktop({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: stri
         theme={theme}
         onThemeChange={setTheme}
         themeLabel={(m) => (m === 'light' ? 'Tema claro' : 'Tema escuro')}
-        user={{ name: 'Luiz Eduardo', role: 'Pessoal e profissional' }}
+        user={quem}
       />
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <Sidebar
@@ -139,6 +154,7 @@ function CascaDesktop({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: stri
 
 function CascaMobile({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: string) => void }) {
   const { theme, setTheme } = useTheme();
+  const quem = useQuemUsa();
   const [gaveta, setGaveta] = React.useState(false);
   const [busca, setBusca] = React.useState('');
 
@@ -297,7 +313,7 @@ function CascaMobile({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: strin
                   padding: 'var(--sp-6)',
                 }}
               >
-                <Avatar name="Luiz Eduardo" size={32} />
+                <Avatar name={quem.name} size={32} />
                 <span style={{ minWidth: 0 }}>
                   <span
                     style={{
@@ -306,7 +322,7 @@ function CascaMobile({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: strin
                       color: 'var(--text-body)',
                     }}
                   >
-                    Luiz Eduardo
+                    {quem.name}
                   </span>
                   <span
                     style={{
@@ -315,7 +331,7 @@ function CascaMobile({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: strin
                       color: 'var(--text-muted)',
                     }}
                   >
-                    Pessoal e profissional
+                    {quem.role}
                   </span>
                 </span>
               </div>

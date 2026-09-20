@@ -103,6 +103,14 @@ export const MIGRACOES: Record<number, Migracao> = {
     marcos: Array.isArray(dados.marcos) ? dados.marcos : [],
     versao: 9,
   }),
+
+  /**
+   * 9 → 10: o nome, dentro das preferências.
+   *
+   * Aditiva e sem valor de partida: quem não disser como quer ser chamado vê
+   * a data sem nome, que é o comportamento certo e não uma falta.
+   */
+  9: (dados) => ({ ...dados, versao: 10 }),
 };
 
 export class ErroDeMigracao extends Error {

@@ -50,6 +50,8 @@ import {
   CABECALHO_SEMANA,
 } from '../dominio/calendario';
 import { ocorrenciasDoMes, resumoFinanceiro, evolucaoMensal } from '../dominio/financeiro';
+import { precisaDeVoce, saudacao, comoEstaODia, type ItemDoFoco } from '../dominio/foco';
+import { metasEmCurso, resumoDeMetas, emDinheiro } from '../dominio/meta';
 import {
   formatarDataLonga,
   formatarDiaDaSemana,
@@ -106,13 +108,51 @@ function ticksDeDinheiro(pontos: { entradas: number; saidas: number }[]): string
   ];
 }
 
-function Legenda({ cor, texto }: { cor: string; texto: string }) {
+function Legenda({ cor, texto, tracejada }: { cor: string; texto: string; tracejada?: boolean }) {
   return (
     <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-4)' }}>
-      <span style={{ width: 10, height: 3, borderRadius: 'var(--r-pill)', background: cor }} />
+      <span
+        style={{
+          width: 14,
+          height: 3,
+          borderRadius: 'var(--r-pill)',
+          // A tracejada precisa se distinguir da cheia na própria legenda, ou
+          // duas entradas da mesma cor viram a mesma coisa escrita duas vezes.
+          background: tracejada ? undefined : cor,
+          backgroundImage: tracejada
+            ? `repeating-linear-gradient(to right, ${cor} 0 4px, transparent 4px 7px)`
+            : undefined,
+          opacity: tracejada ? 0.8 : 1,
+        }}
+      />
       <span style={{ font: 'var(--type-body)', color: 'var(--text-muted)' }}>{texto}</span>
     </span>
   );
+}
+
+/**
+ * "média 62% · +8 pontos sobre as duas semanas anteriores".
+ *
+ * Em pontos percentuais, e não em "+13%": subir de 50% para 58% não é um
+ * aumento de 8%, e chamar assim é o erro que faz o número mentir para o lado
+ * bom. Sem quinzena anterior nenhuma, não há comparação para fazer.
+ */
+function compararQuinzenas(agora: number[], antes: number[]): string {
+  const media = (xs: number[]) => (xs.length === 0 ? 0 : xs.reduce((t, x) => t + x, 0) / xs.length);
+  const a = Math.round(media(agora));
+  const b = Math.round(media(antes));
+  const base = `média ${a}%`;
+
+  // Quinzena anterior toda zerada quase sempre quer dizer "eu ainda não usava
+  // o sistema", e comparar com isso daria um "+62 pontos" que não é mérito.
+  if (antes.every((x) => x === 0)) return base;
+
+  const diferenca = a - b;
+  if (diferenca === 0) return `${base} · igual às duas semanas anteriores`;
+  const sinal = diferenca > 0 ? '+' : '−';
+  return `${base} · ${sinal}${Math.abs(diferenca)} ${
+    Math.abs(diferenca) === 1 ? 'ponto' : 'pontos'
+  } sobre as duas semanas anteriores`;
 }
 
 
@@ -132,6 +172,10 @@ export function Inicio() {
   // Quatorze dias, do mais antigo para o mais novo, como o gráfico lê.
   const quinzena = Array.from({ length: 14 }, (_, i) => somarDias(hoje, i - 13));
   const serie = quinzena.map((d) => Math.round(progressoDoDia(banco, d) * 100));
+  // Os catorze dias antes destes, para a linha tracejada de comparação.
+  const serieAnterior = Array.from({ length: 14 }, (_, i) =>
+    Math.round(progressoDoDia(banco, somarDias(hoje, i - 27)) * 100),
+  );
 
   const tarefas = tarefasDoDia(banco, hoje);
   const resumo = resumoTarefas(banco, hoje);
@@ -151,6 +195,10 @@ export function Inicio() {
   }));
   const dinheiro = resumoFinanceiro(doMes, hoje);
   const evolucao = evolucaoMensal(banco, anoAtual, mesAtual, 6);
+
+  const fila = precisaDeVoce(banco, hoje);
+  const metas = metasEmCurso(banco, hoje);
+  const resumoMetas = resumoDeMetas(metas);
 
   const melhorSequencia = banco.rotinas
     .filter((r) => !r.arquivada)
@@ -254,6 +302,123 @@ export function Inicio() {
         )}
       </div>
 
+      </>
+    ),
+    foco: (
+      <>
+      {/* A fila única: tudo que cobra, na ordem em que cobra.
+          É a diferença entre painel e instrução — seis cartões, cada um com a
+          sua lista, me fazem decidir de novo toda manhã. */}
+      <Card
+        title="Precisa de você hoje"
+        subtitle={
+          fila.length === 0
+            ? 'Nada pendente'
+            : 'Na ordem em que cobra · o atrasado primeiro, depois o que tem hora'
+        }
+      >
+        {fila.length === 0 ? (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 'var(--sp-5)',
+              padding: 'var(--sp-12) 0',
+              textAlign: 'center',
+            }}
+          >
+            <span style={{ color: 'var(--green-500)' }}>
+              <Icon name="circle-check" size={28} />
+            </span>
+            <span style={{ font: 'var(--type-body)', color: 'var(--text-muted)' }}>
+              Nada atrasado, nada vencendo, nada marcado. O dia está seu.
+            </span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+            {fila.map((item) => (
+              <LinhaDoFoco
+                key={item.chave}
+                item={item}
+                aoMarcar={(i) =>
+                  i.tipo === 'rotina' ? alternarExecucao(i.id, hoje) : alternarTarefa(i.id)
+                }
+              />
+            ))}
+          </div>
+        )}
+      </Card>
+      </>
+    ),
+    metas: (
+      <>
+      <Card
+        style={{ height: '100%' }}
+        title="Metas em curso"
+        subtitle={
+          resumoMetas.total === 0
+            ? 'Nenhuma meta ainda'
+            : `${resumoMetas.noAlvo} de ${resumoMetas.total} no alvo`
+        }
+        action={
+          <Link to="/app/metas" style={{ textDecoration: 'none' }}>
+            <Button variant="secondary" size="sm" iconRight="arrow-right">
+              Ver metas
+            </Button>
+          </Link>
+        }
+      >
+        {resumoMetas.total === 0 ? (
+          <p
+            style={{
+              padding: 'var(--sp-12) 0',
+              textAlign: 'center',
+              font: 'var(--type-body)',
+              color: 'var(--text-subtle)',
+            }}
+          >
+            Uma meta é um alvo com prazo. Três das quatro fontes contam sozinhas o que você
+            já registra.
+          </p>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 'var(--sp-10)',
+            }}
+          >
+            <DonutChart
+              size={150}
+              thickness={24}
+              centerValue={`${resumoMetas.noAlvo}`}
+              centerLabel={`de ${resumoMetas.total}`}
+              segments={[
+                { value: Math.max(resumoMetas.noAlvo, 0.0001), color: 'var(--chart-2)' },
+                {
+                  value: Math.max(resumoMetas.total - resumoMetas.noAlvo, 0.0001),
+                  color: 'var(--chart-3)',
+                },
+              ]}
+            />
+            {/* Só as que cabem: `metasEmCurso` já traz as que pedem atenção na
+                frente, então cortar o fim corta o que menos importa. */}
+            <MetricBarList
+              style={{ width: '100%' }}
+              items={metas.slice(0, 5).map((m) => ({
+                label: m.meta.titulo,
+                value: Math.round(m.fracao * 100),
+                valueLabel: emDinheiro(m.meta)
+                  ? `${formatarMoedaCompacta(m.feito)}/${formatarMoedaCompacta(m.alvo)}`
+                  : `${m.feito}/${m.alvo}`,
+                tone: m.estourou || m.atrasada ? 'orange' : m.noAlvo ? 'green' : 'purple',
+              }))}
+            />
+          </div>
+        )}
+      </Card>
       </>
     ),
     hoje: (
@@ -435,18 +600,31 @@ export function Inicio() {
       <Card
         style={{ height: '100%' }}
         title="Últimos 14 dias"
-        subtitle={`Quanto do dia foi cumprido · hoje: ${formatarPorcento(progresso)}`}
+        subtitle={`Quanto do dia foi cumprido · ${compararQuinzenas(serie, serieAnterior)}`}
       >
         {/* Linha, e não barra: dois cartões de barras cinzas lado a lado, sem
             eixo nenhum, eram dois gráficos que não diziam nada. A linha tem
-            grade, marca de eixo e a faixa do dia de hoje. */}
+            grade, marca de eixo e a faixa do dia de hoje.
+
+            A tracejada é a quinzena anterior. Um número sozinho não diz se
+            estou melhorando — a comparação com o próprio passado diz, e é a
+            coisa mais útil que a referência mostrava. */}
         <LineChart
           height={180}
-          series={[{ data: serie, color: 'var(--chart-1)' }]}
+          series={[
+            { data: serie, color: 'var(--chart-1)' },
+            { data: serieAnterior, color: 'var(--chart-1)', width: 1.5, dashed: true },
+          ]}
           labels={rotulosDaQuinzena(quinzena)}
           yTicks={['100%', '50%', '0%']}
           highlightIndex={13}
         />
+        <div
+          style={{ display: 'flex', gap: 'var(--sp-8)', flexWrap: 'wrap', marginTop: 'var(--sp-8)' }}
+        >
+          <Legenda cor="var(--chart-1)" texto="Estes 14 dias" />
+          <Legenda cor="var(--chart-1)" texto="Os 14 antes" tracejada />
+        </div>
       </Card>
       </>
     ),
@@ -659,16 +837,11 @@ export function Inicio() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--card-gap)' }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconLeft="sliders-horizontal"
-          onClick={() => setPersonalizando(true)}
-        >
-          Personalizar
-        </Button>
-      </div>
+      <Saudacao
+        nome={banco.preferencias?.nome}
+        recado={comoEstaODia(banco, hoje)}
+        aoPersonalizar={() => setPersonalizando(true)}
+      />
 
       {visiveis.length === 0 ? (
         <Card>
@@ -721,6 +894,194 @@ export function Inicio() {
   );
 }
 
+
+/**
+ * O cabeçalho do Início: quem, quando, e como está o dia.
+ *
+ * A data vem por cima em caixa alta e a saudação embaixo, grande — é o que
+ * orienta antes de qualquer número. O nome é opcional de propósito: sem ele a
+ * linha diz só a data, o que é verdade, em vez de um "Bom dia," pendurado.
+ */
+function Saudacao({
+  nome,
+  recado,
+  aoPersonalizar,
+}: {
+  nome?: string;
+  recado: string;
+  aoPersonalizar: () => void;
+}) {
+  const agora = new Date();
+  const limpo = nome?.trim();
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 'var(--sp-8)',
+        flexWrap: 'wrap',
+      }}
+    >
+      <div style={{ minWidth: 0, flex: '1 1 var(--grid-min)' }}>
+        <span
+          style={{
+            display: 'block',
+            font: 'var(--fw-medium) var(--fs-xs)/1.2 var(--font-core)',
+            color: 'var(--text-subtle)',
+            letterSpacing: '.08em',
+            textTransform: 'uppercase',
+          }}
+        >
+          {formatarDiaDaSemana(agora)}, {formatarDataLonga(agora)}
+        </span>
+        <h2
+          style={{
+            font: 'var(--fw-semibold) var(--fs-heading)/1.2 var(--font-core)',
+            color: 'var(--text-heading)',
+            marginTop: 'var(--sp-3)',
+            overflowWrap: 'anywhere',
+          }}
+        >
+          {limpo ? `${saudacao(agora.getHours())}, ${limpo}.` : saudacao(agora.getHours())}
+        </h2>
+        <p
+          style={{
+            font: 'var(--type-page-subtitle)',
+            color: 'var(--text-muted)',
+            marginTop: 'var(--sp-3)',
+          }}
+        >
+          {recado}
+        </p>
+      </div>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        iconLeft="sliders-horizontal"
+        onClick={aoPersonalizar}
+      >
+        Personalizar
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Uma linha da fila do foco.
+ *
+ * O que dá para marcar tem caixinha; o que não dá é um link para onde aquilo
+ * mora. Uma caixinha que não marca nada seria pior que nenhuma.
+ */
+function LinhaDoFoco({
+  item,
+  aoMarcar,
+}: {
+  item: ItemDoFoco;
+  aoMarcar: (item: ItemDoFoco) => void;
+}) {
+  const DESTINO: Record<ItemDoFoco['tipo'], string> = {
+    tarefa: '/app/tarefas',
+    rotina: '/app/rotina',
+    lancamento: '/app/financeiro',
+    meta: '/app/metas',
+    projeto: '/app/projetos',
+  };
+
+  /** O ícone do tipo, para quem não tem caixinha. */
+  const ICONE: Record<ItemDoFoco['tipo'], string> = {
+    tarefa: 'clipboard-check',
+    rotina: 'repeat',
+    lancamento: 'wallet',
+    meta: 'target',
+    projeto: 'layers',
+  };
+
+  const corpo = (
+    <span style={{ minWidth: 0, flex: 1 }}>
+      <span
+        style={{
+          display: 'block',
+          font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
+          color: 'var(--text-body)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {item.titulo}
+      </span>
+      <span
+        style={{
+          display: 'block',
+          font: 'var(--type-body)',
+          color: item.faixa < 1 ? 'var(--orange-500)' : 'var(--text-muted)',
+        }}
+      >
+        {item.motivo}
+      </span>
+    </span>
+  );
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--sp-6)',
+        minHeight: 'var(--tap-min)',
+        padding: 'var(--sp-4) var(--sp-5)',
+        borderRadius: 'var(--r-nav)',
+        background: item.faixa < 1 ? 'var(--surface-hover)' : 'transparent',
+      }}
+    >
+      {item.marcavel ? (
+        <Checkbox
+          checked={false}
+          onChange={() => aoMarcar(item)}
+          style={{ flex: 1, minWidth: 0, alignItems: 'center' }}
+          label={corpo}
+        />
+      ) : (
+        <Link
+          to={DESTINO[item.tipo]}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            // A mesma medida que o Checkbox usa entre a caixa e o rótulo. Sem
+            // isto, as linhas sem caixinha começavam 18px à esquerda das
+            // outras e a coluna de títulos ficava serrilhada — visto na foto.
+            gap: 'var(--sp-4)',
+            flex: 1,
+            minWidth: 0,
+            textDecoration: 'none',
+          }}
+        >
+          <span
+            style={{
+              display: 'flex',
+              flex: '0 0 auto',
+              width: 18,
+              justifyContent: 'center',
+              color: 'var(--text-subtle)',
+            }}
+          >
+            <Icon name={ICONE[item.tipo]} size={18} />
+          </span>
+          {corpo}
+        </Link>
+      )}
+
+      {item.hora && (
+        <Badge tone="neutral" dot={false}>
+          {item.hora}
+        </Badge>
+      )}
+    </div>
+  );
+}
 
 /**
  * Um dia da semana, em coluna estreita.

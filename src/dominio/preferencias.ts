@@ -27,6 +27,18 @@ export const BLOCOS_DO_INICIO: BlocoDoInicio[] = [
     largura: 'inteira',
   },
   {
+    id: 'foco',
+    rotulo: 'Precisa de você hoje',
+    descricao: 'Uma fila só, na ordem em que cobra — o atrasado primeiro',
+    largura: 'inteira',
+  },
+  {
+    id: 'metas',
+    rotulo: 'Metas em curso',
+    descricao: 'Quantas estão no alvo, e a distância de cada uma',
+    largura: 'metade',
+  },
+  {
     id: 'hoje',
     rotulo: 'Hoje',
     descricao: 'As rotinas que faltam, com caixinha para marcar',

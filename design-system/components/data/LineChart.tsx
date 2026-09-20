@@ -6,6 +6,12 @@ export interface LineSeries {
   color?: string;
   width?: number;
   label?: string;
+  /**
+   * Draws the line dashed — for a comparison series, such as the same span a
+   * period earlier. Dashing is the one difference that survives being the same
+   * hue as the series it is compared against.
+   */
+  dashed?: boolean;
 }
 
 export interface LineChartProps {
@@ -106,6 +112,7 @@ export function LineChart({
             stroke={s.color || (si === 0 ? 'var(--chart-1)' : 'var(--chart-5)')}
             strokeWidth={s.width || 2.5}
             strokeLinecap="round"
+            strokeDasharray={s.dashed ? '7 7' : undefined}
           />
         ))}
         {highlightIndex != null && series[0] && (

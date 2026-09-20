@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 9;
+export const VERSAO_ESQUEMA = 10;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -314,6 +314,14 @@ export interface Marco extends Registro {
  * coleção — `COLECOES` continua sendo só a lista de arrays.
  */
 export interface Preferencias {
+  /**
+   * Como eu quero ser chamado no Início.
+   *
+   * Fica aqui, e não no código, porque o repositório é público — e porque é
+   * uma escolha minha, que deve viajar no backup e na sincronização como
+   * qualquer outra. Vazio ou ausente: o Início mostra só a data, sem nome.
+   */
+  nome?: string;
   /**
    * Os blocos do Início, na ordem em que aparecem. Bloco que não está na lista
    * fica escondido. Ausente quer dizer "tudo, na ordem de fábrica".
