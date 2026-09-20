@@ -93,6 +93,10 @@ self.addEventListener('fetch', (evento) => {
   const url = new URL(pedido.url);
   if (url.origin !== self.location.origin) return;
 
+  // A conversa com o servidor nunca é guardada. Uma lista de sessões vinda do
+  // cache mostraria aparelhos já revogados como se ainda estivessem lá.
+  if (url.pathname.startsWith('/api/')) return;
+
   // Navegação: a rota é do roteador, não do servidor. `/app/tarefas` não
   // existe como arquivo — quem responde é sempre o index.
   if (pedido.mode === 'navigate') {
