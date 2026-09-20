@@ -25,6 +25,8 @@
     "src",
     "design-system",
     "e2e",
+    "e2e-instalado",
+    "api",
     "scripts",
     "vite.config.ts",
     "vitest.config.ts",
