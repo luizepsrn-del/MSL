@@ -250,3 +250,94 @@ test('exportar num aparelho e importar noutro traz tudo de volta', async ({ page
   await page.goto('/app/tarefas');
   await expect(page.getByText('Tarefa que precisa atravessar')).toBeVisible();
 });
+
+/**
+ * A conta, contra um servidor de mentira.
+ *
+ * O servidor de desenvolvimento não tem as funções `/api` — elas só existem na
+ * Vercel. Interceptar as chamadas prova a ligação da tela: o que ela manda, o
+ * que faz com a resposta e o que mostra quando dá errado.
+ */
+async function servidorDeMentira(page: Page, respostas: Record<string, unknown>) {
+  await page.route('**/api/**', async (rota) => {
+    const caminho = new URL(rota.request().url()).pathname.replace('/api/', '');
+    const resposta = respostas[caminho] as { status?: number; corpo?: unknown } | undefined;
+    if (!resposta) return rota.fulfill({ status: 404, body: '{}' });
+    await rota.fulfill({
+      status: resposta.status ?? 200,
+      contentType: 'application/json',
+      body: JSON.stringify(resposta.corpo ?? {}),
+    });
+  });
+}
+
+test('sem conta, a tela diz que o dado não atravessa', async ({ page }) => {
+  await page.goto('/app/ajustes');
+  await expect(page.getByRole('heading', { name: 'Sincronizar entre aparelhos' })).toBeVisible();
+  await expect(page.getByText('Sem conta o sistema funciona igual')).toBeVisible();
+  // A promessa que não pode ser feita antes da hora.
+  await expect(page.getByText('o que eu criar no Mac não aparece no telefone')).toBeVisible();
+});
+
+test('entrar liga a sincronização e mostra o estado', async ({ page }) => {
+  const conta = { id: 'u1', email: 'dono@exemplo.com', criadoEm: new Date().toISOString() };
+  await servidorDeMentira(page, {
+    entrar: { corpo: { token: 'tok', usuario: conta } },
+    sincronizar: { corpo: { banco: { versao: 8, rotinas: [], execucoes: [], tarefas: [], projetos: [], lancamentos: [] } } },
+  });
+
+  await page.goto('/app/ajustes');
+  await page.getByLabel('E-mail').fill('dono@exemplo.com');
+  await page.getByLabel('Senha').fill('uma senha comprida');
+  await page.getByRole('button', { name: 'Entrar' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Sincronização' })).toBeVisible();
+  await expect(page.getByText('dono@exemplo.com')).toBeVisible();
+  // E o texto sobre o dado muda de tom, porque agora ele atravessa mesmo.
+  await expect(page.getByText('aparece no telefone na próxima sincronização')).toBeVisible();
+});
+
+test('a senha errada aparece na tela em português', async ({ page }) => {
+  await servidorDeMentira(page, {
+    entrar: { status: 401, corpo: { mensagem: 'E-mail ou senha não conferem.' } },
+  });
+
+  await page.goto('/app/ajustes');
+  await page.getByLabel('E-mail').fill('dono@exemplo.com');
+  await page.getByLabel('Senha').fill('errada demais');
+  await page.getByRole('button', { name: 'Entrar' }).click();
+
+  await expect(page.getByRole('alert')).toContainText('Entre de novo');
+  // E continua deslogado, sem fingir que entrou.
+  await expect(page.getByRole('heading', { name: 'Sincronizar entre aparelhos' })).toBeVisible();
+});
+
+test('dá para ver e desconectar outro aparelho', async ({ page }) => {
+  const conta = { id: 'u1', email: 'dono@exemplo.com', criadoEm: new Date().toISOString() };
+  const vazio = { versao: 8, rotinas: [], execucoes: [], tarefas: [], projetos: [], lancamentos: [] };
+  await servidorDeMentira(page, {
+    entrar: { corpo: { token: 'tok', usuario: conta } },
+    sincronizar: { corpo: { banco: vazio } },
+    sessoes: {
+      corpo: {
+        sessoes: [
+          { token: 'tok', aparelho: 'Mac', criadaEm: new Date().toISOString(), atual: true },
+          { token: 'outro', aparelho: 'iPhone', criadaEm: new Date().toISOString(), atual: false },
+        ],
+      },
+    },
+  });
+
+  await page.goto('/app/ajustes');
+  await page.getByLabel('E-mail').fill('dono@exemplo.com');
+  await page.getByLabel('Senha').fill('uma senha comprida');
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: 'Ver os aparelhos conectados' }).click();
+
+  // Exato: "iPhone" também aparece no aviso sobre o Safari, logo acima.
+  await expect(page.getByText('iPhone', { exact: true })).toBeVisible();
+  // O aparelho de agora não oferece o botão de se desconectar sozinho.
+  // "Este aparelho" casa também com o texto do aviso do navegador acima.
+  await expect(page.getByText('Este aparelho', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Desconectar' })).toHaveCount(1);
+});

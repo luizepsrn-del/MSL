@@ -137,6 +137,35 @@ them gets.
 - Money goes through the same `validarValor` on the way in and on the way
   back: a check that only guards the front door is not a check.
 
+## Sync
+
+Two devices, one account, and the merge is the whole game.
+
+- **Per record, by `alteradoEm` — never "the newest whole bank wins".** That
+  lazy rule loses work: three tasks ticked underground, then the Mac syncs and
+  wipes all three. The test that opens `sincronizacao.test.ts` is exactly that.
+- **`juntar` is commutative and idempotent**, and both are tested. It once
+  picked the right records but returned them in a different order depending on
+  which side came first — the two devices would store different documents with
+  the same content, fighting forever over which is newer.
+- **Deleting leaves a tombstone** in `banco.removidos`, beside the collections
+  and not inside them, so no screen had to learn to filter dead records. A
+  tombstone only wins if the removal came *after* the last edit.
+- **Server logic lives in `src/servidor/`, behind an `Armazem` interface**, the
+  same seam as the client's `Repositorio`. The files in `api/` are three-line
+  adapters. That is what makes signup, wrong password, cool-off, expiry and
+  revocation provable in Vitest, with no network.
+- **Per-method exports (`export const POST`)** in `api/`, never `export
+  default`: with the default, Vercel may hand the Node objects instead of a
+  `Request`, and the returned `Response` is ignored.
+- The public address forces three things: only allow-listed e-mails may sign
+  up (`EMAILS_PERMITIDOS`, and an empty list closes the door), a missing
+  account answers exactly like a wrong password, and five wrong tries cool the
+  account for fifteen minutes.
+- The session token lives in `localStorage`, **outside the bank**. Inside, it
+  would ride along in the exported backup, and restoring on a borrowed device
+  would hand it your session.
+
 ## Storage
 
 The data lives in this device's browser, and there are three ways it can go:

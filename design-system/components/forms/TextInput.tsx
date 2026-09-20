@@ -1,6 +1,13 @@
 import React from 'react';
 
-export type TextInputType = 'text' | 'multiline' | 'number' | 'date' | 'time' | 'money';
+export type TextInputType =
+  | 'text'
+  | 'multiline'
+  | 'number'
+  | 'date'
+  | 'time'
+  | 'money'
+  | 'password';
 
 export interface TextInputProps {
   /** wire this to the Field's `htmlFor` */
@@ -24,6 +31,9 @@ export interface TextInputProps {
 
 const NATIVO: Record<Exclude<TextInputType, 'multiline' | 'money'>, string> = {
   text: 'text',
+  // Password hands the browser and the password manager the one hint they
+  // need; a text input styled to look secret is neither.
+  password: 'password',
   number: 'number',
   date: 'date',
   time: 'time',

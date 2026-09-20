@@ -17,6 +17,13 @@ import { RepositorioLocal, type Repositorio } from './repositorio';
 import { removerProjeto as soltarEremover } from '../dominio/projeto';
 import { aoMoverPara } from '../dominio/tarefa';
 import { editarNaLista, type Edicao } from '../dominio/edicao';
+import {
+  ClienteSincronia,
+  ErroDaSincronia,
+  nomeDoAparelho,
+  type Conta,
+  type SessaoDeAparelho,
+} from './sincronia';
 import { validarValor } from '../dominio/financeiro';
 
 /**
@@ -55,6 +62,19 @@ interface Acoes {
   definirPreferencias(mudanca: Partial<Preferencias>): Promise<void>;
   exportar(): Promise<string>;
   importar(json: string): Promise<void>;
+
+  /* ── Sincronização ────────────────────────────────────────────────────── */
+
+  conta: Conta | null;
+  sincronizando: boolean;
+  ultimaSincronia: string | null;
+  erroDeSincronia: string | null;
+  cadastrar(email: string, senha: string): Promise<void>;
+  entrarNaConta(email: string, senha: string): Promise<void>;
+  sairDaConta(): Promise<void>;
+  sincronizarAgora(): Promise<void>;
+  listarAparelhos(): Promise<SessaoDeAparelho[]>;
+  revogarAparelho(token: string): Promise<void>;
 }
 
 type BaseRegistro = { id: string; criadoEm: string; alteradoEm: string };
@@ -73,6 +93,25 @@ export function ProvedorBanco({
   const [banco, setBanco] = React.useState<Banco>(bancoVazio);
   const [carregando, setCarregando] = React.useState(true);
 
+  const cliente = React.useMemo(
+    () =>
+      new ClienteSincronia(
+        window.localStorage,
+        fetch.bind(window),
+        nomeDoAparelho(navigator.userAgent),
+      ),
+    [],
+  );
+  const [conta, setConta] = React.useState<Conta | null>(() => cliente.conta);
+  const [sincronizando, setSincronizando] = React.useState(false);
+  const [ultimaSincronia, setUltimaSincronia] = React.useState<string | null>(() => cliente.ultimaEm);
+  const [erroDeSincronia, setErroDeSincronia] = React.useState<string | null>(null);
+
+  // O banco mais recente, para a sincronização adiada não mandar um retrato
+  // velho quando finalmente disparar.
+  const bancoAgora = React.useRef(banco);
+  bancoAgora.current = banco;
+
   React.useEffect(() => {
     let vivo = true;
     repo.carregar().then((b) => {
@@ -85,13 +124,67 @@ export function ProvedorBanco({
     };
   }, [repo]);
 
+  /**
+   * Sincroniza o que estiver no aparelho agora.
+   *
+   * Uma de cada vez: duas chamadas ao mesmo tempo disputariam a gravação
+   * condicional do servidor e uma levaria 409 à toa.
+   */
+  const emVoo = React.useRef(false);
+  const sincronizar = React.useCallback(
+    async (silencioso: boolean) => {
+      if (!cliente.token || emVoo.current) return;
+      emVoo.current = true;
+      if (!silencioso) setSincronizando(true);
+      try {
+        const junto = await cliente.sincronizar(bancoAgora.current);
+        if (junto) {
+          setBanco(junto);
+          await repo.salvar(junto);
+          setUltimaSincronia(cliente.ultimaEm);
+          setErroDeSincronia(null);
+        }
+      } catch (erro) {
+        const problema = erro instanceof ErroDaSincronia ? erro : null;
+        if (problema?.sessaoMorreu) setConta(null);
+        // Falha automática não interrompe o uso: o dado continua aqui, e a
+        // mensagem espera na tela de Ajustes.
+        setErroDeSincronia(problema?.message ?? 'Não deu para sincronizar.');
+      } finally {
+        emVoo.current = false;
+        setSincronizando(false);
+      }
+    },
+    [cliente, repo],
+  );
+
+  /** Espera a poeira baixar antes de mandar: digitar não vira dez chamadas. */
+  const agendada = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const agendarSincronia = React.useCallback(() => {
+    if (!cliente.token) return;
+    if (agendada.current) clearTimeout(agendada.current);
+    agendada.current = setTimeout(() => void sincronizar(true), 3000);
+  }, [cliente, sincronizar]);
+
   const gravar = React.useCallback(
     async (proximo: Banco) => {
       setBanco(proximo);
       await repo.salvar(proximo);
+      agendarSincronia();
     },
-    [repo],
+    [repo, agendarSincronia],
   );
+
+  // Ao abrir, e ao voltar a ter rede. Voltar do metrô é exatamente quando há
+  // mais coisa esperando para subir.
+  React.useEffect(() => {
+    if (carregando) return;
+    void sincronizar(true);
+
+    const aoVoltarARede = () => void sincronizar(true);
+    window.addEventListener('online', aoVoltarARede);
+    return () => window.removeEventListener('online', aoVoltarARede);
+  }, [carregando, sincronizar]);
 
   const valor = React.useMemo<Acoes>(() => {
     const agora = () => new Date().toISOString();
@@ -260,7 +353,41 @@ export function ProvedorBanco({
       async importar(json) {
         const novo = await repo.importar(json);
         setBanco(novo);
+        agendarSincronia();
       },
+
+      /* ── Sincronização ──────────────────────────────────────────────── */
+
+      conta,
+      sincronizando,
+      ultimaSincronia,
+      erroDeSincronia,
+
+      async cadastrar(email, senha) {
+        setConta(await cliente.cadastrar(email, senha));
+        setErroDeSincronia(null);
+        await sincronizar(false);
+      },
+
+      async entrarNaConta(email, senha) {
+        setConta(await cliente.entrar(email, senha));
+        setErroDeSincronia(null);
+        await sincronizar(false);
+      },
+
+      async sairDaConta() {
+        await cliente.sair();
+        setConta(null);
+        setUltimaSincronia(null);
+        setErroDeSincronia(null);
+      },
+
+      async sincronizarAgora() {
+        await sincronizar(false);
+      },
+
+      listarAparelhos: () => cliente.sessoes(),
+      revogarAparelho: (token) => cliente.revogar(token),
     };
   }, [banco, carregando, gravar, repo]);
 

@@ -1,8 +1,17 @@
 import React from 'react';
-import { Card, Button, Badge, Icon, SuccessDialog } from '../../design-system';
+import {
+  Card,
+  Button,
+  Badge,
+  Icon,
+  Field,
+  TextInput,
+  SuccessDialog,
+} from '../../design-system';
 import { useBanco } from '../dados/BancoContexto';
 import { VERSAO_ESQUEMA, COLECOES, nomearColecao } from '../dados/esquema';
-import { formatarData, formatarNumero } from '../formato';
+import { formatarData, formatarNumero, formatarDataRelativa } from '../formato';
+import type { Conta as ContaDoUsuario, SessaoDeAparelho } from '../dados/sincronia';
 import {
   descreverUltimoBackup,
   precisaDeBackup,
@@ -17,7 +26,22 @@ import {
  * tinha botão em lugar nenhum. Backup sem botão é backup que não existe.
  */
 export function Ajustes() {
-  const { banco, exportar, importar, definirPreferencias } = useBanco();
+  const {
+    banco,
+    exportar,
+    importar,
+    definirPreferencias,
+    conta,
+    sincronizando,
+    ultimaSincronia,
+    erroDeSincronia,
+    cadastrar,
+    entrarNaConta,
+    sairDaConta,
+    sincronizarAgora,
+    listarAparelhos,
+    revogarAparelho,
+  } = useBanco();
   const entrada = React.useRef<HTMLInputElement>(null);
 
   const [aviso, setAviso] = React.useState<{ titulo: string; texto: string; erro?: boolean } | null>(
@@ -222,6 +246,19 @@ export function Ajustes() {
         </div>
       </Card>
 
+      <Conta
+        conta={conta}
+        sincronizando={sincronizando}
+        ultimaSincronia={ultimaSincronia}
+        erro={erroDeSincronia}
+        aoCadastrar={cadastrar}
+        aoEntrar={entrarNaConta}
+        aoSair={sairDaConta}
+        aoSincronizar={sincronizarAgora}
+        listarAparelhos={listarAparelhos}
+        aoRevogar={revogarAparelho}
+      />
+
       <Card title="Como o dado vive" subtitle="Onde ele está, e o que ainda falta">
         <div
           style={{
@@ -234,8 +271,9 @@ export function Ajustes() {
           }}
         >
           <p>
-            Tudo fica no navegador deste aparelho. Nada sai daqui, e nada sincroniza com outro
-            aparelho ainda — o que eu criar no Mac não aparece no telefone.
+            {conta
+              ? 'Tudo fica no navegador deste aparelho, e uma cópia junta vai para a sua conta a cada mudança. O que eu criar no Mac aparece no telefone na próxima sincronização.'
+              : 'Tudo fica no navegador deste aparelho. Sem conta, nada sai daqui — e o que eu criar no Mac não aparece no telefone.'}
           </p>
           <p>
             As telas nunca falam com o armazenamento direto: falam com uma interface. É o que
@@ -265,5 +303,267 @@ export function Ajustes() {
         actionLabel="Entendi"
       />
     </div>
+  );
+}
+
+/* ── A conta, e a sincronização ──────────────────────────────────────────── */
+
+/**
+ * Entrar, sair, sincronizar e cortar o acesso de um aparelho.
+ *
+ * O texto evita prometer o que não acontece: sem conta, o dado fica só aqui, e
+ * isso é dito com todas as letras em vez de deixar a pessoa descobrir no
+ * telefone que nada atravessou.
+ */
+function Conta({
+  conta,
+  sincronizando,
+  ultimaSincronia,
+  erro,
+  aoCadastrar,
+  aoEntrar,
+  aoSair,
+  aoSincronizar,
+  listarAparelhos,
+  aoRevogar,
+}: {
+  conta: ContaDoUsuario | null;
+  sincronizando: boolean;
+  ultimaSincronia: string | null;
+  erro: string | null;
+  aoCadastrar: (email: string, senha: string) => Promise<void>;
+  aoEntrar: (email: string, senha: string) => Promise<void>;
+  aoSair: () => Promise<void>;
+  aoSincronizar: () => Promise<void>;
+  listarAparelhos: () => Promise<SessaoDeAparelho[]>;
+  aoRevogar: (token: string) => Promise<void>;
+}) {
+  const [email, setEmail] = React.useState('');
+  const [senha, setSenha] = React.useState('');
+  const [ocupado, setOcupado] = React.useState(false);
+  const [falha, setFalha] = React.useState<string | null>(null);
+  const [aparelhos, setAparelhos] = React.useState<SessaoDeAparelho[] | null>(null);
+
+  const tentar = async (acao: () => Promise<void>) => {
+    setOcupado(true);
+    setFalha(null);
+    try {
+      await acao();
+    } catch (problema) {
+      setFalha(problema instanceof Error ? problema.message : 'Não deu certo. Tente de novo.');
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const verAparelhos = () =>
+    tentar(async () => {
+      setAparelhos(await listarAparelhos());
+    });
+
+  if (!conta) {
+    return (
+      <Card
+        title="Sincronizar entre aparelhos"
+        subtitle="Entre com a sua conta para o Mac e o telefone verem o mesmo"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(var(--grid-min), 1fr))',
+              gap: 'var(--sp-8)',
+            }}
+          >
+            <Field label="E-mail" htmlFor="conta-email">
+              <TextInput
+                id="conta-email"
+                value={email}
+                onChange={setEmail}
+                placeholder="voce@exemplo.com"
+                size="lg"
+                fullWidth
+              />
+            </Field>
+
+            <Field label="Senha" htmlFor="conta-senha" help="Pelo menos 10 caracteres">
+              <TextInput
+                id="conta-senha"
+                type="password"
+                value={senha}
+                onChange={setSenha}
+                size="lg"
+                fullWidth
+              />
+            </Field>
+          </div>
+
+          {falha && (
+            <p role="alert" style={{ font: 'var(--type-body)', color: 'var(--orange-500)' }}>
+              {falha}
+            </p>
+          )}
+
+          <div style={{ display: 'flex', gap: 'var(--sp-6)', flexWrap: 'wrap' }}>
+            <Button
+              variant="primary"
+              disabled={ocupado}
+              onClick={() => tentar(() => aoEntrar(email, senha))}
+            >
+              Entrar
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={ocupado}
+              onClick={() => tentar(() => aoCadastrar(email, senha))}
+            >
+              Criar conta
+            </Button>
+          </div>
+
+          <p
+            style={{
+              font: 'var(--type-body)',
+              color: 'var(--text-subtle)',
+              lineHeight: 'var(--lh-normal)',
+            }}
+          >
+            Sem conta o sistema funciona igual, só não atravessa para o outro aparelho. Entrar não
+            apaga nada: o que já existe aqui é juntado com o que estiver na conta.
+          </p>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card
+      title="Sincronização"
+      subtitle={conta.email}
+      action={
+        <Button
+          variant="secondary"
+          size="sm"
+          iconLeft="repeat"
+          disabled={sincronizando}
+          onClick={() => tentar(aoSincronizar)}
+        >
+          {sincronizando ? 'Sincronizando…' : 'Sincronizar agora'}
+        </Button>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-6)' }}>
+          <span
+            style={{
+              color: erro ? 'var(--orange-500)' : 'var(--green-500)',
+              display: 'flex',
+              flex: '0 0 auto',
+            }}
+          >
+            <Icon name={erro ? 'alert-triangle' : 'circle-check'} size={20} />
+          </span>
+          <span style={{ minWidth: 0 }}>
+            <span
+              style={{
+                display: 'block',
+                font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
+                color: 'var(--text-heading)',
+              }}
+            >
+              {erro
+                ? erro
+                : ultimaSincronia
+                  ? `Sincronizado ${formatarDataRelativa(new Date(ultimaSincronia))}`
+                  : 'Ainda não sincronizou'}
+            </span>
+            <span
+              style={{
+                display: 'block',
+                font: 'var(--type-body)',
+                color: 'var(--text-muted)',
+                marginTop: 'var(--sp-3)',
+                lineHeight: 'var(--lh-normal)',
+              }}
+            >
+              Sozinho ao abrir, alguns segundos depois de cada mudança, e quando a rede volta.
+            </span>
+          </span>
+        </div>
+
+        {falha && (
+          <p role="alert" style={{ font: 'var(--type-body)', color: 'var(--orange-500)' }}>
+            {falha}
+          </p>
+        )}
+
+        {aparelhos === null ? (
+          <div>
+            <Button variant="ghost" size="sm" disabled={ocupado} onClick={verAparelhos}>
+              Ver os aparelhos conectados
+            </Button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+            {aparelhos.map((a) => (
+              <div
+                key={a.token}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 'var(--sp-6)',
+                  minHeight: 'var(--tap-min)',
+                  padding: 'var(--sp-4) var(--sp-5)',
+                  borderRadius: 'var(--r-nav)',
+                  background: a.atual ? 'var(--surface-raised)' : 'transparent',
+                }}
+              >
+                <span style={{ flex: '1 1 var(--grid-min)', minWidth: 0 }}>
+                  <span
+                    style={{
+                      display: 'block',
+                      font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
+                      color: 'var(--text-body)',
+                    }}
+                  >
+                    {a.aparelho}
+                  </span>
+                  <span style={{ display: 'block', font: 'var(--type-body)', color: 'var(--text-muted)' }}>
+                    Entrou {formatarDataRelativa(new Date(a.criadaEm))}
+                  </span>
+                </span>
+
+                {a.atual ? (
+                  <Badge tone="ontime" dot={false}>
+                    Este aparelho
+                  </Badge>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={ocupado}
+                    onClick={() =>
+                      tentar(async () => {
+                        await aoRevogar(a.token);
+                        setAparelhos(await listarAparelhos());
+                      })
+                    }
+                  >
+                    Desconectar
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div>
+          <Button variant="ghost" size="sm" disabled={ocupado} onClick={() => tentar(aoSair)}>
+            Sair da conta neste aparelho
+          </Button>
+        </div>
+      </div>
+    </Card>
   );
 }
