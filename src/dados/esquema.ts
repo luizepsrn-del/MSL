@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 10;
+export const VERSAO_ESQUEMA = 11;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -322,6 +322,25 @@ export interface Preferencias {
    * qualquer outra. Vazio ou ausente: o Início mostra só a data, sem nome.
    */
   nome?: string;
+  /**
+   * A agenda externa que eu assino, pelo endereço secreto no formato iCal.
+   *
+   * **O endereço é uma senha**: quem o tiver lê a agenda inteira, sem login.
+   * Ele fica aqui, dentro do banco, e não em `localStorage` como o token de
+   * sessão — de propósito, para chegar sozinho no outro aparelho pela
+   * sincronização. O preço é que ele viaja também no arquivo exportado, e a
+   * tela de Ajustes diz isso com todas as letras em vez de deixar a surpresa
+   * para depois.
+   *
+   * Os eventos **não** ficam guardados: só o endereço. Guardar os eventos
+   * criaria uma cópia que envelhece, e apagar o compromisso no Google
+   * deixaria o fantasma aqui para sempre.
+   */
+  agendaExterna?: {
+    url: string;
+    /** o nome que a própria agenda declara, quando declara */
+    nome?: string;
+  };
   /**
    * Os blocos do Início, na ordem em que aparecem. Bloco que não está na lista
    * fica escondido. Ausente quer dizer "tudo, na ordem de fábrica".

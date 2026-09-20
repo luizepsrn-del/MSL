@@ -77,12 +77,14 @@ test('marcar como feita move o indicador e sobrevive ao recarregar', async ({ pa
   // Clicar no título, que é o rótulo da caixa — como uma pessoa faz. A caixa
   // em si é visualmente escondida por design no componente.
   await page.getByText('Caminhar').click();
-  await expect(page.getByText('Dia cumprido')).toBeVisible();
+  // A fila esvazia e o indicador vira 100%. A frase é a do cartão "Precisa de
+  // você hoje", que passou a ser onde a rotina do dia aparece.
+  await expect(page.getByText('O dia está seu')).toBeVisible();
   await expect(page.getByText('100%').first()).toBeVisible();
 
   // O dado é do disco, não da memória da aba.
   await page.reload();
-  await expect(page.getByText('Dia cumprido')).toBeVisible();
+  await expect(page.getByText('O dia está seu')).toBeVisible();
   await expect(page.getByText('100%').first()).toBeVisible();
 });
 
@@ -153,7 +155,7 @@ test('o Início funciona no iPhone', async ({ page }, info) => {
 
   // Marcar pelo toque, que é como eu vou usar de verdade.
   await page.getByText('Alongar').tap();
-  await expect(page.getByText('Dia cumprido')).toBeVisible();
+  await expect(page.getByText('O dia está seu')).toBeVisible();
 });
 
 test('os indicadores viram trilho no telefone, em vez de empilhar', async ({ page }, info) => {

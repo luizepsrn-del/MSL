@@ -122,7 +122,12 @@ test('marcar do calendário grava e aparece no Início', async ({ page }) => {
   await page.getByText('Ler 20 páginas').click();
 
   await page.goto('/app/inicio');
-  await expect(page.getByText('Dia cumprido')).toBeVisible();
+  // A rotina sai da fila porque foi cumprida — e o indicador conta a marca.
+  // A fila não esvazia: ainda há uma tarefa vencendo hoje na semente.
+  await expect(page.getByText('Ler 20 páginas')).toHaveCount(0);
+  await expect(
+    page.locator('div').filter({ hasText: /^1\/1Rotinas cumpridas hoje$/ }).first(),
+  ).toBeVisible();
 });
 
 test('o calendário funciona no iPhone', async ({ page }, info) => {
@@ -342,5 +347,79 @@ test('criar no dia escolhido nasce com o prazo daquele dia', async ({ page }) =>
     return b.tarefas?.find((t: { titulo: string }) => t.titulo === 'Comprar a passagem')?.prazo;
   });
   expect(prazo).toBe(alvo);
+  expect(erros, 'nenhum erro de JavaScript').toEqual([]);
+});
+
+test('a agenda do Google aparece no calendário, e o erro não esvazia a tela', async ({ page }) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  await semear(page);
+
+  // Assina a agenda e responde pela função, sem rede de verdade.
+  await page.addInitScript(() => {
+    const banco = JSON.parse(localStorage.getItem('msl-banco') ?? '{}');
+    banco.preferencias = {
+      ...banco.preferencias,
+      agendaExterna: { url: 'https://calendar.google.com/calendar/ical/x/private-y/basic.ics' },
+    };
+    localStorage.setItem('msl-banco', JSON.stringify(banco));
+    // Sessão de mentira: a função precisa de uma, e aqui ela é interceptada.
+    localStorage.setItem('msl-sessao', 'token-de-teste');
+  });
+
+  const hoje = diaLocal(0);
+  const comoIcal = hoje.replace(/-/g, '');
+  let chamadas = 0;
+
+  await page.route('**/api/agenda', async (rota) => {
+    chamadas += 1;
+    // A segunda chamada falha, para provar que o erro não apaga o que já veio.
+    if (chamadas > 1) {
+      await rota.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({ erro: 'sem-resposta', mensagem: 'Não consegui falar com o servidor da agenda.' }),
+      });
+      return;
+    }
+    await rota.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        texto: [
+          'BEGIN:VCALENDAR',
+          'X-WR-CALNAME:Agenda de teste',
+          'BEGIN:VEVENT',
+          'UID:consulta-1',
+          'SUMMARY:Consulta no dentista',
+          'LOCATION:Rua das Flores',
+          `DTSTART;TZID=America/Sao_Paulo:${comoIcal}T140000`,
+          `DTEND;TZID=America/Sao_Paulo:${comoIcal}T150000`,
+          'END:VEVENT',
+          'END:VCALENDAR',
+        ].join('\r\n'),
+        buscadoEm: new Date().toISOString(),
+      }),
+    });
+  });
+
+  await page.goto('/app/calendario');
+
+  // O compromisso aparece, com o lugar, e a agenda se identifica pelo nome.
+  await expect(page.getByText('Consulta no dentista')).toBeVisible();
+  await expect(page.getByText('Rua das Flores')).toBeVisible();
+  await expect(page.getByText('Agenda de teste')).toBeVisible();
+
+  // E no dia, em ordem de relógio, junto do resto.
+  await page.getByRole('button', { name: 'Mês', exact: true }).first().click();
+  await page.getByRole('option', { name: 'Dia', exact: true }).click();
+  await expect(page.getByText('Consulta no dentista')).toBeVisible();
+
+  // Agora a busca falha: o aviso aparece e o compromisso continua na tela.
+  await page.getByRole('button', { name: 'Atualizar' }).click();
+  await expect(page.getByText(/Não consegui falar com o servidor da agenda/)).toBeVisible();
+  await expect(page.getByText('Consulta no dentista')).toBeVisible();
+
   expect(erros, 'nenhum erro de JavaScript').toEqual([]);
 });

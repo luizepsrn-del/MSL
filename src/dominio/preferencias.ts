@@ -16,6 +16,14 @@ export interface BlocoDoInicio {
   descricao: string;
   /** blocos largos ocupam as duas colunas no desktop */
   largura: Largura;
+  /**
+   * Vem ligado numa instalação nova.
+   *
+   * Ausente quer dizer sim. Existe para o bloco que continua disponível mas
+   * não faz sentido ligado junto com outro que o engole — hoje só "Vencendo",
+   * que virou um recorte de "Precisa de você hoje", só que sem ordem.
+   */
+  deFabrica?: boolean;
 }
 
 /** A ordem de fábrica. Quem nunca mexeu vê exatamente esta lista. */
@@ -41,14 +49,22 @@ export const BLOCOS_DO_INICIO: BlocoDoInicio[] = [
   {
     id: 'hoje',
     rotulo: 'Hoje',
-    descricao: 'As rotinas que faltam, com caixinha para marcar',
+    descricao: 'Só as rotinas do dia, com o que já foi cumprido',
     largura: 'metade',
+    // Desligado de fábrica pelo mesmo motivo que "Vencendo": as rotinas que
+    // faltam já estão na fila, e as duas listas ficavam uma em cima da outra.
+    // O que ele tinha de único — a barra do dia — mudou para dentro da fila.
+    deFabrica: false,
   },
   {
     id: 'vencendo',
     rotulo: 'Vencendo',
-    descricao: 'As tarefas atrasadas e as de hoje',
+    descricao: 'As tarefas atrasadas e as de hoje, sem o resto',
     largura: 'metade',
+    // Desligado de fábrica desde que "Precisa de você hoje" existe: os dois
+    // mostravam as mesmas tarefas, uma em cima da outra, e o Início voltava a
+    // ser um painel que pede para eu decidir de novo.
+    deFabrica: false,
   },
   {
     id: 'semana',
@@ -90,6 +106,9 @@ export const BLOCOS_DO_INICIO: BlocoDoInicio[] = [
 
 const TODOS = BLOCOS_DO_INICIO.map((b) => b.id);
 
+/** O que vem ligado numa instalação nova, na ordem em que aparece. */
+const PADRAO = BLOCOS_DO_INICIO.filter((b) => b.deFabrica !== false).map((b) => b.id);
+
 export const blocoPorId = (id: string): BlocoDoInicio | undefined =>
   BLOCOS_DO_INICIO.find((b) => b.id === id);
 
@@ -103,7 +122,7 @@ export const blocoPorId = (id: string): BlocoDoInicio | undefined =>
  */
 export function blocosVisiveis(preferencias?: Preferencias): string[] {
   const escolhidos = preferencias?.blocosDoInicio;
-  if (!escolhidos) return [...TODOS];
+  if (!escolhidos) return [...PADRAO];
   return escolhidos.filter((id, i) => TODOS.includes(id) && escolhidos.indexOf(id) === i);
 }
 
@@ -130,5 +149,5 @@ export function moverBloco(visiveis: readonly string[], id: string, passo: numbe
   return nova;
 }
 
-/** Volta para a ordem de fábrica, com tudo visível. */
-export const ordemDeFabrica = (): string[] => [...TODOS];
+/** Volta para a ordem de fábrica. Nem tudo vem ligado — ver `deFabrica`. */
+export const ordemDeFabrica = (): string[] => [...PADRAO];

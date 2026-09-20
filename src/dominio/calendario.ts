@@ -258,7 +258,7 @@ export function filtrarDia(itens: ItensDoDia, filtro: FiltroCalendario): ItensDo
 
 /* ── A agenda de um dia, em linha ────────────────────────────────────────── */
 
-export type TipoDeItem = 'rotina' | 'tarefa' | 'lancamento';
+export type TipoDeItem = 'evento' | 'rotina' | 'tarefa' | 'lancamento';
 
 export interface ItemDaAgenda {
   /** único dentro do dia */
@@ -267,10 +267,29 @@ export interface ItemDaAgenda {
   /** `HH:MM`, ou ausente para o que não tem hora marcada */
   hora?: string;
   titulo: string;
-  contexto: Contexto;
+  /**
+   * Pessoal ou profissional — **ausente no evento externo**.
+   *
+   * O eixo é meu, e o compromisso vem da agenda de outro sistema. Escolher um
+   * lado por ele seria inventar classificação: um almoço que eu não marquei
+   * aqui não é "profissional" só porque caiu numa terça.
+   */
+  contexto?: Contexto;
   feito: boolean;
   /** o id do registro, para a tela saber o que alternar */
   id: string;
+  /** uma linha a mais: o lugar do evento, o fim do horário */
+  detalhe?: string;
+}
+
+/** O que entra na agenda vindo de fora — a forma mínima que esta função usa. */
+export interface EventoNaAgenda {
+  chave: string;
+  uid: string;
+  titulo: string;
+  hora?: string;
+  fim?: string;
+  local?: string;
 }
 
 /**
@@ -280,8 +299,22 @@ export interface ItemDaAgenda {
  * tempo — que é como o dia acontece. O que não tem hora vai para o fim, junto,
  * em vez de ser espalhado como se tivesse.
  */
-export function agendaEmLinha(itens: ItensDoDia): ItemDaAgenda[] {
+export function agendaEmLinha(
+  itens: ItensDoDia,
+  /** os compromissos da agenda externa daquele dia, já filtrados */
+  eventos: readonly EventoNaAgenda[] = [],
+): ItemDaAgenda[] {
   const lista: ItemDaAgenda[] = [
+    ...eventos.map((e) => ({
+      chave: `evento:${e.chave}`,
+      tipo: 'evento' as const,
+      hora: e.hora,
+      titulo: e.titulo,
+      // Sem contexto: ver `ItemDaAgenda`.
+      feito: false,
+      id: e.uid,
+      detalhe: [e.hora && e.fim ? `até ${e.fim}` : null, e.local].filter(Boolean).join(' · ') || undefined,
+    })),
     ...itens.rotinas.map(({ rotina, feita }) => ({
       chave: `rotina:${rotina.id}`,
       tipo: 'rotina' as const,
@@ -312,7 +345,10 @@ export function agendaEmLinha(itens: ItensDoDia): ItemDaAgenda[] {
 
   // Empate de hora desempata pelo tipo e pelo título: a ordem não pode mudar
   // entre dois carregamentos do mesmo dia.
-  const peso: Record<TipoDeItem, number> = { rotina: 0, tarefa: 1, lancamento: 2 };
+  // O evento externo vem primeiro no empate: é o único item que tem hora
+  // marcada com outra pessoa do outro lado. A ordem relativa dos outros três
+  // não mudou — mexer nela quebraria o que já estava provado.
+  const peso: Record<TipoDeItem, number> = { evento: 0, rotina: 1, tarefa: 2, lancamento: 3 };
   return lista.sort((a, b) => {
     const porHora = compararHora(a.hora, b.hora);
     if (porHora !== 0) return porHora;

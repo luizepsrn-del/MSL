@@ -111,6 +111,14 @@ export const MIGRACOES: Record<number, Migracao> = {
    * a data sem nome, que é o comportamento certo e não uma falta.
    */
   9: (dados) => ({ ...dados, versao: 10 }),
+
+  /**
+   * 10 → 11: o endereço da agenda externa, dentro das preferências.
+   *
+   * Aditiva: quem não assina agenda nenhuma não tem o campo, e o calendário
+   * se comporta exatamente como antes.
+   */
+  10: (dados) => ({ ...dados, versao: 11 }),
 };
 
 export class ErroDeMigracao extends Error {

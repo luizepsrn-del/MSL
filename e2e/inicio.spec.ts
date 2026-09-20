@@ -127,7 +127,7 @@ test('dá para escolher quais blocos aparecem, e a escolha sobrevive ao recarreg
 
   await expect(page.getByRole('heading', { name: 'Esta semana' })).toHaveCount(0);
   // O resto continua lá: desligar um bloco não apaga nada.
-  await expect(page.getByRole('heading', { name: 'Hoje' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Precisa de você hoje' })).toBeVisible();
 
   // A escolha mora no banco, não na memória da aba.
   await page.reload();
@@ -144,13 +144,14 @@ test('a ordem dos blocos pode mudar, e volta ao padrão num clique', async ({ pa
     page.locator('section h3').evaluateAll((els) => els.map((e) => e.textContent?.trim()));
 
   const antes = await titulos();
-  expect(antes[0]).toBe('Hoje');
+  expect(antes[0]).toBe('Precisa de você hoje');
 
   await page.getByRole('button', { name: 'Personalizar' }).click();
-  // Sobe uma posição por clique: de quarto para segundo são dois. O primeiro
-  // lugar é dos indicadores, que não são um cartão.
-  await page.getByRole('button', { name: 'Subir Esta semana' }).click();
-  await page.getByRole('button', { name: 'Subir Esta semana' }).click();
+  // Sobe uma posição por clique, até chegar ao topo. "Esta semana" é o quarto
+  // da lista, e o primeiro lugar é dos indicadores, que não são um cartão.
+  for (let i = 0; i < 3; i++) {
+    await page.getByRole('button', { name: 'Subir Esta semana' }).click();
+  }
   await page.getByRole('button', { name: 'Pronto' }).click();
 
   const depois = await titulos();

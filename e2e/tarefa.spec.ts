@@ -131,12 +131,15 @@ test('o Início mostra o que vence e deixa marcar de lá', async ({ page }) => {
   await criarTarefa(page, 'Enviar a nota', ontem);
 
   await page.goto('/app/inicio');
-  await expect(page.getByRole('heading', { name: 'Vencendo' })).toBeVisible();
+  // A tarefa atrasada abre a fila, e leva o motivo junto.
+  await expect(page.getByRole('heading', { name: 'Precisa de você hoje' })).toBeVisible();
   await expect(page.getByText('Enviar a nota')).toBeVisible();
+  await expect(page.getByText('Atrasada há 1 dia')).toBeVisible();
 
-  // Marcar do Início tira de "Vencendo" sem precisar ir à outra tela.
+  // Marcar do Início tira da fila sem precisar ir à outra tela.
   await page.getByText('Enviar a nota').click();
-  await expect(page.getByRole('heading', { name: 'Vencendo' })).toHaveCount(0);
+  await expect(page.getByText('Enviar a nota')).toHaveCount(0);
+  await expect(page.getByText('O dia está seu')).toBeVisible();
 });
 
 test('o Início só mostra o que vence, não o futuro distante', async ({ page }) => {

@@ -40,10 +40,13 @@ import { efeitoDaOcorrencia } from '../dominio/financeiro';
 import {
   formatarDataLonga,
   formatarDataMedia,
+  formatarDataRelativa,
   formatarDiaDaSemana,
   formatarMoeda,
 } from '../formato';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
+import { useAgendaExterna } from '../dados/agendaExterna';
+import { eventosDoDia } from '../dominio/ical';
 
 /**
  * Calendário — rotina e tarefa no tempo.
@@ -108,6 +111,12 @@ export function Calendario() {
     () => agendaDeIntervalo(banco, janela[0], janela[1]),
     [banco, janela[0], janela[1]],
   );
+
+  // A agenda do Google, na mesma janela. Ela não entra no banco: é de outro
+  // sistema, e guardá-la criaria uma cópia que envelhece.
+  const externa = useAgendaExterna(janela[0], janela[1]);
+  const eventosDe = (dia: string) =>
+    externa.agenda ? eventosDoDia(externa.agenda, dia) : [];
 
   // O dia escolhido pode cair fora da janela enquanto eu navego; aí vale
   // perguntar direto, em vez de mostrar um dia vazio que não é vazio.
@@ -198,6 +207,8 @@ export function Calendario() {
         </div>
       </Card>
 
+      <EstadoDaAgenda assinada={!!banco.preferencias?.agendaExterna?.url} externa={externa} />
+
       <div
         style={{
           display: 'grid',
@@ -287,7 +298,7 @@ export function Calendario() {
             />
           ) : visao === 'dia' ? (
             <VistaDia
-              itens={agendaEmLinha(detalhe)}
+              itens={agendaEmLinha(detalhe, eventosDe(selecionado))}
               podeMarcar={selecionado === hoje}
               aoAlternarRotina={(id) => alternarExecucao(id, selecionado)}
               aoAlternarTarefa={alternarTarefa}
@@ -296,6 +307,7 @@ export function Calendario() {
             <VistaSemana
               dias={diasDaSemana}
               itensDe={paraOlho}
+              eventosDe={eventosDe}
               hoje={hoje}
               selecionado={selecionado}
               desktop={desktop}
@@ -344,6 +356,7 @@ export function Calendario() {
                         hoje={hoje}
                         selecionado={dia === selecionado}
                         resumo={resumirDia(paraOlho(dia), hoje)}
+                        eventos={eventosDe(dia).length}
                         aoEscolher={() => escolher(dia)}
                       />
                     ))}
@@ -370,7 +383,8 @@ export function Calendario() {
             </Button>
           }
         >
-          {detalhe.rotinas.length === 0 &&
+          {eventosDe(selecionado).length === 0 &&
+          detalhe.rotinas.length === 0 &&
           detalhe.tarefas.length === 0 &&
           detalhe.lancamentos.length === 0 ? (
             <p
@@ -385,6 +399,27 @@ export function Calendario() {
             </p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
+              {eventosDe(selecionado).length > 0 && (
+                <Secao titulo="Agenda do Google">
+                  {eventosDe(selecionado).map((e) => (
+                    <Linha
+                      key={e.chave}
+                      icone="calendar"
+                      titulo={e.titulo}
+                      detalhe={
+                        [
+                          e.diaInteiro ? 'dia inteiro' : e.fim ? `${e.hora} às ${e.fim}` : e.hora,
+                          e.local,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')
+                      }
+                      feita={false}
+                    />
+                  ))}
+                </Secao>
+              )}
+
               {detalhe.rotinas.length > 0 && (
                 <Secao titulo="Rotinas">
                   {detalhe.rotinas.map(({ rotina, feita }) => (
@@ -545,6 +580,108 @@ export function Calendario() {
   );
 }
 
+/**
+ * A barra da agenda externa.
+ *
+ * Só aparece quando há agenda assinada, e só diz alguma coisa quando há o que
+ * dizer: erro, aviso do que o leitor ignorou, ou a hora da última busca. Uma
+ * barra permanente dizendo "tudo certo" é ruído que se aprende a não ler.
+ *
+ * O erro não esvazia o calendário: o que já tinha sido buscado continua na
+ * tela. Sem rede, é melhor mostrar os compromissos de meia hora atrás do que
+ * abrir vazio.
+ */
+function EstadoDaAgenda({
+  assinada,
+  externa,
+}: {
+  assinada: boolean;
+  externa: ReturnType<typeof useAgendaExterna>;
+}) {
+  if (!assinada) return null;
+
+  const avisos = externa.agenda?.avisos ?? [];
+  const temAlgoADizer = externa.erro !== null || avisos.length > 0;
+
+  return (
+    <Card>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 'var(--sp-6)',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span
+          style={{
+            color: externa.erro ? 'var(--orange-500)' : 'var(--text-muted)',
+            display: 'flex',
+            flex: '0 0 auto',
+          }}
+        >
+          <Icon name={externa.erro ? 'alert-triangle' : 'calendar'} size={20} />
+        </span>
+
+        <span style={{ flex: '1 1 var(--grid-min)', minWidth: 0 }}>
+          <span
+            style={{
+              display: 'block',
+              font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
+              color: 'var(--text-heading)',
+            }}
+          >
+            {externa.agenda?.nome ?? 'Agenda do Google'}
+          </span>
+          <span
+            style={{
+              display: 'block',
+              font: 'var(--type-body)',
+              color: externa.erro ? 'var(--orange-500)' : 'var(--text-muted)',
+              marginTop: 'var(--sp-3)',
+              lineHeight: 'var(--lh-normal)',
+            }}
+          >
+            {externa.erro
+              ? `${externa.erro}${externa.buscadoEm ? ' Mostrando o que eu já tinha.' : ''}`
+              : externa.buscando
+                ? 'Buscando…'
+                : externa.buscadoEm
+                  ? `Buscada ${formatarDataRelativa(new Date(externa.buscadoEm))}`
+                  : 'Ainda não buscada'}
+          </span>
+
+          {/* O que o leitor não entendeu, dito em vez de calado: a alternativa
+              é o compromisso aparecer no dia errado sem ninguém saber por quê. */}
+          {avisos.map((aviso) => (
+            <span
+              key={aviso}
+              style={{
+                display: 'block',
+                font: 'var(--type-body)',
+                color: 'var(--text-subtle)',
+                marginTop: 'var(--sp-3)',
+              }}
+            >
+              {aviso}
+            </span>
+          ))}
+        </span>
+
+        <Button
+          variant={temAlgoADizer ? 'primary' : 'secondary'}
+          size="sm"
+          iconLeft="refresh-cw"
+          disabled={externa.buscando}
+          onClick={externa.atualizarAgora}
+        >
+          Atualizar
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function Secao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <div>
@@ -572,6 +709,7 @@ function Celula({
   hoje,
   selecionado,
   resumo,
+  eventos,
   aoEscolher,
 }: {
   dia: string;
@@ -579,6 +717,8 @@ function Celula({
   hoje: string;
   selecionado: boolean;
   resumo: ReturnType<typeof resumirDia>;
+  /** quantos compromissos da agenda externa caem neste dia */
+  eventos: number;
   aoEscolher: () => void;
 }) {
   const ehHoje = dia === hoje;
@@ -624,6 +764,16 @@ function Celula({
 
       {/* Marcas do dia: uma por tipo, nunca um número que ninguém lê. */}
       <span style={{ display: 'flex', alignItems: 'center', gap: 3, height: 6 }}>
+        {eventos > 0 && (
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: 'var(--chart-4)',
+            }}
+          />
+        )}
         {resumo.rotinas > 0 && (
           <span
             style={{
@@ -678,7 +828,8 @@ function Linha({
   icone: string;
   titulo: string;
   detalhe: string;
-  contexto: 'pessoal' | 'profissional';
+  /** ausente no evento externo: o eixo é meu, e o compromisso vem de fora */
+  contexto?: 'pessoal' | 'profissional';
   feita: boolean;
   atrasada?: boolean;
   aoAlternar?: () => void;
@@ -737,9 +888,15 @@ function Linha({
       ) : (
         <span style={{ flex: 1, minWidth: 0, paddingLeft: 'var(--sp-9)' }}>{corpo}</span>
       )}
-      <Badge tone={contexto === 'pessoal' ? 'ontime' : 'delivered'} dot={false}>
-        {ROTULO_CONTEXTO[contexto]}
-      </Badge>
+      {contexto ? (
+        <Badge tone={contexto === 'pessoal' ? 'ontime' : 'delivered'} dot={false}>
+          {ROTULO_CONTEXTO[contexto]}
+        </Badge>
+      ) : (
+        <Badge tone="neutral" dot={false}>
+          Agenda
+        </Badge>
+      )}
     </div>
   );
 }
@@ -762,6 +919,7 @@ function comoData(dia: string): Date {
 function VistaSemana({
   dias,
   itensDe,
+  eventosDe,
   hoje,
   selecionado,
   desktop,
@@ -769,6 +927,8 @@ function VistaSemana({
 }: {
   dias: string[];
   itensDe: (dia: string) => ItensDoDia;
+  /** os compromissos da agenda externa daquele dia */
+  eventosDe: (dia: string) => { chave: string; titulo: string; hora?: string }[];
   hoje: string;
   selecionado: string;
   desktop: boolean;
@@ -789,10 +949,14 @@ function VistaSemana({
     >
       {dias.map((dia) => {
         const itens = itensDe(dia);
+        const eventos = eventosDe(dia);
         const ehHoje = dia === hoje;
         const escolhido = dia === selecionado;
         const vazio =
-          itens.rotinas.length === 0 && itens.tarefas.length === 0 && itens.lancamentos.length === 0;
+          eventos.length === 0 &&
+          itens.rotinas.length === 0 &&
+          itens.tarefas.length === 0 &&
+          itens.lancamentos.length === 0;
 
         return (
           <button
@@ -844,6 +1008,15 @@ function VistaSemana({
               <span style={{ font: 'var(--type-body)', color: 'var(--text-subtle)' }}>—</span>
             ) : (
               <span style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+                {/* O compromisso vem primeiro: é o único que tem outra pessoa
+                    do outro lado esperando. */}
+                {eventos.map((e) => (
+                  <ItemDaSemana
+                    key={e.chave}
+                    texto={e.hora ? `${e.hora} ${e.titulo}` : e.titulo}
+                    cor="var(--chart-4)"
+                  />
+                ))}
                 {itens.rotinas.map(({ rotina, feita }) => (
                   <ItemDaSemana
                     key={rotina.id}
@@ -920,6 +1093,7 @@ function ItemDaSemana({
 /* ── O dia, hora a hora ──────────────────────────────────────────────────── */
 
 const ICONE_DO_TIPO: Record<ItemDaAgenda['tipo'], string> = {
+  evento: 'calendar',
   rotina: 'repeat',
   tarefa: 'clipboard-check',
   lancamento: 'wallet',
@@ -1006,9 +1180,20 @@ function VistaDia({
                 <Icon name={ICONE_DO_TIPO[item.tipo]} size={16} />
               </span>
 
-              {item.tipo === 'lancamento' ? (
+              {item.tipo === 'lancamento' || item.tipo === 'evento' ? (
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <TituloDoItem titulo={item.titulo} feito={false} />
+                  {item.detalhe && (
+                    <span
+                      style={{
+                        display: 'block',
+                        font: 'var(--type-body)',
+                        color: 'var(--text-subtle)',
+                      }}
+                    >
+                      {item.detalhe}
+                    </span>
+                  )}
                 </span>
               ) : (
                 <Checkbox
@@ -1022,9 +1207,18 @@ function VistaDia({
                 />
               )}
 
-              <Badge tone={item.contexto === 'pessoal' ? 'ontime' : 'delivered'} dot={false}>
-                {ROTULO_CONTEXTO[item.contexto]}
-              </Badge>
+              {/* O evento externo não tem contexto: ele vem da agenda de
+                  outro sistema, e escolher um lado por ele seria inventar
+                  classificação. Leva a etiqueta de origem no lugar. */}
+              {item.contexto ? (
+                <Badge tone={item.contexto === 'pessoal' ? 'ontime' : 'delivered'} dot={false}>
+                  {ROTULO_CONTEXTO[item.contexto]}
+                </Badge>
+              ) : (
+                <Badge tone="neutral" dot={false}>
+                  Agenda
+                </Badge>
+              )}
             </div>
           </React.Fragment>
         );

@@ -18,6 +18,7 @@ import {
   diasSemBackup,
   DIAS_ATE_COBRAR,
 } from '../dominio/backup';
+import { limparCache } from '../dados/agendaExterna';
 
 /**
  * Ajustes — e o backup, que é o que realmente importa aqui.
@@ -206,6 +207,16 @@ export function Ajustes() {
         aoSalvar={(nome) => definirPreferencias({ nome: nome.trim() || undefined })}
       />
 
+      <AgendaDoGoogle
+        atual={banco.preferencias?.agendaExterna?.url ?? ''}
+        aoSalvar={(url) => {
+          // Trocar ou tirar o endereço invalida o cache na hora: sem isto, o
+          // calendário mostraria a agenda antiga até o próximo rebusque.
+          limparCache(window.localStorage);
+          return definirPreferencias({ agendaExterna: url.trim() ? { url: url.trim() } : undefined });
+        }}
+      />
+
       <Card title="Meus dados" subtitle={`Esquema na versão ${VERSAO_ESQUEMA}`}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
           <div style={{ display: 'flex', gap: 'var(--sp-5)', flexWrap: 'wrap' }}>
@@ -352,6 +363,123 @@ function NomeNoInicio({ nome, aoSalvar }: { nome: string; aoSalvar: (nome: strin
         <Button variant="secondary" size="lg" onClick={() => aoSalvar(texto)}>
           Salvar
         </Button>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Assinar a agenda do Google.
+ *
+ * Só entra: os eventos do Google aparecem aqui, e o que eu crio aqui não vai
+ * para lá. Fazer os dois sentidos exigiria um projeto no Google Cloud, tela de
+ * consentimento e reconectar a cada sete dias enquanto o app estivesse em
+ * modo de teste — foi a escolha, e ela está registrada.
+ *
+ * O aviso sobre o endereço ser uma senha não é firula: quem o tiver lê a
+ * agenda inteira sem login nenhum, e ele viaja no arquivo exportado.
+ */
+function AgendaDoGoogle({
+  atual,
+  aoSalvar,
+}: {
+  atual: string;
+  aoSalvar: (url: string) => Promise<void>;
+}) {
+  const [texto, setTexto] = React.useState(atual);
+  const [salvo, setSalvo] = React.useState(false);
+
+  const mudou = texto.trim() !== atual;
+  const pareceGoogle = texto.trim() === '' || /^https:\/\/calendar\.google\.com\//i.test(texto.trim());
+
+  return (
+    <Card
+      title="Agenda do Google"
+      subtitle={atual ? 'Os eventos aparecem no calendário' : 'Ainda não assinada'}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-8)' }}>
+        <p
+          style={{
+            font: 'var(--type-body)',
+            color: 'var(--text-muted)',
+            lineHeight: 'var(--lh-normal)',
+          }}
+        >
+          No Google Agenda, abra <strong>Configurações</strong> › a sua agenda ›{' '}
+          <strong>Endereço secreto no formato iCal</strong>, copie e cole aqui. Os eventos passam a
+          aparecer no calendário e na semana.
+        </p>
+
+        <Field
+          label="Endereço secreto no formato iCal"
+          htmlFor="ajustes-agenda"
+          error={!pareceGoogle ? 'Esperava um endereço de calendar.google.com' : undefined}
+        >
+          <TextInput
+            id="ajustes-agenda"
+            value={texto}
+            onChange={(v) => {
+              setTexto(v);
+              setSalvo(false);
+            }}
+            placeholder="https://calendar.google.com/calendar/ical/.../basic.ics"
+            invalid={!pareceGoogle}
+            size="lg"
+            fullWidth
+          />
+        </Field>
+
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-6)' }}>
+          <span style={{ color: 'var(--orange-500)', display: 'flex', flex: '0 0 auto' }}>
+            <Icon name="alert-triangle" size={20} />
+          </span>
+          <span
+            style={{
+              font: 'var(--type-body)',
+              color: 'var(--text-muted)',
+              lineHeight: 'var(--lh-normal)',
+              minWidth: 0,
+            }}
+          >
+            <strong>Esse endereço é uma senha.</strong> Quem o tiver lê a sua agenda inteira, sem
+            login. Ele fica no seu banco, então chega sozinho no outro aparelho pela sincronização —
+            e viaja junto no arquivo exportado. Se vazar, o Google deixa você gerar um novo em{' '}
+            <em>Redefinir endereço secreto</em>, e o antigo para de funcionar.
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 'var(--sp-6)', flexWrap: 'wrap' }}>
+          <Button
+            variant="primary"
+            size="lg"
+            disabled={!mudou || !pareceGoogle}
+            onClick={async () => {
+              await aoSalvar(texto);
+              setSalvo(true);
+            }}
+          >
+            {atual && texto.trim() === '' ? 'Parar de assinar' : 'Assinar'}
+          </Button>
+          {atual !== '' && (
+            <Button variant="secondary" size="lg" onClick={() => setTexto('')}>
+              Limpar
+            </Button>
+          )}
+          {salvo && (
+            <span
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--sp-4)',
+                font: 'var(--type-body)',
+                color: 'var(--green-500)',
+              }}
+            >
+              <Icon name="circle-check" size={18} />
+              Pronto — abra o Calendário
+            </span>
+          )}
+        </div>
       </div>
     </Card>
   );

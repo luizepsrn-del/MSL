@@ -9,6 +9,7 @@ import {
 } from './preferencias';
 
 const TODOS = BLOCOS_DO_INICIO.map((b) => b.id);
+const PADRAO = BLOCOS_DO_INICIO.filter((b) => b.deFabrica !== false).map((b) => b.id);
 
 describe('o catálogo dos blocos', () => {
   it('tem id único', () => {
@@ -37,10 +38,26 @@ describe('o catálogo dos blocos', () => {
 });
 
 describe('quais blocos aparecem', () => {
-  it('sem preferência nenhuma, tudo na ordem de fábrica', () => {
+  it('sem preferência nenhuma, a ordem de fábrica', () => {
     // Instalação nova não pode abrir com a tela vazia.
-    expect(blocosVisiveis()).toEqual(TODOS);
-    expect(blocosVisiveis({})).toEqual(TODOS);
+    expect(blocosVisiveis()).toEqual(PADRAO);
+    expect(blocosVisiveis({})).toEqual(PADRAO);
+    expect(PADRAO.length).toBeGreaterThan(0);
+  });
+
+  it('nem tudo vem ligado, e o que não vem continua existindo', () => {
+    // "Vencendo" virou um recorte de "Precisa de você hoje": os dois juntos
+    // mostravam as mesmas tarefas duas vezes. Ele some do padrão, mas continua
+    // no catálogo, para aparecer na lista de escondidos do diálogo.
+    expect(PADRAO).not.toContain('vencendo');
+    expect(TODOS).toContain('vencendo');
+    expect(blocosVisiveis()).not.toContain('vencendo');
+  });
+
+  it('o desligado de fábrica pode ser ligado à mão, e fica', () => {
+    const comEle = alternarBloco(blocosVisiveis(), 'vencendo');
+    expect(comEle).toContain('vencendo');
+    expect(blocosVisiveis({ blocosDoInicio: comEle })).toContain('vencendo');
   });
 
   it('com preferência, manda a preferência', () => {
@@ -90,7 +107,9 @@ describe('ligar e desligar', () => {
 
   it('desligar tudo, um por um, chega na lista vazia', () => {
     let atual = ordemDeFabrica();
-    for (const id of TODOS) atual = alternarBloco(atual, id);
+    // `TODOS` e não `PADRAO`: alternar um que estava desligado o **liga**, e
+    // aí a lista não esvaziaria. Percorrer o padrão é o que desliga tudo.
+    for (const id of PADRAO) atual = alternarBloco(atual, id);
     expect(atual).toEqual([]);
   });
 });

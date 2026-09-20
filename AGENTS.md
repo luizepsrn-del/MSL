@@ -57,7 +57,8 @@ src/
   casca/               the product shell: navigation, desktop and mobile
   dados/               schema, migrations, repository seam, React context
   dominio/             the tested logic: rotina, tarefa, calendario, projeto,
-                       financeiro, pedido, agente, preferencias
+                       financeiro, meta, foco, ical, pedido, agente,
+                       preferencias
   telas/               one screen per pillar (Agente.tsx serves /app/pedir)
   formato/             pt-BR formatting — dates, money, sorting
   routes/Showcase.tsx  the /design-system showcase page
@@ -114,8 +115,31 @@ reading its test is how the system starts lying.
 - **A project's rhythm and forecast are measured, not declared.** With no
   pending task or no rhythm there is no forecast — dividing by zero would put
   a date on the screen that nothing backs.
+- **A goal's progress is measured, never stored**, and the window it counts
+  **ends today**, not at the end of the period. With the whole month in the
+  window, a salary posted for the 30th would mark a savings goal achieved on
+  the 1st. `marcos` is a separate collection for the same reason `execucoes`
+  is separate from `rotinas`: progress has a day, so it survives the turn of
+  the month instead of lying across it.
+- **A limit goal is `noAlvo`, never "achieved".** A spending cap starts the
+  month inside the cap; calling that "achieved" on the 1st celebrates what has
+  not happened. The field name carries the distinction.
+- **The focus queue is an instruction, not a panel.** `precisaDeVoce` merges
+  task, routine, bill, goal and project into one list ordered by how hard each
+  one is pressing, and stops at `LIMITE_DO_FOCO`. A forty-item "what to do
+  now" is a list of everything, which is what it was built to replace. When it
+  swallowed the "Vencendo" and "Hoje" cards, those moved to `deFabrica: false`
+  rather than being deleted — the same rows twice, centimetres apart, is how
+  the home screen goes back to being a panel.
+- **External calendar events never enter the bank.** They belong to another
+  system, and a stored copy ages: deleting the appointment in Google would
+  leave the ghost here forever. Only the subscription address is stored, in
+  preferences — and it is a password, so the Settings screen says so.
+- **Compare in percentage points, not percent.** Going from 50% to 58% is not
+  an 8% rise, and calling it that makes the number lie in the flattering
+  direction.
 
-Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `pedir`, `ajustes`. Each has its own URL.
+Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `metas`, `pedir`, `ajustes`. Each has its own URL.
 `/design-system` is the library showcase.
 
 ## Editing
@@ -165,6 +189,12 @@ Two devices, one account, and the merge is the whole game.
 - The session token lives in `localStorage`, **outside the bank**. Inside, it
   would ride along in the exported backup, and restoring on a borrowed device
   would hand it your session.
+- **`/api/agenda` fetches a URL the client sends, which is an SSRF invitation.**
+  Four fences, all tested: a valid session, `https` plus a host allowlist, the
+  *final* URL re-checked after redirects, and caps on bytes and seconds. The
+  allowlist is the one that matters — with it no internal address is reachable,
+  however creative the body. `https://calendar.google.com@evil.com` is a URL
+  whose host is `evil.com`; that is how this fence is usually jumped.
 
 ## Storage
 
@@ -256,7 +286,7 @@ legitimate. Everything outside it is held to the full rule set.
 ## The library map
 
 - `design-system/tokens/` — every value, in nine CSS files.
-- `design-system/components/` — the 34 primitives, in six groups: `core`,
+- `design-system/components/` — the 36 primitives, in six groups: `core`,
   `forms`, `navigation`, `data`, `messaging`, `feedback`. Each has a sibling
   `.prompt.md` saying when to use it.
 - `design-system/patterns/` — the assembled shells and screens. Start a new

@@ -316,7 +316,26 @@ export function Inicio() {
             ? 'Nada pendente'
             : 'Na ordem em que cobra · o atrasado primeiro, depois o que tem hora'
         }
+        action={
+          <Link to="/app/rotina" style={{ textDecoration: 'none' }}>
+            <Button variant="secondary" size="sm" iconRight="arrow-right">
+              Ver rotinas
+            </Button>
+          </Link>
+        }
       >
+        {/* A barra do dia mora aqui desde que a fila engoliu o cartão "Hoje":
+            ela era a única coisa daquele cartão que esta lista não dizia. */}
+        {itens.length > 0 && (
+          <ProgressBar
+            value={Math.round(progresso * 100)}
+            valueLabel={`${feitas}/${itens.length}`}
+            tone={progresso === 1 ? 'green' : 'purple'}
+            label="Rotinas do dia"
+            style={{ marginBottom: 'var(--sp-9)' }}
+          />
+        )}
+
         {fila.length === 0 ? (
           <div
             style={{
