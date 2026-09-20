@@ -202,6 +202,49 @@ describe('a ordem dos blocos', () => {
   });
 });
 
+describe('os invariantes do plano', () => {
+  /** Nenhum par de blocos de trabalho pode se sobrepor. */
+  const semSobreposicao = (plano: ReturnType<typeof montarODia>) => {
+    const t = plano.blocos.filter((b) => b.tipo === 'trabalho');
+    return t.every((b, i) => i === 0 || t[i - 1].fim <= b.inicio);
+  };
+
+  /** O tempo livre nunca pode passar do tamanho da jornada. */
+  const cabeNaJornada = (plano: ReturnType<typeof montarODia>, jornada: typeof JORNADA_PADRAO) =>
+    plano.minutosVagos <= emMinutos(jornada.ate)! - emMinutos(jornada.de)!;
+
+  it('vale para um dia comum', () => {
+    const plano = montarODia([as('09:00', '10:00', 'R')], fazer('A', 'B'), JORNADA_PADRAO);
+    expect(semSobreposicao(plano)).toBe(true);
+    expect(cabeNaJornada(plano, JORNADA_PADRAO)).toBe(true);
+  });
+
+  it('vale mesmo com um compromisso de fim invertido', () => {
+    // Um intervalo negativo faz o laço abrir dois buracos que se sobrepõem:
+    // o trabalho seria agendado duas vezes no mesmo horário e o tempo livre
+    // passaria do tamanho do dia. Foi a mutação que revelou a falta deste
+    // teste — a asserção que existia passava mesmo com o defeito.
+    const plano = montarODia([as('15:00', '09:00', 'Torto')], fazer('A', 'B', 'C'), JORNADA_PADRAO);
+    expect(semSobreposicao(plano), 'trabalho sobreposto').toBe(true);
+    expect(cabeNaJornada(plano, JORNADA_PADRAO), 'mais tempo livre que o dia').toBe(true);
+  });
+
+  it('vale com reuniões que se atropelam', () => {
+    const plano = montarODia(
+      [as('09:00', '11:00', 'Longa'), as('10:00', '10:30', 'Curta'), as('09:30', '12:00', 'Outra')],
+      fazer('A', 'B', 'C'),
+      JORNADA_PADRAO,
+    );
+    expect(semSobreposicao(plano)).toBe(true);
+    expect(cabeNaJornada(plano, JORNADA_PADRAO)).toBe(true);
+    // E nada de trabalho dentro do intervalo tomado pelas reuniões.
+    const dentro = plano.blocos.filter(
+      (b) => b.tipo === 'trabalho' && b.inicio >= '09:00' && b.inicio < '12:00',
+    );
+    expect(dentro).toEqual([]);
+  });
+});
+
 describe('o resumo', () => {
   it('diz quantas cabem, quantas ficam e quanto sobra', () => {
     const jornada = { de: '08:00', ate: '09:30', minutosPorItem: 30 };

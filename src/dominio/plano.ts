@@ -85,28 +85,6 @@ interface Intervalo {
   ate: number;
 }
 
-/**
- * Une os intervalos que se encostam ou se sobrepõem.
- *
- * Duas reuniões sobrepostas continuam sendo duas na tela — elas de fato se
- * atropelam, e esconder uma seria mentir. Mas o tempo ocupado é a união, ou o
- * plano encaixaria trabalho dentro da segunda reunião.
- */
-function unir(intervalos: readonly Intervalo[]): Intervalo[] {
-  const ordenados = [...intervalos].sort((a, b) => a.de - b.de);
-  const unidos: Intervalo[] = [];
-
-  for (const atual of ordenados) {
-    const ultimo = unidos[unidos.length - 1];
-    if (ultimo && atual.de <= ultimo.ate) {
-      ultimo.ate = Math.max(ultimo.ate, atual.ate);
-    } else {
-      unidos.push({ ...atual });
-    }
-  }
-  return unidos;
-}
-
 export function montarODia(
   compromissos: readonly Compromisso[],
   aFazer: readonly ParaFazer[],
@@ -132,16 +110,24 @@ export function montarODia(
     .filter((c): c is Compromisso & Intervalo => c !== null)
     .sort((a, b) => (a.de !== b.de ? a.de - b.de : a.chave < b.chave ? -1 : 1));
 
-  const ocupado = unir(marcados);
-
   // O trabalho começa quando a jornada abre, ou agora, o que vier depois: não
   // adianta planejar as oito da manhã às três da tarde.
   const minutoDeAgora = agora ? emMinutos(agora) : null;
   const comeco = Math.max(abertura, minutoDeAgora ?? abertura);
 
+  /*
+   * Os buracos entre os compromissos.
+   *
+   * O cursor **é** a união dos intervalos: ele nunca anda para trás, então uma
+   * reunião contida noutra não abre buraco e uma que se sobrepõe só empurra o
+   * fim. Eu tinha escrito um `unir()` antes deste laço, e uma mutação mostrou
+   * que tirá-lo não quebrava teste nenhum — era código morto, porque o laço já
+   * fazia o mesmo. Duas reuniões sobrepostas continuam aparecendo as duas na
+   * tela; o que se une aqui é só o tempo ocupado.
+   */
   const vagos: Intervalo[] = [];
   let cursor = comeco;
-  for (const { de, ate } of ocupado) {
+  for (const { de, ate } of marcados) {
     if (ate <= cursor) continue;
     if (de > cursor) vagos.push({ de: cursor, ate: Math.min(de, fechamento) });
     cursor = Math.max(cursor, ate);
