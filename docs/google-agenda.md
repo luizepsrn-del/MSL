@@ -23,34 +23,64 @@ público.
 
 ## 3. A tela de consentimento
 
-1. **APIs e serviços** › **Tela de consentimento OAuth**.
-2. Tipo de usuário: **Externo**. Criar.
-3. Preencha o mínimo:
-   - Nome do app: `My System Life`
-   - E-mail de suporte: o seu
-   - E-mail do desenvolvedor: o seu
-4. Salvar e continuar.
-5. Em **Escopos**, clique em **Adicionar ou remover escopos**, procure por
-   `calendar.events` e marque:
+> **O Google reorganizou esta parte.** O menu antigo chamava-se *Tela de
+> consentimento OAuth* e tinha tudo numa página; o novo chama-se **Google Auth
+> Platform** e reparte em *Personalização*, *Público-alvo*, *Acesso a dados* e
+> *Verificação*. Abaixo vão os dois nomes de cada coisa — use o que aparecer
+> na sua tela.
+
+1. **APIs e serviços** › **Tela de permissão OAuth**. Se cair numa página
+   chamada *Google Auth Platform*, é a nova, e está certo.
+2. Se ele pedir para começar: tipo de usuário **Externo**, nome do app
+   `My System Life`, e-mail de suporte e e-mail do desenvolvedor — os seus.
+3. Vá em **Acesso a dados** (ou *Escopos*, no menu antigo) ›
+   **Adicionar ou remover escopos**, procure por `calendar.events` e marque:
 
    ```
    https://www.googleapis.com/auth/calendar.events
    ```
 
-   É o escopo que permite **ver e editar eventos**. Não peço acesso à lista de
-   agendas nem a nada além disso.
-6. Salvar e continuar até o fim.
+   É o escopo que permite **ver e editar eventos**. Não peço a lista de agendas
+   nem nada além disso.
+4. Salvar.
 
-## 4. Passar para produção — o passo que evita reconectar toda semana
+## 4. Sair do modo de testes — o passo que o Google esconde
 
-Ainda na **Tela de consentimento OAuth**, no topo, em *Status da publicação*,
-clique em **PUBLICAR APP** e confirme.
+**Este é o passo que bloqueia todo mundo.** Enquanto o app está em *Testes*, o
+Google recusa o acesso com esta tela:
 
-> **Por que isto importa.** Enquanto o app fica em *Testing*, o Google expira o
-> acesso a cada 7 dias e você teria que reconectar toda semana. Em *Em
-> produção* isso para. A verificação do Google — aquela que pede vídeo e
-> revisão — serve só para tirar a tela de aviso e para passar de 100 usuários.
-> Você é um, e passa pelo aviso uma vez.
+> *Acesso bloqueado: o app não concluiu o processo de verificação do Google.
+> Ele está em fase de testes e só pode ser acessado por testadores aprovados
+> pelo desenvolvedor. Erro 403: access_denied*
+
+Vá em **Público-alvo** (no menu antigo: a própria *Tela de consentimento
+OAuth*, no bloco *Status da publicação*, lá em cima). Daí há **dois caminhos**,
+e o primeiro é melhor:
+
+### Caminho A — publicar o app (recomendado)
+
+Clique em **PUBLICAR APP** e confirme.
+
+O Google vai avisar que a verificação é necessária para escopos sensíveis.
+**Confirme assim mesmo.** A verificação — aquela que pede vídeo e revisão —
+serve para tirar a tela de aviso e para passar de 100 usuários. Você é um, e
+passa pelo aviso uma vez.
+
+Depois disso, ao conectar, você verá *"O Google não verificou este app"*.
+Clique em **Avançado** › **Acessar My System Life (não seguro)**. É o seu
+próprio app.
+
+### Caminho B — continuar em testes, e se cadastrar como testador
+
+Se o botão de publicar pedir campos que você não tem (política de privacidade,
+domínio verificado), fique em *Testes* e, na mesma página **Público-alvo**,
+vá em **Usuários de teste** › **Adicionar usuários** e ponha o seu próprio
+e-mail. Salvar.
+
+Funciona na hora. **O preço:** neste modo o Google expira o acesso a cada
+7 dias, e você vai precisar clicar em *Conectar* de novo toda semana. O
+sistema avisa quando isso acontece, em vez de simplesmente parar de
+sincronizar.
 
 ## 5. Criar as credenciais
 
@@ -103,10 +133,12 @@ Pronto. A partir daí:
 
 | O que aparece | O que é |
 | --- | --- |
+| **"Acesso bloqueado: … está em fase de testes"** · `403 access_denied` | O passo 4 não pegou. O app continua em *Testes* e o seu e-mail não está na lista de testadores. Volte ao passo 4 e faça o caminho A **ou** o B. |
 | `redirect_uri_mismatch` | A URI do passo 5 não bate. Confira caractere por caractere, sem barra no fim. |
-| `access_denied` | Você fechou a tela do Google sem autorizar. Tente de novo. |
+| `access_denied` sem mais nada | Você fechou a tela do Google sem autorizar. Tente de novo. |
+| "O Google não verificou este app" | **Esperado no caminho A.** Avançado › Acessar. |
 | "faltam as variáveis do Google" | As variáveis do passo 6 não chegaram — falta o **Redeploy**. |
-| Reconectando toda semana | O passo 4 não foi feito: o app continua em *Testing*. |
+| Pedindo para conectar toda semana | Você está no caminho B. É o preço dele; o caminho A resolve. |
 
 ## O que o MSL guarda, e onde
 
