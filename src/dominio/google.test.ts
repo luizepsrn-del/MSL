@@ -372,3 +372,29 @@ describe('traduzir para o calendário', () => {
     ]);
   });
 });
+
+describe('a série de um evento que se repete', () => {
+  const AJUDA2 = {
+    somarDias,
+    distanciaEmDias: (a: string, b: string) =>
+      Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000),
+    paraLocal: OPCOES.paraLocal,
+  };
+
+  it('viaja para a tela, para o rótulo poder ser da série inteira', () => {
+    const semanal = evento({
+      id: 'ocorrencia-de-hoje',
+      recurringEventId: 'a-serie',
+      extendedProperties: undefined,
+    });
+    const [naTela] = eventosParaTela([semanal], '2026-09-01', '2026-09-30', AJUDA2);
+
+    expect(naTela.uid).toBe('ocorrencia-de-hoje');
+    expect(naTela.serie).toBe('a-serie');
+  });
+
+  it('evento único não inventa série', () => {
+    const avulso = evento({ id: 'sozinho', extendedProperties: undefined });
+    expect(eventosParaTela([avulso], '2026-09-01', '2026-09-30', AJUDA2)[0].serie).toBeUndefined();
+  });
+});

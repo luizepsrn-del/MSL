@@ -54,6 +54,14 @@ export interface ItemParaEspelhar {
 
 export interface EventoDoGoogle {
   id: string;
+  /**
+   * O id da **série**, quando o evento se repete.
+   *
+   * O Google dá um `id` diferente para cada ocorrência de uma reunião
+   * semanal, e só este campo as amarra. É por ele que o rótulo é guardado:
+   * marcar terça a terça seria trabalho sem fim.
+   */
+  recurringEventId?: string;
   summary?: string;
   status?: string;
   /** ISO UTC da última alteração do lado do Google */
@@ -311,6 +319,8 @@ export function lerChave(chave: string): { tipo: 'tarefa' | 'peca'; id: string }
 export interface EventoParaTela {
   chave: string;
   uid: string;
+  /** a série, quando o evento se repete */
+  serie?: string;
   titulo: string;
   dia: string;
   hora?: string;
@@ -365,6 +375,7 @@ export function eventosParaTela(
       saida.push({
         chave: `${evento.id}@${dia}`,
         uid: evento.id,
+        serie: evento.recurringEventId,
         titulo: evento.summary?.trim() || '(sem título)',
         dia,
         hora: inicio.hora,

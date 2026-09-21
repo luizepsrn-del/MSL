@@ -9,7 +9,16 @@ import {
   SuccessDialog,
 } from '../../design-system';
 import { useBanco } from '../dados/BancoContexto';
-import { VERSAO_ESQUEMA, COLECOES, nomearColecao } from '../dados/esquema';
+import { IconButton } from '../../design-system';
+import {
+  VERSAO_ESQUEMA,
+  COLECOES,
+  nomearColecao,
+  CORES_DE_ROTULO,
+  type CorDeRotulo,
+  type Rotulo,
+} from '../dados/esquema';
+import { quemUsa } from '../dominio/insights';
 import { formatarData, formatarNumero, formatarDataRelativa } from '../formato';
 import type { Conta as ContaDoUsuario, SessaoDeAparelho } from '../dados/sincronia';
 import {
@@ -211,6 +220,8 @@ export function Ajustes() {
         aoSalvar={(nome) => definirPreferencias({ nome: nome.trim() || undefined })}
       />
 
+      <OsRotulos />
+
       <AJornada
         atual={banco.preferencias?.jornada ?? JORNADA_PADRAO}
         aoSalvar={(jornada) => definirPreferencias({ jornada })}
@@ -375,6 +386,177 @@ function NomeNoInicio({ nome, aoSalvar }: { nome: string; aoSalvar: (nome: strin
           Salvar
         </Button>
       </div>
+    </Card>
+  );
+}
+
+/**
+ * Os rótulos.
+ *
+ * O eixo livre, ao lado do contexto, que é fixo. É por eles que o Calendário
+ * consegue dizer para onde foi o tempo — sem rótulo nenhum, a rosca teria uma
+ * fatia só.
+ *
+ * Apagar um rótulo **solta** o que estava marcado, nunca o apaga: ele era uma
+ * etiqueta, não um dono. É o mesmo princípio de remover um projeto.
+ */
+function OsRotulos() {
+  const { banco, criarRotulo, editarRotulo, removerRotulo } = useBanco();
+  const [nome, setNome] = React.useState('');
+  const [cor, setCor] = React.useState<CorDeRotulo>(CORES_DE_ROTULO[0]);
+  const [aRemover, setARemover] = React.useState<Rotulo | null>(null);
+
+  const vivos = banco.rotulos.filter((r) => !r.arquivado);
+  const soltaria = aRemover ? quemUsa(banco, aRemover.id).length : 0;
+
+  return (
+    <Card
+      title="Rótulos"
+      subtitle={
+        banco.rotulos.length === 0
+          ? 'Para o Calendário poder dizer onde foi o seu tempo'
+          : `${vivos.length} ${vivos.length === 1 ? 'rótulo' : 'rótulos'}`
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
+        {banco.rotulos.length === 0 && (
+          <p style={{ font: 'var(--type-body)', color: 'var(--text-subtle)', lineHeight: 'var(--lh-normal)' }}>
+            "Reunião com cliente", "Estudos", "Operação" — o que você quiser medir, com o nome que
+            você usa. Depois é só escolher um em cada tarefa, rotina ou compromisso do Google, e o
+            Calendário passa a mostrar para onde a semana foi.
+          </p>
+        )}
+
+        {vivos.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+            {vivos.map((r) => (
+              <div
+                key={r.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 'var(--sp-6)',
+                  minHeight: 'var(--tap-min)',
+                  padding: 'var(--sp-4) var(--sp-5)',
+                  borderRadius: 'var(--r-nav)',
+                  background: 'var(--surface-raised)',
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 12,
+                    height: 12,
+                    flex: '0 0 auto',
+                    borderRadius: '50%',
+                    background: r.cor,
+                  }}
+                />
+                <div style={{ flex: '1 1 var(--grid-min)', minWidth: 0 }}>
+                  <TextInput
+                    id={`rotulo-${r.id}`}
+                    value={r.nome}
+                    onChange={(v) => editarRotulo(r.id, { nome: v })}
+                    fullWidth
+                  />
+                </div>
+
+                <span style={{ display: 'flex', gap: 'var(--sp-3)', flex: '0 0 auto', flexWrap: 'wrap' }}>
+                  {CORES_DE_ROTULO.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      aria-label={`Cor ${CORES_DE_ROTULO.indexOf(c) + 1} para ${r.nome}`}
+                      aria-pressed={r.cor === c}
+                      onClick={() => editarRotulo(r.id, { cor: c })}
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: '50%',
+                        cursor: 'pointer',
+                        background: c,
+                        border: `var(--bw-thick) solid ${
+                          r.cor === c ? 'var(--text-heading)' : 'transparent'
+                        }`,
+                      }}
+                    />
+                  ))}
+                  <IconButton
+                    icon="trash-2"
+                    label={`Apagar o rótulo ${r.nome}`}
+                    variant="ghost"
+                    size={34}
+                    onClick={() => setARemover(r)}
+                  />
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 'var(--sp-6)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 var(--grid-min)', minWidth: 0 }}>
+            <Field label="Novo rótulo" htmlFor="rotulo-novo">
+              <TextInput
+                id="rotulo-novo"
+                value={nome}
+                onChange={setNome}
+                placeholder="Reunião com cliente"
+                size="lg"
+                fullWidth
+              />
+            </Field>
+          </div>
+          <span style={{ display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap', flex: '0 0 auto' }}>
+            {CORES_DE_ROTULO.map((c) => (
+              <button
+                key={c}
+                type="button"
+                aria-label={`Cor ${CORES_DE_ROTULO.indexOf(c) + 1}`}
+                aria-pressed={cor === c}
+                onClick={() => setCor(c)}
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  background: c,
+                  border: `var(--bw-thick) solid ${cor === c ? 'var(--text-heading)' : 'transparent'}`,
+                }}
+              />
+            ))}
+          </span>
+          <Button
+            variant="primary"
+            size="lg"
+            disabled={nome.trim() === ''}
+            onClick={async () => {
+              await criarRotulo({ nome, cor, arquivado: false });
+              setNome('');
+            }}
+          >
+            Criar
+          </Button>
+        </div>
+      </div>
+
+      <SuccessDialog
+        open={!!aRemover}
+        tone="danger"
+        onClose={() => setARemover(null)}
+        title={`Apagar o rótulo "${aRemover?.nome}"?`}
+        message={
+          soltaria === 0
+            ? 'Nada está marcado com ele.'
+            : `${soltaria} ${soltaria === 1 ? 'item fica' : 'itens ficam'} sem rótulo. Nada é apagado — o rótulo era uma etiqueta, não um dono.`
+        }
+        actionLabel="Apagar rótulo"
+        onAction={async () => {
+          if (aRemover) await removerRotulo(aRemover.id);
+          setARemover(null);
+        }}
+      />
     </Card>
   );
 }

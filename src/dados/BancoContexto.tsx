@@ -15,6 +15,8 @@ import {
   type Modelo,
   type Regra,
   type Peca,
+  type Rotulo,
+  type MarcacaoDeEvento,
   type EstadoTarefa,
   type Preferencias,
 } from './esquema';
@@ -109,6 +111,17 @@ interface Acoes {
   removerPeca(id: string): Promise<void>;
   /** carimba a saída: publicar é uma decisão, não um campo qualquer */
   publicarPeca(id: string): Promise<void>;
+  criarRotulo(dados: Omit<Rotulo, keyof BaseRegistro>): Promise<void>;
+  editarRotulo(id: string, mudanca: Edicao<Rotulo>): Promise<void>;
+  /**
+   * Apaga o rótulo e solta o que estava marcado com ele.
+   *
+   * Nunca apaga a tarefa, a rotina ou a peça — o mesmo princípio de remover um
+   * projeto, que solta as tarefas em vez de levá-las junto.
+   */
+  removerRotulo(id: string): Promise<void>;
+  /** marca um evento do Google; `null` tira a marca */
+  marcarEvento(chaveDoEvento: string, rotuloId: string | null): Promise<void>;
   /** grava o que eu escolhi sobre a interface; viaja no backup */
   definirPreferencias(mudanca: Partial<Preferencias>): Promise<void>;
   exportar(): Promise<string>;
@@ -602,6 +615,74 @@ export function ProvedorBanco({
               : p,
           ),
         });
+      },
+
+      async criarRotulo(dados) {
+        if (dados.nome.trim() === '') return;
+        const t = agora();
+        const rotulo: Rotulo = { ...dados, nome: dados.nome.trim(), id: novoId(), criadoEm: t, alteradoEm: t };
+        await gravar({ ...banco, rotulos: [...banco.rotulos, rotulo] });
+      },
+
+      async editarRotulo(id, mudanca) {
+        await gravar({ ...banco, rotulos: editarNaLista(banco.rotulos, id, mudanca, agora()) });
+      },
+
+      async removerRotulo(id) {
+        const t = agora();
+        let atual = banco;
+
+        // As marcações de evento daquele rótulo vão junto: sem o rótulo elas
+        // não significam nada e ficariam no banco para sempre.
+        for (const marcacao of banco.marcacoes.filter((m) => m.rotuloId === id)) {
+          const { lista, removidos } = removerRegistro(atual, 'marcacoes', atual.marcacoes, marcacao.id, t);
+          atual = { ...atual, marcacoes: lista, removidos };
+        }
+
+        const { lista, removidos } = removerRegistro(atual, 'rotulos', atual.rotulos, id, t);
+
+        // O que estava marcado é **solto**, nunca apagado. É o mesmo princípio
+        // de remover um projeto: o rótulo era uma etiqueta, não um dono.
+        const soltar = <T extends { rotuloId?: string; alteradoEm: string }>(itens: T[]) =>
+          itens.map((i) => (i.rotuloId === id ? { ...i, rotuloId: undefined, alteradoEm: t } : i));
+
+        await gravar({
+          ...atual,
+          rotulos: lista,
+          removidos,
+          tarefas: soltar(atual.tarefas),
+          rotinas: soltar(atual.rotinas),
+          pecas: soltar(atual.pecas),
+        });
+      },
+
+      async marcarEvento(chaveDoEvento, rotuloId) {
+        const t = agora();
+        const existente = banco.marcacoes.find((m) => m.chaveDoEvento === chaveDoEvento);
+
+        if (rotuloId === null) {
+          if (!existente) return;
+          const { lista, removidos } = removerRegistro(banco, 'marcacoes', banco.marcacoes, existente.id, t);
+          await gravar({ ...banco, marcacoes: lista, removidos });
+          return;
+        }
+
+        if (existente) {
+          await gravar({
+            ...banco,
+            marcacoes: editarNaLista(banco.marcacoes, existente.id, { rotuloId }, t),
+          });
+          return;
+        }
+
+        const marcacao: MarcacaoDeEvento = {
+          id: novoId(),
+          criadoEm: t,
+          alteradoEm: t,
+          chaveDoEvento,
+          rotuloId,
+        };
+        await gravar({ ...banco, marcacoes: [...banco.marcacoes, marcacao] });
       },
 
       exportar: () => repo.exportar(),
