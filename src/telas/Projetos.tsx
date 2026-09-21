@@ -75,6 +75,7 @@ export function Projetos() {
   const [criandoModelo, setCriandoModelo] = React.useState(false);
   /** o aviso de que um projeto não pôde virar modelo */
   const [recusa, setRecusa] = React.useState<string | null>(null);
+  const rotulosVivos = banco.rotulos.filter((r) => !r.arquivado);
 
   const resumo = resumoProjetos(banco, hoje);
   const paineis = painelDosProjetos(banco, hoje);
@@ -238,6 +239,7 @@ export function Projetos() {
       {acrescentandoEm !== null && (
         <FormularioTarefa
           aberto
+          rotulos={rotulosVivos}
           projetos={projetosAtivos}
           projetoFixo={acrescentandoEm}
           aoFechar={() => setAcrescentandoEm(null)}

@@ -21,6 +21,7 @@ import {
   type Projeto,
   type EstadoTarefa,
   type RepeticaoDaTarefa,
+  type Rotulo,
   type PeriodoRecorrencia,
   ROTULO_PERIODO,
 } from '../dados/esquema';
@@ -64,6 +65,7 @@ export function Tarefas() {
   /** a tarefa aberta para correção, ou null */
   const [corrigindo, setCorrigindo] = React.useState<Tarefa | null>(null);
   const [filtro, setFiltro] = React.useState<Filtro>('pendentes');
+  const rotulosVivos = banco.rotulos.filter((r) => !r.arquivado);
   const [visao, setVisao] = React.useState<Visao>('lista');
   const [agrupamento, setAgrupamento] = React.useState<Agrupamento>('estado');
 
@@ -203,6 +205,7 @@ export function Tarefas() {
       {criando && (
         <FormularioTarefa
           aberto
+          rotulos={rotulosVivos}
           projetos={projetosAtivos}
           aoFechar={() => setCriando(false)}
           aoEnviar={async (dados) => {
@@ -215,6 +218,7 @@ export function Tarefas() {
       {corrigindo && (
         <FormularioTarefa
           aberto
+          rotulos={rotulosVivos}
           projetos={projetosAtivos}
           tarefa={corrigindo}
           aoFechar={() => setCorrigindo(null)}
@@ -361,6 +365,20 @@ export interface DadosNovos {
   anotacao?: string;
   projetoId?: string;
   repeticao?: RepeticaoDaTarefa;
+  duracao?: number;
+  rotuloId?: string;
+}
+
+/**
+ * Minutos de um campo de texto.
+ *
+ * Vazio, zero e lixo viram `undefined` — que é "não declarei", e não "declarei
+ * zero". A diferença importa: sem declaração o sistema usa o bloco padrão da
+ * jornada; com zero declarado, o compromisso não ocuparia tempo nenhum.
+ */
+export function lerMinutos(texto: string): number | undefined {
+  const n = Math.trunc(Number(texto.trim()));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 /** Valor do Select quando a tarefa não pertence a projeto nenhum. */
@@ -382,6 +400,7 @@ export function FormularioTarefa({
   projetos,
   projetoFixo,
   tarefa,
+  rotulos,
   diaInicial,
   aoFechar,
   aoEnviar,
@@ -391,6 +410,8 @@ export function FormularioTarefa({
   projetoFixo?: string;
   /** quando presente, o formulário corrige esta tarefa */
   tarefa?: Tarefa;
+  /** o catálogo de rótulos vivos, para o seletor */
+  rotulos: Rotulo[];
   /**
    * O prazo com que uma tarefa **nova** nasce.
    *
@@ -418,6 +439,10 @@ export function FormularioTarefa({
   );
   const [aCada, setACada] = React.useState(String(tarefa?.repeticao?.intervalo ?? 1));
   const [repeteAte, setRepeteAte] = React.useState(tarefa?.repeticao?.ate ?? '');
+  const [duracao, setDuracao] = React.useState(
+    tarefa?.duracao === undefined ? '' : String(tarefa.duracao),
+  );
+  const [rotuloId, setRotuloId] = React.useState(tarefa?.rotuloId ?? '');
   const [tentou, setTentou] = React.useState(false);
 
   const erroTitulo = tentou && titulo.trim() === '' ? 'Dê um nome à tarefa' : undefined;
@@ -453,6 +478,8 @@ export function FormularioTarefa({
       hora: prazo === '' || hora === '' ? undefined : hora,
       anotacao: anotacao.trim() === '' ? undefined : anotacao.trim(),
       projetoId: projetoFixo ?? (projetoId === SEM_PROJETO ? undefined : projetoId),
+      duracao: lerMinutos(duracao),
+      rotuloId: rotuloId === '' ? undefined : rotuloId,
       // `undefined` apaga o campo na correção — é assim que se para de repetir.
       repeticao:
         repete === '' || prazo === ''
@@ -649,6 +676,44 @@ export function FormularioTarefa({
             </Field>
           </div>
         )}
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(var(--grid-min), 1fr))',
+            gap: 'var(--sp-8)',
+          }}
+        >
+          <Field
+            label="Quanto tempo toma"
+            htmlFor="tar-duracao"
+            help="Em minutos, opcional"
+          >
+            <TextInput
+              id="tar-duracao"
+              type="number"
+              value={duracao}
+              onChange={setDuracao}
+              placeholder="30"
+              size="lg"
+              fullWidth
+            />
+          </Field>
+
+          <Field label="Rótulo" htmlFor="tar-rotulo" help="Opcional — é o que o Calendário mede">
+            <Select
+              id="tar-rotulo"
+              value={rotuloId}
+              onChange={setRotuloId}
+              size="lg"
+              fullWidth
+              options={[
+                { value: '', label: 'Sem rótulo' },
+                ...rotulos.map((r) => ({ value: r.id, label: r.nome })),
+              ]}
+            />
+          </Field>
+        </div>
 
         <Field label="Anotação" htmlFor="tar-nota" help="Opcional">
           <TextInput

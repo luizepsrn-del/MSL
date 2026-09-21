@@ -24,6 +24,7 @@ import {
   type Peca,
   type TipoDePeca,
   type EstadoDaPeca,
+  type Rotulo,
 } from '../dados/esquema';
 import {
   contar,
@@ -254,6 +255,7 @@ export function Criacao() {
         <Editor
           peca={editando}
           projetos={banco.projetos.filter((p) => !p.arquivadoEm)}
+          rotulos={banco.rotulos.filter((r) => !r.arquivado)}
           aoFechar={() => {
             setCriando(false);
             setEditando(null);
@@ -414,12 +416,15 @@ type DadosDaPeca = Omit<Peca, 'id' | 'criadoEm' | 'alteradoEm' | 'publicadoEm'>;
 function Editor({
   peca,
   projetos,
+  rotulos,
   aoFechar,
   aoEnviar,
   aoAvisar,
 }: {
   peca: Peca | null;
   projetos: { id: string; titulo: string }[];
+  /** o catálogo de rótulos vivos, para o seletor */
+  rotulos: Rotulo[];
   aoFechar: () => void;
   aoEnviar: (dados: DadosDaPeca) => Promise<void>;
   aoAvisar: (texto: string | null) => void;
@@ -432,6 +437,7 @@ function Editor({
   const [etiquetas, setEtiquetas] = React.useState((peca?.etiquetas ?? []).join(', '));
   const [publicarEm, setPublicarEm] = React.useState(peca?.publicarEm ?? '');
   const [projetoId, setProjetoId] = React.useState(peca?.projetoId ?? '');
+  const [rotuloId, setRotuloId] = React.useState(peca?.rotuloId ?? '');
   const [tentou, setTentou] = React.useState(false);
 
   const c = contar({ corpo, tipo });
@@ -456,6 +462,7 @@ function Editor({
       etiquetas: lerEtiquetas(etiquetas),
       publicarEm: publicarEm === '' ? undefined : publicarEm,
       projetoId: projetoId === '' ? undefined : projetoId,
+      rotuloId: rotuloId === '' ? undefined : rotuloId,
     });
   };
 
@@ -621,6 +628,20 @@ function Editor({
             />
           </Field>
         </div>
+
+        <Field label="Rótulo" htmlFor="cri-rotulo" help="Opcional — é o que o Calendário mede">
+          <Select
+            id="cri-rotulo"
+            value={rotuloId}
+            onChange={setRotuloId}
+            size="lg"
+            fullWidth
+            options={[
+              { value: '', label: 'Sem rótulo' },
+              ...rotulos.map((r) => ({ value: r.id, label: r.nome })),
+            ]}
+          />
+        </Field>
 
         {projetos.length > 0 && (
           <Field label="Projeto" htmlFor="cri-projeto" help="Opcional">

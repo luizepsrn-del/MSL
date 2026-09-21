@@ -18,6 +18,7 @@ import {
   type Contexto,
   type Recorrencia,
   type Rotina,
+  type Rotulo,
 } from '../dados/esquema';
 import {
   DIAS_CURTOS,
@@ -31,6 +32,7 @@ import {
 } from '../dominio/rotina';
 import { horaValida } from '../dominio/calendario';
 import { ordenarPor } from '../formato';
+import { lerMinutos } from './Tarefas';
 
 /** Rotina — a lista do que se repete, e o formulário para criar mais. */
 export function Rotinas() {
@@ -45,6 +47,7 @@ export function Rotinas() {
     (r) => r.titulo,
   );
   const deHoje = ativas.filter((r) => deveOcorrerEm(r, hoje));
+  const rotulosVivos = banco.rotulos.filter((r) => !r.arquivado);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--card-gap)' }}>
@@ -222,6 +225,7 @@ export function Rotinas() {
       {criando && (
         <FormularioRotina
           aberto
+          rotulos={rotulosVivos}
           aoFechar={() => setCriando(false)}
           aoEnviar={async (dados) => {
             await criarRotina(dados);
@@ -234,6 +238,7 @@ export function Rotinas() {
       {corrigindo && (
         <FormularioRotina
           aberto
+          rotulos={rotulosVivos}
           rotina={corrigindo}
           aoFechar={() => setCorrigindo(null)}
           aoEnviar={async (dados) => {
@@ -255,6 +260,8 @@ interface DadosNovos {
   arquivada: boolean;
   recorrencia: Recorrencia;
   hora?: string;
+  duracao?: number;
+  rotuloId?: string;
 }
 
 const ICONES = [
@@ -283,10 +290,13 @@ export function FormularioRotina({
   aoFechar,
   aoEnviar,
   hoje,
+  rotulos,
   diaInicial,
 }: {
   aberto: boolean;
   rotina?: Rotina;
+  /** o catálogo de rótulos vivos, para o seletor */
+  rotulos: Rotulo[];
   aoFechar: () => void;
   aoEnviar: (dados: DadosNovos) => Promise<void>;
   hoje: string;
@@ -308,6 +318,10 @@ export function FormularioRotina({
     r?.tipo === 'intervalo' ? String(r.aCadaDias) : '3',
   );
   const [inicioEm, setInicioEm] = React.useState(rotina?.inicioEm ?? diaInicial ?? hoje);
+  const [duracao, setDuracao] = React.useState(
+    rotina?.duracao === undefined ? '' : String(rotina.duracao),
+  );
+  const [rotuloId, setRotuloId] = React.useState(rotina?.rotuloId ?? '');
   const [icone, setIcone] = React.useState(rotina?.icone ?? 'repeat');
   const [hora, setHora] = React.useState(rotina?.hora ?? '');
   const [tentou, setTentou] = React.useState(false);
@@ -345,6 +359,8 @@ export function FormularioRotina({
       arquivada: false,
       recorrencia: montarRecorrencia(),
       hora: hora === '' ? undefined : hora,
+      duracao: lerMinutos(duracao),
+      rotuloId: rotuloId === '' ? undefined : rotuloId,
     });
   };
 
@@ -537,6 +553,40 @@ export function FormularioRotina({
               fullWidth
             />
           </Field>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(var(--grid-min), 1fr))',
+            gap: 'var(--sp-8)',
+          }}
+        >
+          <Field label="Quanto tempo toma" htmlFor="rot-duracao" help="Em minutos, opcional">
+            <TextInput
+              id="rot-duracao"
+              type="number"
+              value={duracao}
+              onChange={setDuracao}
+              placeholder="30"
+              size="lg"
+              fullWidth
+            />
+          </Field>
+
+          <Field label="Rótulo" htmlFor="rot-rotulo" help="Opcional — é o que o Calendário mede">
+            <Select
+              id="rot-rotulo"
+              value={rotuloId}
+              onChange={setRotuloId}
+              size="lg"
+              fullWidth
+              options={[
+                { value: '', label: 'Sem rótulo' },
+                ...rotulos.map((r) => ({ value: r.id, label: r.nome })),
+              ]}
+            />
+          </Field>
+        </div>
 
           <Field label="Ícone" htmlFor="rot-icone">
             <div style={{ display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap' }}>

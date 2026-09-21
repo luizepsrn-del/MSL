@@ -276,3 +276,44 @@ describe('o resumo', () => {
     expect(duracao(125)).toBe('2h05');
   });
 });
+
+describe('a duração declarada', () => {
+  it('é respeitada no lugar do bloco padrão', () => {
+    // Encaixar duas horas num bloco de trinta minutos faria o plano prometer
+    // um dia que não existe.
+    const plano = montarODia(
+      [],
+      [
+        { chave: 'a', titulo: 'Reunião longa', minutos: 120 },
+        { chave: 'b', titulo: 'E-mail' },
+      ],
+      JORNADA_PADRAO,
+    );
+    expect(plano.blocos.filter((b) => b.tipo === 'trabalho').map((b) => `${b.inicio}–${b.fim}`))
+      .toEqual(['08:00–10:00', '10:00–10:30']);
+  });
+
+  it('o que não cabe no buraco fica para o próximo, sem ser encolhido', () => {
+    // Um compromisso de duas horas não vira meia hora só porque sobrou meia.
+    const plano = montarODia(
+      [as('08:30', '09:00', 'Chamada')],
+      [{ chave: 'longa', titulo: 'Longa', minutos: 120 }],
+      JORNADA_PADRAO,
+    );
+    const trabalhos = plano.blocos.filter((b) => b.tipo === 'trabalho');
+    expect(trabalhos).toEqual([
+      expect.objectContaining({ inicio: '09:00', fim: '11:00', titulo: 'Longa' }),
+    ]);
+  });
+
+  it('duração maior que a jornada inteira não cabe, e é dito', () => {
+    const plano = montarODia([], [{ chave: 'x', titulo: 'Impossível', minutos: 13 * 60 }], JORNADA_PADRAO);
+    expect(plano.blocos.filter((b) => b.tipo === 'trabalho')).toEqual([]);
+    expect(plano.naoCoube.map((i) => i.titulo)).toEqual(['Impossível']);
+  });
+
+  it('duração torta cai no bloco padrão', () => {
+    const plano = montarODia([], [{ chave: 'x', titulo: 'X', minutos: 0 }], JORNADA_PADRAO);
+    expect(plano.blocos[0]).toMatchObject({ inicio: '08:00', fim: '08:30' });
+  });
+});

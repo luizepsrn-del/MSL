@@ -91,6 +91,7 @@ export function Calendario() {
   // Só vale para "o que vem": a rotina diária repetida sessenta vezes afoga o
   // que é único. Nas outras visões a rotina é o assunto.
   const [rotinasNaLinha, setRotinasNaLinha] = React.useState(false);
+  const rotulosVivos = banco.rotulos.filter((r) => !r.arquivado);
 
   const filtro: FiltroCalendario = {
     contexto: contextoFiltrado === 'tudo' ? undefined : contextoFiltrado,
@@ -570,6 +571,7 @@ export function Calendario() {
       {criando?.o === 'tarefa' && (
         <FormularioTarefa
           aberto
+          rotulos={rotulosVivos}
           projetos={banco.projetos.filter((p) => !p.arquivadoEm)}
           diaInicial={criando.dia}
           aoFechar={() => setCriando(null)}
@@ -583,6 +585,7 @@ export function Calendario() {
       {criando?.o === 'rotina' && (
         <FormularioRotina
           aberto
+          rotulos={rotulosVivos}
           hoje={hoje}
           diaInicial={criando.dia}
           aoFechar={() => setCriando(null)}

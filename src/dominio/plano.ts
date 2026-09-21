@@ -10,9 +10,11 @@
  * compromisso onde havia palpite, e no dia seguinte o palpite estaria lá
  * dizendo que eu marquei aquilo.
  *
- * Por isso também não há estimativa por tarefa: todas pedem o mesmo bloco. Um
- * número por tarefa que ninguém mediu é precisão inventada, e o bloco
- * uniforme diz a verdade — "cabem cinco coisas hoje" é a informação útil.
+ * O bloco padrão da jornada vale para o que ninguém mediu: um número inventado
+ * por tarefa seria precisão falsa, e "cabem cinco coisas hoje" já é a
+ * informação útil. Mas o que **eu** declarei é respeitado — encaixar um
+ * compromisso de duas horas num bloco de trinta faria o dia montado prometer
+ * um dia que não existe.
  */
 
 import { horaValida } from './calendario';
@@ -29,6 +31,15 @@ export interface Compromisso {
 export interface ParaFazer {
   chave: string;
   titulo: string;
+  /**
+   * Quanto tempo este item pede, em minutos.
+   *
+   * Sem ele, o bloco padrão da jornada — que continua sendo o certo para o que
+   * ninguém mediu. O que **foi** declarado, porém, tem que ser respeitado: um
+   * compromisso de duas horas encaixado num bloco de trinta minutos faria o
+   * dia montado prometer um dia que não existe.
+   */
+  minutos?: number;
 }
 
 export type TipoDoBloco = 'compromisso' | 'trabalho' | 'vago';
@@ -144,16 +155,19 @@ export function montarODia(
     if (vago.ate <= vago.de) continue;
     let dentro = vago.de;
 
-    while (fila.length > 0 && dentro + bloco <= vago.ate) {
+    while (fila.length > 0) {
+      const quanto = Math.max(Math.trunc(fila[0].minutos ?? bloco) || bloco, 1);
+      if (dentro + quanto > vago.ate) break;
+
       const item = fila.shift()!;
       trabalho.push({
         inicio: emHora(dentro),
-        fim: emHora(dentro + bloco),
+        fim: emHora(dentro + quanto),
         tipo: 'trabalho',
         chave: item.chave,
         titulo: item.titulo,
       });
-      dentro += bloco;
+      dentro += quanto;
     }
 
     // O que sobra do buraco só vira "vago" se der para fazer alguma coisa nele.

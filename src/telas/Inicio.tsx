@@ -52,6 +52,7 @@ import {
 import { ocorrenciasDoMes, resumoFinanceiro, evolucaoMensal } from '../dominio/financeiro';
 import { precisaDeVoce, saudacao, comoEstaODia, type ItemDoFoco } from '../dominio/foco';
 import { montarODia, resumirPlano, duracao, JORNADA_PADRAO } from '../dominio/plano';
+import { somarMinutos as somarMinutosNaHora } from '../dominio/google';
 import { oQueAsRegrasQuerem } from '../dominio/regra';
 import { useAgendaExterna } from '../dados/agendaExterna';
 import { itensDoDia } from '../dominio/calendario';
@@ -208,20 +209,43 @@ export function Inicio() {
   // encaixaria trabalho em cima dela.
   const externa = useAgendaExterna(hoje, hoje);
   const doDia = itensDoDia(banco, hoje);
+  // O fim de um compromisso marcado sai da duração declarada; sem ela, o
+  // plano usa o bloco padrão da jornada, como sempre.
+  const fimDe = (hora: string, duracao?: number) =>
+    duracao && duracao > 0 ? somarMinutosNaHora(hora, duracao) : undefined;
+
   const compromissos = [
     ...(externa.agenda?.eventos ?? [])
       .filter((e) => e.hora)
       .map((e) => ({ chave: e.chave, titulo: e.titulo, inicio: e.hora!, fim: e.fim })),
     ...doDia.rotinas
       .filter(({ rotina, feita }) => rotina.hora && !feita)
-      .map(({ rotina }) => ({ chave: `rotina:${rotina.id}`, titulo: rotina.titulo, inicio: rotina.hora! })),
+      .map(({ rotina }) => ({
+        chave: `rotina:${rotina.id}`,
+        titulo: rotina.titulo,
+        inicio: rotina.hora!,
+        fim: fimDe(rotina.hora!, rotina.duracao),
+      })),
     ...doDia.tarefas
       .filter((t) => t.hora && !t.concluidaEm)
-      .map((t) => ({ chave: `tarefa:${t.id}`, titulo: t.titulo, inicio: t.hora! })),
+      .map((t) => ({
+        chave: `tarefa:${t.id}`,
+        titulo: t.titulo,
+        inicio: t.hora!,
+        fim: fimDe(t.hora!, t.duracao),
+      })),
   ];
+
+  /** A duração que o registro declarou, para o plano reservar o tempo certo. */
+  const duracaoDe = (item: ItemDoFoco): number | undefined => {
+    if (item.tipo === 'tarefa') return banco.tarefas.find((t) => t.id === item.id)?.duracao;
+    if (item.tipo === 'rotina') return banco.rotinas.find((r) => r.id === item.id)?.duracao;
+    return undefined;
+  };
+
   const semHora = fila
     .filter((i) => !i.hora && i.marcavel)
-    .map((i) => ({ chave: i.chave, titulo: i.titulo }));
+    .map((i) => ({ chave: i.chave, titulo: i.titulo, minutos: duracaoDe(i) }));
   const agoraNoRelogio = `${String(new Date().getHours()).padStart(2, '0')}:${String(
     new Date().getMinutes(),
   ).padStart(2, '0')}`;
