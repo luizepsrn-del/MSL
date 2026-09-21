@@ -150,15 +150,41 @@ describe('o que foi apagado fica apagado', () => {
 });
 
 describe('as preferências', () => {
-  it('ficam com o lado que exportou por último', () => {
+  it('ficam com o lado que foi editado por último', () => {
     // Elas não se juntam registro a registro: são um objeto só.
+    //
+    // Este teste dizia "o lado que **exportou** por último", e era o defeito
+    // escrito como regra: exportar não muda uma preferência, e editar uma não
+    // mudava o `ultimoBackupEm`. Com os dois lados exportados no mesmo dia,
+    // o empate devolvia sempre o servidor e apagava o que eu acabara de
+    // escrever. Agora quem decide é `alteradoEm`.
     const mac = banco({
-      preferencias: { blocosDoInicio: ['hoje'], ultimoBackupEm: '2026-09-09T00:00:00.000Z' },
+      preferencias: { blocosDoInicio: ['hoje'], alteradoEm: '2026-09-09T00:00:00.000Z' },
     });
     const telefone = banco({
-      preferencias: { blocosDoInicio: ['semana'], ultimoBackupEm: '2026-09-12T00:00:00.000Z' },
+      preferencias: { blocosDoInicio: ['semana'], alteradoEm: '2026-09-12T00:00:00.000Z' },
     });
     expect(juntar(mac, telefone).preferencias?.blocosDoInicio).toEqual(['semana']);
+    expect(juntar(telefone, mac).preferencias?.blocosDoInicio).toEqual(['semana']);
+  });
+
+  it('exportar não é editar: o backup sozinho não decide nada', () => {
+    // O lado que exportou depois, mas editou antes, perde.
+    const exportouDepois = banco({
+      preferencias: {
+        blocosDoInicio: ['hoje'],
+        alteradoEm: '2026-09-09T00:00:00.000Z',
+        ultimoBackupEm: '2026-09-30T00:00:00.000Z',
+      },
+    });
+    const editouDepois = banco({
+      preferencias: {
+        blocosDoInicio: ['semana'],
+        alteradoEm: '2026-09-12T00:00:00.000Z',
+        ultimoBackupEm: '2026-09-01T00:00:00.000Z',
+      },
+    });
+    expect(juntar(exportouDepois, editouDepois).preferencias?.blocosDoInicio).toEqual(['semana']);
   });
 
   it('um lado sem preferência nenhuma fica com a do outro', () => {
@@ -194,5 +220,79 @@ describe('podar as lápides', () => {
   it('não mexe no resto do banco', () => {
     const b = banco({ tarefas: [tarefa('a')] });
     expect(podarLapides(b, agora).tarefas).toHaveLength(1);
+  });
+});
+
+describe('as preferências entre aparelhos', () => {
+  /**
+   * O defeito que este bloco existe para impedir.
+   *
+   * Eu digitava o meu nome em Ajustes, ele aparecia, e três segundos depois a
+   * sincronização o apagava. A decisão de qual lado das preferências ganha
+   * olhava `ultimoBackupEm` — que **não muda quando eu edito uma preferência**.
+   * Com os dois lados exportados no mesmo dia, o empate devolvia sempre as
+   * preferências do servidor, e toda edição minha era descartada em silêncio:
+   * o nome, os blocos do Início, a jornada e o endereço da agenda.
+   */
+  const bancoCom = (preferencias: Banco['preferencias']): Banco => ({
+    ...bancoVazio(),
+    preferencias,
+  });
+
+  it('o nome que eu acabei de escrever não é apagado pelo servidor', () => {
+    const backup = '2026-09-20T12:00:00.000Z';
+    const servidor = bancoCom({ ultimoBackupEm: backup });
+    const aparelho = bancoCom({
+      ultimoBackupEm: backup,
+      nome: 'Luiz Eduardo',
+      alteradoEm: '2026-09-21T13:00:00.000Z',
+    });
+
+    expect(juntar(servidor, aparelho).preferencias?.nome).toBe('Luiz Eduardo');
+    expect(juntar(aparelho, servidor).preferencias?.nome).toBe('Luiz Eduardo');
+  });
+
+  it('a edição mais recente ganha, venha de que lado vier', () => {
+    const velha = bancoCom({ nome: 'Antigo', alteradoEm: '2026-09-20T10:00:00.000Z' });
+    const nova = bancoCom({ nome: 'Novo', alteradoEm: '2026-09-21T10:00:00.000Z' });
+
+    expect(juntar(velha, nova).preferencias?.nome).toBe('Novo');
+    expect(juntar(nova, velha).preferencias?.nome).toBe('Novo');
+  });
+
+  it('quem nunca editou nada não apaga quem editou', () => {
+    const nunca = bancoCom(undefined);
+    const editou = bancoCom({ nome: 'Luiz', alteradoEm: '2026-09-21T10:00:00.000Z' });
+
+    expect(juntar(nunca, editou).preferencias?.nome).toBe('Luiz');
+    expect(juntar(editou, nunca).preferencias?.nome).toBe('Luiz');
+  });
+
+  it('um lado sem carimbo perde para um lado com carimbo', () => {
+    // Sem carimbo é um banco que vem de antes desta regra existir. Ele não
+    // pode ganhar de uma edição que eu sei quando aconteceu.
+    const semCarimbo = bancoCom({ nome: 'Velho' });
+    const comCarimbo = bancoCom({ nome: 'Novo', alteradoEm: '2026-09-21T10:00:00.000Z' });
+
+    expect(juntar(semCarimbo, comCarimbo).preferencias?.nome).toBe('Novo');
+    expect(juntar(comCarimbo, semCarimbo).preferencias?.nome).toBe('Novo');
+  });
+
+  it('empate exato dá o mesmo resultado nas duas ordens', () => {
+    // Sem critério estável, os dois aparelhos guardariam preferências
+    // diferentes e brigariam para sempre sobre qual é a mais nova.
+    const carimbo = '2026-09-21T10:00:00.000Z';
+    const um = bancoCom({ nome: 'A', alteradoEm: carimbo });
+    const outro = bancoCom({ nome: 'B', alteradoEm: carimbo });
+
+    expect(juntar(um, outro).preferencias).toEqual(juntar(outro, um).preferencias);
+  });
+
+  it('juntar duas vezes não muda nada', () => {
+    const servidor = bancoCom({ nome: 'A', alteradoEm: '2026-09-20T10:00:00.000Z' });
+    const aparelho = bancoCom({ nome: 'B', alteradoEm: '2026-09-21T10:00:00.000Z' });
+
+    const uma = juntar(servidor, aparelho);
+    expect(juntar(uma, aparelho).preferencias).toEqual(uma.preferencias);
   });
 });

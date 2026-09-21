@@ -51,7 +51,7 @@ describe('as funções da Vercel', () => {
     expect(FUNCOES).toEqual(Object.keys(METODOS).sort());
   });
 
-  it.each(FUNCOES)('%s carrega em Node puro e exporta o método certo', async (arquivo) => {
+  it.each(FUNCOES)('%s carrega em Node puro e exporta só o método certo', async (arquivo) => {
     const { stdout } = await rodar(process.execPath, [
       '--experimental-strip-types',
       '--no-warnings',
@@ -62,20 +62,19 @@ describe('as funções da Vercel', () => {
     ]);
 
     expect(stdout, `carregando api/${arquivo}`).not.toContain('ERRO:');
-    expect(JSON.parse(stdout.trim()).sort()).toEqual([...METODOS[arquivo]].sort());
-  });
 
-  it('nenhuma função exporta `default`', async () => {
-    // Com `export default` a Vercel pode entregar os objetos do Node em vez de
-    // um `Request`, e aí o `Response` devolvido é ignorado calado.
-    for (const arquivo of FUNCOES) {
-      const { stdout } = await rodar(process.execPath, [
-        '--experimental-strip-types',
-        '--no-warnings',
-        '-e',
-        `import('./api/${arquivo}').then((m) => console.log(JSON.stringify(Object.keys(m))));`,
-      ]);
-      expect(JSON.parse(stdout.trim()), arquivo).not.toContain('default');
-    }
+    const exportados = JSON.parse(stdout.trim()) as string[];
+
+    // A igualdade já diz as duas coisas: que os métodos certos estão lá e que
+    // **nada mais** está — inclusive `default`. Com `export default` a Vercel
+    // pode entregar os objetos do Node em vez de um `Request`, e aí o
+    // `Response` devolvido é ignorado calado.
+    //
+    // Antes isto eram dois testes, e o segundo gerava um processo Node por
+    // função só para reconferir o `default`. Com doze funções ele passou a
+    // estourar o tempo padrão e a falhar sozinho — trabalho duplicado que
+    // virou instabilidade.
+    expect(exportados.sort()).toEqual([...METODOS[arquivo]].sort());
+    expect(exportados, `api/${arquivo} exporta default`).not.toContain('default');
   });
 });

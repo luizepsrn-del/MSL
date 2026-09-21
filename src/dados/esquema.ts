@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 16;
+export const VERSAO_ESQUEMA = 17;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -486,6 +486,19 @@ export interface Regra extends Registro {
  * coleção — `COLECOES` continua sendo só a lista de arrays.
  */
 export interface Preferencias {
+  /**
+   * ISO UTC da última vez que eu mexi em alguma preferência.
+   *
+   * **É isto que decide qual lado ganha na junção entre aparelhos**, e ele
+   * existe porque a decisão antes olhava `ultimoBackupEm` — que não muda
+   * quando eu edito uma preferência. Com os dois lados exportados no mesmo
+   * dia, o empate devolvia sempre as preferências do servidor, e toda edição
+   * minha era descartada em silêncio três segundos depois de eu fazê-la.
+   *
+   * Ausente quer dizer "de antes desta regra", e perde para qualquer lado que
+   * tenha carimbo.
+   */
+  alteradoEm?: string;
   /**
    * Como eu quero ser chamado no Início.
    *

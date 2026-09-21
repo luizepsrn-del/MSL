@@ -172,6 +172,15 @@ export const MIGRACOES: Record<number, Migracao> = {
     pecas: Array.isArray(dados.pecas) ? dados.pecas : [],
     versao: 16,
   }),
+
+  /**
+   * 16 → 17: o carimbo de alteração das preferências.
+   *
+   * Aditiva e sem valor de partida: um banco sem carimbo é "de antes desta
+   * regra", e a junção o trata como o lado mais fraco — que é exatamente o
+   * comportamento certo para quem acabou de atualizar.
+   */
+  16: (dados) => ({ ...dados, versao: 17 }),
 };
 
 export class ErroDeMigracao extends Error {

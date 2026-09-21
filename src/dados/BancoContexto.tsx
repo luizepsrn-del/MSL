@@ -397,7 +397,12 @@ export function ProvedorBanco({
       },
 
       async definirPreferencias(mudanca) {
-        await gravar({ ...banco, preferencias: { ...banco.preferencias, ...mudanca } });
+        // O carimbo é o que faz a preferência sobreviver à sincronização: sem
+        // ele, a junção não tem como saber que este lado é o mais novo.
+        await gravar({
+          ...banco,
+          preferencias: { ...banco.preferencias, ...mudanca, alteradoEm: agora() },
+        });
       },
 
       async editarLancamento(id, mudanca) {

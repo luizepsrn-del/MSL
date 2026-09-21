@@ -270,8 +270,25 @@ export function Inicio() {
     banco.lancamentos.length === 0 &&
     banco.pecas.length === 0;
 
+  /*
+   * A saudação aparece mesmo com o banco vazio.
+   *
+   * Antes o primeiro uso devolvia só "Nada cadastrado ainda", e quem tinha
+   * acabado de escrever o nome em Ajustes vinha ao Início justamente para
+   * conferir — e não via nome nenhum. A tela parecia não ter salvado o que
+   * tinha salvado.
+   */
   if (bancoVazioDeVerdade) {
-    return <PrimeiroUso />;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--card-gap)' }}>
+        <Saudacao
+          nome={banco.preferencias?.nome}
+          recado="Nada pendente ainda. Comece por uma coisa só."
+          aoPersonalizar={() => setPersonalizando(true)}
+        />
+        <PrimeiroUso />
+      </div>
+    );
   }
 
   const visiveis = blocosVisiveis(banco.preferencias);

@@ -119,11 +119,38 @@ export function juntar(a: Banco, b: Banco): Banco {
   return junto;
 }
 
+/**
+ * Qual lado das preferências fica.
+ *
+ * **Pelo carimbo de alteração, e nunca pelo do backup.** A primeira versão
+ * comparava `ultimoBackupEm`, que não muda quando alguém edita uma
+ * preferência: com os dois lados exportados no mesmo dia, o empate devolvia
+ * sempre o lado `a` — o servidor — e toda edição do aparelho era descartada
+ * três segundos depois de ser feita. Some o nome, os blocos do Início, a
+ * jornada e o endereço da agenda, sem aviso nenhum.
+ *
+ * Objeto inteiro, e não campo a campo, como sempre foi: mudar o nome no Mac e
+ * a jornada no telefone entre duas sincronizações mantém o último dos dois.
+ * É o preço de não carregar um carimbo por campo, e para um sistema de uma
+ * pessoa só ele é barato.
+ *
+ * O empate exato desempata pelo conteúdo, para a junção continuar comutativa —
+ * sem isso os dois aparelhos guardariam objetos diferentes e brigariam para
+ * sempre sobre qual é o mais novo.
+ */
 function preferenciasMaisNovas(a: Banco, b: Banco): Banco['preferencias'] {
-  const backupA = a.preferencias?.ultimoBackupEm;
-  const backupB = b.preferencias?.ultimoBackupEm;
-  if (backupA && backupB) return backupA >= backupB ? a.preferencias : b.preferencias;
-  return a.preferencias ?? b.preferencias;
+  const daqui = a.preferencias;
+  const dali = b.preferencias;
+  if (!daqui) return dali;
+  if (!dali) return daqui;
+
+  const carimboA = daqui.alteradoEm ?? '';
+  const carimboB = dali.alteradoEm ?? '';
+  if (carimboA !== carimboB) return carimboA > carimboB ? daqui : dali;
+
+  const textoA = JSON.stringify(daqui);
+  const textoB = JSON.stringify(dali);
+  return textoA <= textoB ? daqui : dali;
 }
 
 /**
