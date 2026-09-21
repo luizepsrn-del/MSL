@@ -25,7 +25,11 @@
  * devolve o que foi ignorado, para a tela poder dizer em vez de calar.
  */
 
-import { somarDias, diasNoMes, diaDaSemana, distanciaEmDias } from './rotina';
+// Com `.ts`: este módulo é alcançável a partir de `api/`, e a Vercel não
+// adivinha a extensão que falta — foi assim que as funções caíram em produção
+// uma vez. O teste em `api.test.ts` cobra isto carregando cada função em Node
+// puro, e foi ele que pegou.
+import { somarDias, diasNoMes, diaDaSemana, distanciaEmDias } from './rotina.ts';
 
 export const FUSO_PADRAO = 'America/Sao_Paulo';
 

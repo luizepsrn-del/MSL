@@ -27,6 +27,11 @@ const FUNCOES = readdirSync('api')
 const METODOS: Record<string, string[]> = {
   'cadastro.ts': ['POST'],
   'entrar.ts': ['POST'],
+  'google-callback.ts': ['GET'],
+  'google-conectar.ts': ['POST'],
+  'google-desconectar.ts': ['POST'],
+  'google-estado.ts': ['GET'],
+  'google-sincronizar.ts': ['POST'],
   'agenda.ts': ['POST'],
   'sair.ts': ['POST'],
   'saude.ts': ['GET'],
