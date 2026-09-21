@@ -323,7 +323,7 @@ describe('agenda de um intervalo', () => {
 
   it('dia sem nada continua no mapa, vazio', () => {
     const agenda = agendaDeIntervalo(bancoVazio(), '2026-09-13', '2026-09-19');
-    expect(agenda.get('2026-09-17')).toEqual({ rotinas: [], tarefas: [], lancamentos: [] });
+    expect(agenda.get('2026-09-17')).toEqual({ rotinas: [], tarefas: [], lancamentos: [], pecas: [] });
   });
 
   it('intervalo invertido é vazio, e não um laço infinito', () => {

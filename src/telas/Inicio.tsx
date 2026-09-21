@@ -254,7 +254,23 @@ export function Inicio() {
   const temTarefa = banco.tarefas.length > 0;
   const temProjeto = banco.projetos.length > 0;
 
-  if (!temRotina && !temTarefa && !temProjeto) {
+  /*
+   * "Nada cadastrado ainda" tem que ser verdade.
+   *
+   * A checagem olhava só rotina, tarefa e projeto, e ficou para trás quando o
+   * sistema ganhou metas, lançamentos e peças: quem só escrevesse abriria o
+   * Início vendo que não havia nada, com o seu texto guardado do lado. Percebi
+   * por um teste de ponta a ponta que criou só uma peça.
+   */
+  const bancoVazioDeVerdade =
+    !temRotina &&
+    !temTarefa &&
+    !temProjeto &&
+    banco.metas.length === 0 &&
+    banco.lancamentos.length === 0 &&
+    banco.pecas.length === 0;
+
+  if (bancoVazioDeVerdade) {
     return <PrimeiroUso />;
   }
 
@@ -1200,6 +1216,7 @@ function LinhaDoFoco({
     lancamento: '/app/financeiro',
     meta: '/app/metas',
     projeto: '/app/projetos',
+    peca: '/app/criacao',
   };
 
   /** O ícone do tipo, para quem não tem caixinha. */
@@ -1209,6 +1226,7 @@ function LinhaDoFoco({
     lancamento: 'wallet',
     meta: 'target',
     projeto: 'layers',
+    peca: 'pen-line',
   };
 
   const corpo = (

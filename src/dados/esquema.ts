@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 15;
+export const VERSAO_ESQUEMA = 16;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -364,6 +364,76 @@ export interface Marco extends Registro {
   quanto: number;
 }
 
+/* ── Criação ─────────────────────────────────────────────────────────────── */
+
+/**
+ * O que estou escrevendo.
+ *
+ * Um tipo só de registro para tudo — documento, post, carrossel, prompt,
+ * ideia. A alternativa seria cinco coleções quase iguais, e a primeira regra
+ * nova só chegaria a uma delas. O que muda entre os tipos é como o corpo é
+ * lido e o que a tela oferece, não o formato do que fica guardado.
+ */
+export const TIPOS_DE_PECA = [
+  'ideia',
+  'post',
+  'carrossel',
+  'documento',
+  'prompt',
+  'roteiro',
+] as const;
+
+export type TipoDePeca = (typeof TIPOS_DE_PECA)[number];
+
+export const ROTULO_TIPO_PECA: Record<TipoDePeca, string> = {
+  ideia: 'Ideia',
+  post: 'Post',
+  carrossel: 'Carrossel',
+  documento: 'Documento',
+  prompt: 'Prompt',
+  roteiro: 'Roteiro',
+};
+
+/**
+ * Em que pé está.
+ *
+ * Quatro estados, e o último é **publicado** e não "feito": o que importa numa
+ * peça é ela ter saído, não eu ter parado de mexer nela.
+ */
+export const ESTADOS_DA_PECA = ['semente', 'rascunho', 'pronto', 'publicado'] as const;
+
+export type EstadoDaPeca = (typeof ESTADOS_DA_PECA)[number];
+
+export const ROTULO_ESTADO_PECA: Record<EstadoDaPeca, string> = {
+  semente: 'Semente',
+  rascunho: 'Rascunho',
+  pronto: 'Pronto',
+  publicado: 'Publicado',
+};
+
+export interface Peca extends Registro {
+  titulo: string;
+  tipo: TipoDePeca;
+  estado: EstadoDaPeca;
+  contexto: Contexto;
+  /**
+   * O texto.
+   *
+   * No carrossel, os slides vêm separados por uma linha com `---`, como no
+   * Markdown. É uma convenção e não um campo: assim o mesmo editor serve todos
+   * os tipos, e mudar de post para carrossel não perde nada do que eu escrevi.
+   */
+  corpo: string;
+  /** palavras minhas para achar depois; sem hierarquia, sem catálogo fixo */
+  etiquetas?: string[];
+  /** data local `AAAA-MM-DD` em que pretendo publicar */
+  publicarEm?: string;
+  /** ISO UTC do momento em que saiu; ausente enquanto não saiu */
+  publicadoEm?: string;
+  /** projeto a que pertence, ou ausente */
+  projetoId?: string;
+}
+
 /* ── Regras ──────────────────────────────────────────────────────────────── */
 
 /**
@@ -499,6 +569,7 @@ export interface Banco {
   marcos: Marco[];
   modelos: Modelo[];
   regras: Regra[];
+  pecas: Peca[];
   preferencias?: Preferencias;
   /** o que foi apagado, para a junção entre aparelhos não ressuscitar nada */
   removidos?: Removido[];
@@ -514,6 +585,7 @@ export const COLECOES = [
   'marcos',
   'modelos',
   'regras',
+  'pecas',
 ] as const;
 export type NomeColecao = (typeof COLECOES)[number];
 
@@ -534,6 +606,7 @@ export const ROTULO_COLECAO: Record<NomeColecao, [string, string]> = {
   marcos: ['marco', 'marcos'],
   modelos: ['modelo', 'modelos'],
   regras: ['regra', 'regras'],
+  pecas: ['peça', 'peças'],
 };
 
 /** `1 rotina`, `25 execuções` — o número e o nome concordando. */
@@ -554,6 +627,7 @@ export function bancoVazio(): Banco {
     marcos: [],
     modelos: [],
     regras: [],
+    pecas: [],
     removidos: [],
   };
 }

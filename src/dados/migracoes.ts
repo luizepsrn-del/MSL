@@ -159,6 +159,19 @@ export const MIGRACOES: Record<number, Migracao> = {
     regras: Array.isArray(dados.regras) ? dados.regras : [],
     versao: 15,
   }),
+
+  /**
+   * 15 → 16: o pilar Criação.
+   *
+   * Coleção nova, começa vazia. Um tipo só de registro para documento, post,
+   * carrossel, prompt e ideia — cinco coleções quase iguais divergiriam na
+   * primeira regra nova que só uma delas recebesse.
+   */
+  15: (dados) => ({
+    ...dados,
+    pecas: Array.isArray(dados.pecas) ? dados.pecas : [],
+    versao: 16,
+  }),
 };
 
 export class ErroDeMigracao extends Error {

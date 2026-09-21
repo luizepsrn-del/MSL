@@ -1,4 +1,4 @@
-import type { Banco, Rotina, Tarefa, Contexto } from '../dados/esquema';
+import type { Banco, Rotina, Tarefa, Peca, Contexto } from '../dados/esquema';
 import {
   deveOcorrerEm,
   diaDaSemana,
@@ -74,9 +74,11 @@ export interface ItensDoDia {
   tarefas: Tarefa[];
   /** lançamentos com data neste dia, já incluindo as repetições dos recorrentes */
   lancamentos: Ocorrencia[];
+  /** o que eu marquei para publicar neste dia */
+  pecas: Peca[];
 }
 
-const DIA_VAZIO = (): ItensDoDia => ({ rotinas: [], tarefas: [], lancamentos: [] });
+const DIA_VAZIO = (): ItensDoDia => ({ rotinas: [], tarefas: [], lancamentos: [], pecas: [] });
 
 /**
  * O que acontece em cada dia de um intervalo, num passo só.
@@ -101,6 +103,7 @@ export function agendaDeIntervalo(banco: Banco, de: string, ate: string): Map<st
         .map((rotina) => ({ rotina, feita: foiFeita(banco.execucoes, rotina.id, dia) })),
       tarefas: [],
       lancamentos: [],
+      pecas: [],
     });
   }
 
@@ -109,6 +112,11 @@ export function agendaDeIntervalo(banco: Banco, de: string, ate: string): Map<st
   }
   for (const o of ocorrenciasEntre(banco, de, ate)) {
     mapa.get(o.data)?.lancamentos.push(o);
+  }
+  // O que eu escrevi e marquei para sair. É o que amarra a Criação à rotina:
+  // um post com data é compromisso, e não anotação guardada num caderno.
+  for (const peca of banco.pecas) {
+    if (peca.publicarEm) mapa.get(peca.publicarEm)?.pecas.push(peca);
   }
 
   return mapa;
@@ -123,6 +131,8 @@ export interface ResumoDoDia {
   rotinasFeitas: number;
   tarefas: number;
   lancamentos: number;
+  /** peças marcadas para publicar neste dia */
+  pecas: number;
   /** soma dos lançamentos do dia, em centavos, com sinal */
   saldo: number;
   /** alguma tarefa com prazo neste dia continua pendente e o dia já passou */
@@ -132,15 +142,20 @@ export interface ResumoDoDia {
 
 /** Resume um dia já apurado, sem voltar ao banco. */
 export function resumirDia(itens: ItensDoDia, hoje: string): ResumoDoDia {
-  const { rotinas, tarefas, lancamentos } = itens;
+  const { rotinas, tarefas, lancamentos, pecas } = itens;
   return {
     rotinas: rotinas.length,
     rotinasFeitas: rotinas.filter((r) => r.feita).length,
     tarefas: tarefas.length,
     lancamentos: lancamentos.length,
+    pecas: pecas.length,
     saldo: lancamentos.reduce((t, o) => t + efeitoDaOcorrencia(o), 0),
     temAtraso: tarefas.some((t) => situacao(t, hoje) === 'atrasada'),
-    vazio: rotinas.length === 0 && tarefas.length === 0 && lancamentos.length === 0,
+    vazio:
+      rotinas.length === 0 &&
+      tarefas.length === 0 &&
+      lancamentos.length === 0 &&
+      pecas.length === 0,
   };
 }
 
@@ -253,12 +268,13 @@ export function filtrarDia(itens: ItensDoDia, filtro: FiltroCalendario): ItensDo
       (t) => doContexto(t) && (!filtro.esconderFeitos || !t.concluidaEm),
     ),
     lancamentos: itens.lancamentos.filter((o) => doContexto(o.lancamento)),
+    pecas: itens.pecas.filter((p) => doContexto(p) && (!filtro.esconderFeitos || !p.publicadoEm)),
   };
 }
 
 /* ── A agenda de um dia, em linha ────────────────────────────────────────── */
 
-export type TipoDeItem = 'evento' | 'rotina' | 'tarefa' | 'lancamento';
+export type TipoDeItem = 'evento' | 'rotina' | 'tarefa' | 'lancamento' | 'peca';
 
 export interface ItemDaAgenda {
   /** único dentro do dia */
@@ -333,6 +349,15 @@ export function agendaEmLinha(
       feito: !!t.concluidaEm,
       id: t.id,
     })),
+    ...itens.pecas.map((p) => ({
+      chave: `peca:${p.id}`,
+      tipo: 'peca' as const,
+      titulo: p.titulo,
+      contexto: p.contexto,
+      feito: !!p.publicadoEm,
+      id: p.id,
+      detalhe: p.publicadoEm ? 'publicado' : 'para publicar',
+    })),
     ...itens.lancamentos.map((o) => ({
       chave: `lancamento:${o.lancamento.id}@${o.data}`,
       tipo: 'lancamento' as const,
@@ -348,7 +373,13 @@ export function agendaEmLinha(
   // O evento externo vem primeiro no empate: é o único item que tem hora
   // marcada com outra pessoa do outro lado. A ordem relativa dos outros três
   // não mudou — mexer nela quebraria o que já estava provado.
-  const peso: Record<TipoDeItem, number> = { evento: 0, rotina: 1, tarefa: 2, lancamento: 3 };
+  const peso: Record<TipoDeItem, number> = {
+    evento: 0,
+    rotina: 1,
+    tarefa: 2,
+    peca: 3,
+    lancamento: 4,
+  };
   return lista.sort((a, b) => {
     const porHora = compararHora(a.hora, b.hora);
     if (porHora !== 0) return porHora;
@@ -388,9 +419,12 @@ export function linhaDoTempo(
   const linha: DiaDaLinha[] = [];
   for (let i = 0; i < dias; i++) {
     const dia = somarDias(de, i);
-    const doDia = filtrarDia(agenda.get(dia) ?? { rotinas: [], tarefas: [], lancamentos: [] }, filtro);
+    const doDia = filtrarDia(agenda.get(dia) ?? DIA_VAZIO(), filtro);
     const itens = incluirRotinas ? doDia : { ...doDia, rotinas: [] };
-    if (itens.rotinas.length + itens.tarefas.length + itens.lancamentos.length > 0) {
+    if (
+      itens.rotinas.length + itens.tarefas.length + itens.lancamentos.length + itens.pecas.length >
+      0
+    ) {
       linha.push({ dia, itens });
     }
   }

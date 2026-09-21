@@ -14,6 +14,7 @@ import {
   type Marco,
   type Modelo,
   type Regra,
+  type Peca,
   type EstadoTarefa,
   type Preferencias,
 } from './esquema';
@@ -33,6 +34,7 @@ import { validarMeta } from '../dominio/meta';
 import { proximaOcorrencia, aoPular } from '../dominio/repeticao';
 import { aplicarModelo, modeloDeProjeto, validarModelo } from '../dominio/modelo';
 import { oQueAsRegrasQuerem, aplicarEfeitos, validarRegra } from '../dominio/regra';
+import { validarPeca } from '../dominio/criacao';
 
 /**
  * O banco, disponível para as telas.
@@ -102,6 +104,11 @@ interface Acoes {
    * deixaria uma tela velha escrever com base no que já mudou.
    */
   aplicarRegras(chaves: readonly string[]): Promise<void>;
+  criarPeca(dados: Omit<Peca, keyof BaseRegistro>): Promise<void>;
+  editarPeca(id: string, mudanca: Edicao<Peca>): Promise<void>;
+  removerPeca(id: string): Promise<void>;
+  /** carimba a saída: publicar é uma decisão, não um campo qualquer */
+  publicarPeca(id: string): Promise<void>;
   /** grava o que eu escolhi sobre a interface; viaja no backup */
   definirPreferencias(mudanca: Partial<Preferencias>): Promise<void>;
   exportar(): Promise<string>;
@@ -553,6 +560,43 @@ export function ProvedorBanco({
         const escolhidos = querem.filter((e) => chaves.includes(e.chave));
         if (escolhidos.length === 0) return;
         await gravar(aplicarEfeitos(banco, escolhidos, agora(), novoId));
+      },
+
+      async criarPeca(dados) {
+        validarPeca(dados);
+        const t = agora();
+        const peca: Peca = { ...dados, id: novoId(), criadoEm: t, alteradoEm: t };
+        await gravar({ ...banco, pecas: [...banco.pecas, peca] });
+      },
+
+      async editarPeca(id, mudanca) {
+        const atual = banco.pecas.find((p) => p.id === id);
+        if (atual) validarPeca({ ...atual, ...mudanca } as Peca);
+        await gravar({ ...banco, pecas: editarNaLista(banco.pecas, id, mudanca, agora()) });
+      },
+
+      async removerPeca(id) {
+        const { lista, removidos } = removerRegistro(banco, 'pecas', banco.pecas, id, agora());
+        await gravar({ ...banco, pecas: lista, removidos });
+      },
+
+      async publicarPeca(id) {
+        const t = agora();
+        await gravar({
+          ...banco,
+          pecas: banco.pecas.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  // Desmarcar apaga o instante, como em `concluidaEm`:
+                  // "publicado" é a existência da marca, não um booleano.
+                  publicadoEm: p.publicadoEm ? undefined : t,
+                  estado: p.publicadoEm ? 'pronto' : 'publicado',
+                  alteradoEm: t,
+                }
+              : p,
+          ),
+        });
       },
 
       exportar: () => repo.exportar(),

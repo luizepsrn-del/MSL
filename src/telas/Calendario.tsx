@@ -386,6 +386,7 @@ export function Calendario() {
           {eventosDe(selecionado).length === 0 &&
           detalhe.rotinas.length === 0 &&
           detalhe.tarefas.length === 0 &&
+          detalhe.pecas.length === 0 &&
           detalhe.lancamentos.length === 0 ? (
             <p
               style={{
@@ -454,6 +455,21 @@ export function Calendario() {
                       feita={situacao(t, hoje) === 'concluida'}
                       atrasada={situacao(t, hoje) === 'atrasada'}
                       aoAlternar={() => alternarTarefa(t.id)}
+                    />
+                  ))}
+                </Secao>
+              )}
+
+              {detalhe.pecas.length > 0 && (
+                <Secao titulo="Para publicar">
+                  {detalhe.pecas.map((p) => (
+                    <Linha
+                      key={p.id}
+                      icone="pen-line"
+                      titulo={p.titulo}
+                      detalhe={p.publicadoEm ? 'publicado' : 'ainda não saiu'}
+                      contexto={p.contexto}
+                      feita={!!p.publicadoEm}
                     />
                   ))}
                 </Secao>
@@ -794,6 +810,16 @@ function Celula({
             }}
           />
         )}
+        {resumo.pecas > 0 && (
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: 'var(--chart-5)',
+            }}
+          />
+        )}
         {resumo.lancamentos > 0 && (
           <span
             style={{
@@ -956,7 +982,8 @@ function VistaSemana({
           eventos.length === 0 &&
           itens.rotinas.length === 0 &&
           itens.tarefas.length === 0 &&
-          itens.lancamentos.length === 0;
+          itens.lancamentos.length === 0 &&
+          itens.pecas.length === 0;
 
         return (
           <button
@@ -1037,6 +1064,14 @@ function VistaSemana({
                     riscado={!!t.concluidaEm}
                   />
                 ))}
+                {itens.pecas.map((p) => (
+                  <ItemDaSemana
+                    key={p.id}
+                    texto={p.titulo}
+                    cor="var(--chart-5)"
+                    riscado={!!p.publicadoEm}
+                  />
+                ))}
                 {itens.lancamentos.map((o) => (
                   <ItemDaSemana
                     key={`${o.lancamento.id}@${o.data}`}
@@ -1095,6 +1130,7 @@ function ItemDaSemana({
 const ICONE_DO_TIPO: Record<ItemDaAgenda['tipo'], string> = {
   evento: 'calendar',
   rotina: 'repeat',
+  peca: 'pen-line',
   tarefa: 'clipboard-check',
   lancamento: 'wallet',
 };
@@ -1180,7 +1216,7 @@ function VistaDia({
                 <Icon name={ICONE_DO_TIPO[item.tipo]} size={16} />
               </span>
 
-              {item.tipo === 'lancamento' || item.tipo === 'evento' ? (
+              {item.tipo === 'lancamento' || item.tipo === 'evento' || item.tipo === 'peca' ? (
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <TituloDoItem titulo={item.titulo} feito={false} />
                   {item.detalhe && (

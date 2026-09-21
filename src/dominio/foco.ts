@@ -5,6 +5,8 @@ import { projetosQuePedemAtencao } from './projeto';
 import { metasEmCurso } from './meta';
 import { ocorrenciasEntre } from './financeiro';
 import { compararHora } from './calendario';
+import { pecasDeHoje } from './criacao';
+import { distanciaEmDias } from './rotina';
 
 /**
  * O que precisa de mim agora.
@@ -28,7 +30,7 @@ import { compararHora } from './calendario';
  * agora" com quarenta itens é uma lista de tudo, e volta a ser um painel.
  */
 
-export type TipoDoFoco = 'tarefa' | 'rotina' | 'lancamento' | 'meta' | 'projeto';
+export type TipoDoFoco = 'tarefa' | 'rotina' | 'lancamento' | 'meta' | 'projeto' | 'peca';
 
 export interface ItemDoFoco {
   /** único na lista */
@@ -91,6 +93,26 @@ export function precisaDeVoce(banco: Banco, hoje: string, limite = LIMITE_DO_FOC
         marcavel: true,
       });
     }
+  }
+
+  /* Faixa 0 e 3: o que eu escrevi e ainda não saiu.
+     Na mesma faixa da tarefa, e não numa própria: uma peça que devia ter
+     saído ontem cobra exatamente como uma tarefa vencida ontem, e separá-las
+     faria a fila mentir sobre o que é mais urgente. */
+  for (const peca of pecasDeHoje(banco, hoje)) {
+    const dias = distanciaEmDias(peca.publicarEm!, hoje);
+    itens.push({
+      chave: `peca:${peca.id}`,
+      tipo: 'peca',
+      id: peca.id,
+      titulo: peca.titulo,
+      motivo: dias > 0 ? `Devia ter saído há ${plural(dias, 'dia', 'dias')}` : 'Sai hoje',
+      contexto: peca.contexto,
+      faixa: dias > 0 ? -dias / 10_000 : 3,
+      // Publicar é uma decisão, não uma caixinha: marcar daqui diria que saiu
+      // sem que nada tivesse saído.
+      marcavel: false,
+    });
   }
 
   /* Faixa 1 e 4: a rotina de hoje que ainda não foi cumprida. */

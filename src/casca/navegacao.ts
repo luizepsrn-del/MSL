@@ -57,6 +57,12 @@ export const PILARES: Pilar[] = [
     subtitulo: 'Entradas, saídas e o saldo previsto',
   },
   {
+    id: 'criacao',
+    rotulo: 'Criação',
+    icone: 'pen-line',
+    subtitulo: 'Documentos, posts, carrosséis, prompts e ideias',
+  },
+  {
     id: 'metas',
     rotulo: 'Metas',
     icone: 'target',

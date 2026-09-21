@@ -20,6 +20,7 @@ import { Calendario } from '../telas/Calendario';
 import { Projetos } from '../telas/Projetos';
 import { Financeiro } from '../telas/Financeiro';
 import { Metas } from '../telas/Metas';
+import { Criacao } from '../telas/Criacao';
 import { Agente } from '../telas/Agente';
 import { Regras } from '../telas/Regras';
 import { Ajustes } from '../telas/Ajustes';
@@ -83,6 +84,8 @@ function Conteudo({ pilar }: { pilar: Pilar }) {
       return <Financeiro />;
     case 'metas':
       return <Metas />;
+    case 'criacao':
+      return <Criacao />;
     case 'pedir':
       return <Agente />;
     case 'regras':
