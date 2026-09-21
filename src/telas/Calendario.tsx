@@ -46,6 +46,7 @@ import {
 } from '../formato';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 import { useAgendaExterna } from '../dados/agendaExterna';
+import { useGoogle } from '../dados/google';
 import { eventosDoDia } from '../dominio/ical';
 
 /**
@@ -114,9 +115,17 @@ export function Calendario() {
 
   // A agenda do Google, na mesma janela. Ela não entra no banco: é de outro
   // sistema, e guardá-la criaria uma cópia que envelhece.
-  const externa = useAgendaExterna(janela[0], janela[1]);
+  //
+  // Dois caminhos, e o com login ganha: quem conectou não deve ver os mesmos
+  // compromissos duas vezes só porque a assinatura antiga continuava ligada.
+  const google = useGoogle(janela[0], janela[1]);
+  const assinatura = useAgendaExterna(janela[0], janela[1]);
   const eventosDe = (dia: string) =>
-    externa.agenda ? eventosDoDia(externa.agenda, dia) : [];
+    google.conectado
+      ? google.eventos.filter((e) => e.dia === dia)
+      : assinatura.agenda
+        ? eventosDoDia(assinatura.agenda, dia)
+        : [];
 
   // O dia escolhido pode cair fora da janela enquanto eu navego; aí vale
   // perguntar direto, em vez de mostrar um dia vazio que não é vazio.
@@ -207,7 +216,11 @@ export function Calendario() {
         </div>
       </Card>
 
-      <EstadoDaAgenda assinada={!!banco.preferencias?.agendaExterna?.url} externa={externa} />
+      <EstadoDaAgenda
+        assinada={!!banco.preferencias?.agendaExterna?.url}
+        externa={assinatura}
+        google={google}
+      />
 
       <div
         style={{
@@ -401,7 +414,7 @@ export function Calendario() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
               {eventosDe(selecionado).length > 0 && (
-                <Secao titulo="Agenda do Google">
+                <Secao titulo="Da agenda do Google">
                   {eventosDe(selecionado).map((e) => (
                     <Linha
                       key={e.chave}
@@ -610,10 +623,15 @@ export function Calendario() {
 function EstadoDaAgenda({
   assinada,
   externa,
+  google,
 }: {
   assinada: boolean;
   externa: ReturnType<typeof useAgendaExterna>;
+  google: ReturnType<typeof useGoogle>;
 }) {
+  // Conectado pelo login: a barra fala do Google, e a assinatura antiga não
+  // aparece mais — ela deixou de ser a fonte.
+  if (google.conectado) return <EstadoDoGoogle google={google} />;
   if (!assinada) return null;
 
   const avisos = externa.agenda?.avisos ?? [];
@@ -692,6 +710,79 @@ function EstadoDaAgenda({
           onClick={externa.atualizarAgora}
         >
           Atualizar
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * A barra da agenda conectada por login.
+ *
+ * Diz o que foi escrito no Google na última rodada — criar um evento na agenda
+ * de alguém sem contar é o tipo de automação que assusta.
+ */
+function EstadoDoGoogle({ google }: { google: ReturnType<typeof useGoogle> }) {
+  const escritos = google.escritos;
+  const mexeu = escritos ? escritos.criados + escritos.atualizados + escritos.apagados : 0;
+
+  const partes: string[] = [];
+  if (escritos && escritos.criados > 0) partes.push(`${escritos.criados} criado${escritos.criados > 1 ? 's' : ''}`);
+  if (escritos && escritos.atualizados > 0) partes.push(`${escritos.atualizados} atualizado${escritos.atualizados > 1 ? 's' : ''}`);
+  if (escritos && escritos.apagados > 0) partes.push(`${escritos.apagados} apagado${escritos.apagados > 1 ? 's' : ''}`);
+
+  return (
+    <Card>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-6)', flexWrap: 'wrap' }}>
+        <span
+          style={{
+            color: google.erro ? 'var(--orange-500)' : 'var(--green-500)',
+            display: 'flex',
+            flex: '0 0 auto',
+          }}
+        >
+          <Icon name={google.erro ? 'alert-triangle' : 'refresh-cw'} size={20} />
+        </span>
+
+        <span style={{ flex: '1 1 var(--grid-min)', minWidth: 0 }}>
+          <span
+            style={{
+              display: 'block',
+              font: 'var(--fw-medium) var(--fs-md)/1.3 var(--font-core)',
+              color: 'var(--text-heading)',
+            }}
+          >
+            Google Agenda, nos dois sentidos
+          </span>
+          <span
+            style={{
+              display: 'block',
+              font: 'var(--type-body)',
+              color: google.erro ? 'var(--orange-500)' : 'var(--text-muted)',
+              marginTop: 'var(--sp-3)',
+              lineHeight: 'var(--lh-normal)',
+            }}
+          >
+            {google.erro
+              ? google.erro
+              : google.sincronizando
+                ? 'Sincronizando…'
+                : google.sincronizadoEm
+                  ? `Sincronizado ${formatarDataRelativa(new Date(google.sincronizadoEm))}${
+                      mexeu > 0 ? ` · ${partes.join(', ')} lá` : ''
+                    }`
+                  : 'Ainda não sincronizado'}
+          </span>
+        </span>
+
+        <Button
+          variant={google.erro ? 'primary' : 'secondary'}
+          size="sm"
+          iconLeft="refresh-cw"
+          disabled={google.sincronizando}
+          onClick={google.sincronizarAgora}
+        >
+          Sincronizar
         </Button>
       </div>
     </Card>

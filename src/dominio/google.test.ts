@@ -8,6 +8,7 @@ import {
   lerChave,
   MARCA,
   MINUTOS_PADRAO,
+  eventosParaTela,
   type EventoDoGoogle,
   type ItemParaEspelhar,
 } from './google';
@@ -270,5 +271,104 @@ describe('o plano', () => {
     // no meio — e o que falta é sempre pior de perceber que o que sobra.
     const plano = planejar([item({ chave: 'tarefa:novo' })], [evento()], OPCOES);
     expect(plano.empurrar.map((p) => p.tipo)).toEqual(['criar', 'apagar']);
+  });
+});
+
+describe('traduzir para o calendário', () => {
+  const AJUDA = {
+    somarDias,
+    distanciaEmDias: (a: string, b: string) =>
+      Math.round(
+        (Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000,
+      ),
+    paraLocal: OPCOES.paraLocal,
+  };
+
+  const naTela = (eventos: EventoDoGoogle[], de = '2026-09-01', ate = '2026-09-30') =>
+    eventosParaTela(eventos, de, ate, AJUDA);
+
+  it('dia inteiro de um dia só aparece uma vez', () => {
+    expect(naTela([evento({ extendedProperties: undefined })]).map((e) => e.dia)).toEqual([
+      '2026-09-17',
+    ]);
+  });
+
+  it('evento de vários dias aparece em cada dia, sem o último', () => {
+    // O fim de um evento de dia inteiro é exclusivo: 17 a 20 são três dias.
+    const viagem = evento({
+      extendedProperties: undefined,
+      summary: 'Viagem',
+      start: { date: '2026-09-17' },
+      end: { date: '2026-09-20' },
+    });
+    expect(naTela([viagem]).map((e) => e.dia)).toEqual([
+      '2026-09-17',
+      '2026-09-18',
+      '2026-09-19',
+    ]);
+  });
+
+  it('recorta na janela', () => {
+    const ferias = evento({
+      extendedProperties: undefined,
+      start: { date: '2026-08-28' },
+      end: { date: '2026-09-05' },
+    });
+    expect(naTela([ferias]).map((e) => e.dia)).toEqual([
+      '2026-09-01',
+      '2026-09-02',
+      '2026-09-03',
+      '2026-09-04',
+    ]);
+  });
+
+  it('com hora traz o fim do mesmo dia', () => {
+    const consulta = evento({
+      extendedProperties: undefined,
+      summary: 'Dentista',
+      location: 'Rua das Flores',
+      start: { dateTime: '2026-09-17T17:00:00Z' },
+      end: { dateTime: '2026-09-17T18:00:00Z' },
+    });
+    expect(naTela([consulta])[0]).toMatchObject({
+      titulo: 'Dentista',
+      dia: '2026-09-17',
+      hora: '14:00',
+      fim: '15:00',
+      local: 'Rua das Flores',
+      diaInteiro: false,
+    });
+  });
+
+  it('o cancelado não aparece', () => {
+    expect(naTela([evento({ extendedProperties: undefined, status: 'cancelled' })])).toEqual([]);
+  });
+
+  it('evento sem título ganha um rótulo em vez de sumir', () => {
+    expect(naTela([evento({ extendedProperties: undefined, summary: '  ' })])[0].titulo).toBe(
+      '(sem título)',
+    );
+  });
+
+  it('cada dia tem chave própria, para o React não reclamar', () => {
+    const viagem = evento({
+      extendedProperties: undefined,
+      start: { date: '2026-09-17' },
+      end: { date: '2026-09-20' },
+    });
+    const chaves = naTela([viagem]).map((e) => e.chave);
+    expect(new Set(chaves).size).toBe(3);
+  });
+
+  it('a ordem é por dia, com dia inteiro antes do que tem hora', () => {
+    const tarde = evento({ id: 'a', extendedProperties: undefined, summary: 'Tarde', start: { dateTime: '2026-09-17T18:00:00Z' }, end: undefined });
+    const feriado = evento({ id: 'b', extendedProperties: undefined, summary: 'Feriado' });
+    const manha = evento({ id: 'c', extendedProperties: undefined, summary: 'Manhã', start: { dateTime: '2026-09-17T12:00:00Z' }, end: undefined });
+
+    expect(naTela([tarde, feriado, manha]).map((e) => e.titulo)).toEqual([
+      'Feriado',
+      'Manhã',
+      'Tarde',
+    ]);
   });
 });

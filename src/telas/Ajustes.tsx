@@ -21,6 +21,8 @@ import {
 import { limparCache } from '../dados/agendaExterna';
 import { JORNADA_PADRAO } from '../dominio/plano';
 import { horaValida } from '../dominio/calendario';
+import { useGoogle } from '../dados/google';
+import { diaLocal } from '../dados/esquema';
 
 /**
  * Ajustes — e o backup, que é o que realmente importa aqui.
@@ -213,6 +215,8 @@ export function Ajustes() {
         atual={banco.preferencias?.jornada ?? JORNADA_PADRAO}
         aoSalvar={(jornada) => definirPreferencias({ jornada })}
       />
+
+      <ContaDoGoogle />
 
       <AgendaDoGoogle
         atual={banco.preferencias?.agendaExterna?.url ?? ''}
@@ -463,6 +467,95 @@ function AJornada({
 }
 
 /**
+ * Conectar o Google com login — os dois sentidos.
+ *
+ * O que sai daqui para lá: tarefa com prazo e peça com data de publicar.
+ * Rotina não, de propósito: a agenda viraria a rotina inteira.
+ */
+function ContaDoGoogle() {
+  const google = useGoogle(hojeLocal(), hojeLocal());
+
+  return (
+    <Card
+      title="Google Agenda"
+      subtitle={google.conectado ? 'Conectada, nos dois sentidos' : 'Não conectada'}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-8)' }}>
+        <p style={{ font: 'var(--type-body)', color: 'var(--text-muted)', lineHeight: 'var(--lh-normal)' }}>
+          {google.conectado ? (
+            <>
+              O que você criar no Google aparece no calendário daqui, e as{' '}
+              <strong>tarefas com prazo</strong> e as <strong>peças com data de publicar</strong>{' '}
+              viram evento lá. Mover de um lado move do outro — vence quem mexeu por último.
+            </>
+          ) : (
+            <>
+              Para ligar nos dois sentidos é preciso criar uma credencial no Google Cloud, uma vez.
+              O passo a passo está em <code>docs/google-agenda.md</code>, no repositório. Leva uns
+              vinte e cinco minutos e não se repete.
+            </>
+          )}
+        </p>
+
+        {google.erro && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-6)' }}>
+            <span style={{ color: 'var(--orange-500)', display: 'flex', flex: '0 0 auto' }}>
+              <Icon name="alert-triangle" size={20} />
+            </span>
+            <span
+              style={{
+                font: 'var(--type-body)',
+                color: 'var(--orange-500)',
+                lineHeight: 'var(--lh-normal)',
+                minWidth: 0,
+              }}
+            >
+              {google.erro}
+            </span>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 'var(--sp-6)', flexWrap: 'wrap' }}>
+          {google.conectado ? (
+            <>
+              <Button
+                variant="secondary"
+                size="lg"
+                iconLeft="refresh-cw"
+                disabled={google.sincronizando}
+                onClick={google.sincronizarAgora}
+              >
+                Sincronizar agora
+              </Button>
+              <Button variant="ghost" size="lg" onClick={google.desconectar}>
+                Desconectar
+              </Button>
+            </>
+          ) : (
+            <Button variant="primary" size="lg" iconRight="arrow-right" onClick={google.conectar}>
+              Conectar
+            </Button>
+          )}
+        </div>
+
+        {google.conectado && (
+          <p style={{ font: 'var(--type-body)', color: 'var(--text-subtle)', lineHeight: 'var(--lh-normal)' }}>
+            A credencial fica no servidor, presa à sua conta — nunca no banco e nunca no arquivo
+            que você exporta. Desconectar apaga só ela: os eventos que o MSL criou ficam no seu
+            Google.
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/** O dia local de hoje, para o gancho pedir uma janela de um dia só. */
+function hojeLocal(): string {
+  return diaLocal(new Date());
+}
+
+/**
  * Assinar a agenda do Google.
  *
  * Só entra: os eventos do Google aparecem aqui, e o que eu crio aqui não vai
@@ -482,15 +575,29 @@ function AgendaDoGoogle({
 }) {
   const [texto, setTexto] = React.useState(atual);
   const [salvo, setSalvo] = React.useState(false);
+  const [aberto, setAberto] = React.useState(atual !== '');
 
   const mudou = texto.trim() !== atual;
   const pareceGoogle = texto.trim() === '' || /^https:\/\/calendar\.google\.com\//i.test(texto.trim());
 
   return (
     <Card
-      title="Agenda do Google"
-      subtitle={atual ? 'Os eventos aparecem no calendário' : 'Ainda não assinada'}
+      title="Só ler a agenda, sem login"
+      subtitle={atual ? 'Assinada pelo endereço secreto' : 'O caminho antigo, mais simples'}
+      action={
+        <Button variant="ghost" size="sm" onClick={() => setAberto((a) => !a)}>
+          {aberto ? 'Esconder' : 'Mostrar'}
+        </Button>
+      }
     >
+      {!aberto ? (
+        <p style={{ font: 'var(--type-body)', color: 'var(--text-subtle)', lineHeight: 'var(--lh-normal)' }}>
+          Traz os eventos do Google para cá sem criar credencial nenhuma, mas só num sentido. Se
+          você conectou com login acima, isto não é necessário — e o calendário ignora esta
+          assinatura enquanto a conexão estiver de pé, para não mostrar o mesmo compromisso duas
+          vezes.
+        </p>
+      ) : (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-8)' }}>
         <p
           style={{
@@ -575,6 +682,7 @@ function AgendaDoGoogle({
           )}
         </div>
       </div>
+      )}
     </Card>
   );
 }

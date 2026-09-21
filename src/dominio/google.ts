@@ -298,3 +298,93 @@ export function lerChave(chave: string): { tipo: 'tarefa' | 'peca'; id: string }
   if (tipo !== 'tarefa' && tipo !== 'peca') return null;
   return { tipo, id };
 }
+
+/* ── Para o calendário ───────────────────────────────────────────────────── */
+
+/**
+ * O que o calendário já sabe desenhar.
+ *
+ * É a mesma forma que o leitor de iCal produz, de propósito: assim a tela não
+ * precisa saber de onde o evento veio, e trocar a assinatura pelo endereço
+ * secreto pela conexão com login não mexe em nenhum componente.
+ */
+export interface EventoParaTela {
+  chave: string;
+  uid: string;
+  titulo: string;
+  dia: string;
+  hora?: string;
+  fim?: string;
+  local?: string;
+  diaInteiro: boolean;
+}
+
+/**
+ * Traduz os eventos do Google para a tela, recortando na janela.
+ *
+ * Evento de vários dias aparece em cada dia dele, como no leitor de iCal — e
+ * pelo mesmo motivo: um `DTEND` de dia inteiro é exclusivo, então uma viagem
+ * de 17 a 20 acontece em 17, 18 e 19.
+ */
+export function eventosParaTela(
+  eventos: readonly EventoDoGoogle[],
+  de: string,
+  ate: string,
+  ajuda: {
+    somarDias: (dia: string, dias: number) => string;
+    distanciaEmDias: (a: string, b: string) => number;
+    paraLocal: (iso: string) => { dia: string; hora: string };
+  },
+): EventoParaTela[] {
+  const saida: EventoParaTela[] = [];
+
+  for (const evento of eventos) {
+    if (evento.status === 'cancelled') continue;
+
+    const diaInteiro = !!evento.start?.date;
+    const inicio = quandoAcontece(evento, ajuda.paraLocal);
+    if (!inicio) continue;
+
+    const fim = diaInteiro
+      ? evento.end?.date
+      : evento.end?.dateTime
+        ? ajuda.paraLocal(evento.end.dateTime)
+        : undefined;
+
+    // Quantos dias ele ocupa. O fim exclusivo do dia inteiro é o que torna
+    // "17 a 20" três dias, e não quatro.
+    const duracao =
+      diaInteiro && typeof fim === 'string'
+        ? Math.max(ajuda.distanciaEmDias(inicio.dia, fim), 1)
+        : 1;
+
+    for (let n = 0; n < duracao; n++) {
+      const dia = ajuda.somarDias(inicio.dia, n);
+      if (dia < de || dia > ate) continue;
+
+      saida.push({
+        chave: `${evento.id}@${dia}`,
+        uid: evento.id,
+        titulo: evento.summary?.trim() || '(sem título)',
+        dia,
+        hora: inicio.hora,
+        // O fim só aparece quando é do mesmo dia: "14:00 – 09:00" confunde
+        // mais do que ajuda.
+        fim:
+          !diaInteiro && typeof fim === 'object' && fim?.dia === dia && duracao === 1
+            ? fim.hora
+            : undefined,
+        local: evento.location?.trim() || undefined,
+        diaInteiro,
+      });
+    }
+  }
+
+  return saida.sort((a, b) => {
+    if (a.dia !== b.dia) return a.dia < b.dia ? -1 : 1;
+    // Dia inteiro primeiro: ele é o pano de fundo do dia, não um horário.
+    if (a.diaInteiro !== b.diaInteiro) return a.diaInteiro ? -1 : 1;
+    if ((a.hora ?? '') !== (b.hora ?? '')) return (a.hora ?? '') < (b.hora ?? '') ? -1 : 1;
+    return a.chave < b.chave ? -1 : a.chave > b.chave ? 1 : 0;
+  });
+}
