@@ -44,6 +44,19 @@ test('o primeiro uso convida em vez de mostrar painel vazio', async ({ page }) =
   await expect(page.getByRole('link', { name: /Criar uma tarefa/ })).toBeVisible();
 });
 
+/**
+ * O cartão da fila, para o localizador não pegar o mesmo título duas vezes.
+ *
+ * O mesmo item aparece em "Precisa de você hoje" e em "O dia montado": um diz
+ * o quê, o outro diz quando. Os dois são úteis, então quem se ajusta é o
+ * teste.
+ */
+function fila(page: Page) {
+  return page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Precisa de você hoje' }) });
+}
+
 test('criar uma rotina e vê-la no Início', async ({ page }) => {
   const erros: string[] = [];
   page.on('pageerror', (e) => erros.push(String(e)));
@@ -56,9 +69,7 @@ test('criar uma rotina e vê-la no Início', async ({ page }) => {
   await expect(page.getByText('Todo dia').first()).toBeVisible();
 
   await page.goto('/app/inicio');
-  // `exact`: o título também aparece na linha "Não coube hoje" do cartão do
-  // dia montado, e sem isto o localizador pega dois elementos.
-  await expect(page.getByText('Ler 20 páginas', { exact: true })).toBeVisible();
+  await expect(fila(page).getByText('Ler 20 páginas', { exact: true })).toBeVisible();
   // Um indicador de 0 de 1 cumprida.
   // "0/1" aparece no indicador, no centro do donut e na barra de contexto:
   // escopar ao cartão que interessa, senão o localizador é ambíguo.
@@ -74,11 +85,11 @@ test('marcar como feita move o indicador e sobrevive ao recarregar', async ({ pa
   await criarRotina(page, 'Caminhar');
 
   await page.goto('/app/inicio');
-  await expect(page.getByText('Caminhar', { exact: true })).toBeVisible();
+  await expect(fila(page).getByText('Caminhar', { exact: true })).toBeVisible();
 
   // Clicar no título, que é o rótulo da caixa — como uma pessoa faz. A caixa
   // em si é visualmente escondida por design no componente.
-  await page.getByText('Caminhar', { exact: true }).click();
+  await fila(page).getByText('Caminhar', { exact: true }).click();
   // A fila esvazia e o indicador vira 100%. A frase é a do cartão "Precisa de
   // você hoje", que passou a ser onde a rotina do dia aparece.
   await expect(page.getByText('O dia está seu')).toBeVisible();
@@ -148,7 +159,7 @@ test('o Início funciona no iPhone', async ({ page }, info) => {
   await criarRotina(page, 'Alongar');
 
   await page.goto('/app/inicio');
-  await expect(page.getByText('Alongar', { exact: true })).toBeVisible();
+  await expect(fila(page).getByText('Alongar', { exact: true })).toBeVisible();
 
   const vazamento = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,
@@ -156,7 +167,7 @@ test('o Início funciona no iPhone', async ({ page }, info) => {
   expect(vazamento, 'sem rolagem horizontal').toBeLessThanOrEqual(0);
 
   // Marcar pelo toque, que é como eu vou usar de verdade.
-  await page.getByText('Alongar', { exact: true }).tap();
+  await fila(page).getByText('Alongar', { exact: true }).tap();
   await expect(page.getByText('O dia está seu')).toBeVisible();
 });
 

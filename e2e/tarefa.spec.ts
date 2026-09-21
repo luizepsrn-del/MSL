@@ -124,6 +124,19 @@ test('o formulário recusa tarefa sem nome', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Criar tarefa' })).toBeVisible();
 });
 
+/**
+ * O cartão da fila, para o localizador não pegar o mesmo título duas vezes.
+ *
+ * O mesmo item aparece em "Precisa de você hoje" e em "O dia montado": um diz
+ * o quê, o outro diz quando. Os dois são úteis, então quem se ajusta é o
+ * teste.
+ */
+function fila(page: Page) {
+  return page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Precisa de você hoje' }) });
+}
+
 test('o Início mostra o que vence e deixa marcar de lá', async ({ page }) => {
   const { ontem } = datas();
   await comecarLimpo(page);
@@ -133,13 +146,11 @@ test('o Início mostra o que vence e deixa marcar de lá', async ({ page }) => {
   await page.goto('/app/inicio');
   // A tarefa atrasada abre a fila, e leva o motivo junto.
   await expect(page.getByRole('heading', { name: 'Precisa de você hoje' })).toBeVisible();
-  // `exact`: o título também aparece na linha "Não coube hoje" do cartão do
-  // dia montado, e sem isto o localizador pega dois elementos.
-  await expect(page.getByText('Enviar a nota', { exact: true })).toBeVisible();
+  await expect(fila(page).getByText('Enviar a nota', { exact: true })).toBeVisible();
   await expect(page.getByText('Atrasada há 1 dia')).toBeVisible();
 
   // Marcar do Início tira da fila sem precisar ir à outra tela.
-  await page.getByText('Enviar a nota', { exact: true }).click();
+  await fila(page).getByText('Enviar a nota', { exact: true }).click();
   await expect(page.getByText('Enviar a nota')).toHaveCount(0);
   await expect(page.getByText('O dia está seu')).toBeVisible();
 });

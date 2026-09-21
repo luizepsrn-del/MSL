@@ -58,7 +58,7 @@ src/
   dados/               schema, migrations, repository seam, React context
   dominio/             the tested logic: rotina, tarefa, repeticao, calendario,
                        projeto, modelo, financeiro, meta, foco, plano, regra,
-                       criacao, ical, pedido, agente, preferencias
+                       criacao, ical, google, pedido, agente, preferencias
   telas/               one screen per pillar (Agente.tsx serves /app/pedir)
   formato/             pt-BR formatting — dates, money, sorting
   routes/Showcase.tsx  the /design-system showcase page
@@ -135,6 +135,24 @@ reading its test is how the system starts lying.
   system, and a stored copy ages: deleting the appointment in Google would
   leave the ghost here forever. Only the subscription address is stored, in
   preferences — and it is a password, so the Settings screen says so.
+- **The Google mirror's only link is a mark on the Google side.**
+  `extendedProperties.private.msl` holds `tarefa:<id>` or `peca:<id>`. No
+  schema field, no event id travelling between devices: two devices find the
+  same event by the mark and *update* instead of creating a second, and
+  deleting the Google account leaves no litter in the bank. An event without
+  the mark belongs to Google and is never touched.
+- **Two-way conflicts use the same rule as the device merge: last write wins.**
+  Google's `updated` against the record's `alteradoEm`. It works because the
+  comparison only runs when the content *differs* — writing to Google stamps a
+  newer `updated`, but by then both sides are equal and the plan is empty.
+- **What goes out to Google is decided on the client**, not the server: the
+  server receives title, day and hour and knows nothing about tasks or pieces.
+  Pending tasks with a deadline and unpublished pieces with a date. Never
+  routines — the calendar would become the whole routine. A completed task
+  stops being mirrored and the orphan-mirror rule deletes it from Google.
+- **The mirrored window is fixed (30 days back, 180 forward) and is not the
+  screen's window.** Paging to the next month would otherwise delete the
+  previous month's events, which left the view but not the life.
 - **Compare in percentage points, not percent.** Going from 50% to 58% is not
   an 8% rise, and calling it that makes the number lie in the flattering
   direction.
@@ -208,6 +226,21 @@ Two devices, one account, and the merge is the whole game.
 - **Per-method exports (`export const POST`)** in `api/`, never `export
   default`: with the default, Vercel may hand the Node objects instead of a
   `Request`, and the returned `Response` is ignored.
+- **Every module reachable from `api/` imports with the `.ts` extension.**
+  Vite guesses the missing one; Vercel does not, and the function dies with no
+  clue. `src/servidor/api.test.ts` boots real Node per function and catches it
+  — it caught `from './rotina'` inside the iCal reader on the way in.
+- **OAuth needs `access_type=offline` *and* `prompt=consent`.** Without the
+  first the access dies in an hour and never returns; without the second a
+  *re*-connection comes back with no refresh token, so the reconnection meant
+  to fix the access leaves it half broken. The refresh token is preserved when
+  a renewal arrives without one, which is the normal case.
+- **The OAuth `state` is server-generated, bound to the user and spent on
+  first check.** Without it someone could make your browser finish a flow they
+  started, and their calendar would be linked to your account.
+- **Google credentials live in Redis, never in the bank.** The bank rides in
+  the exported file and in the device sync; restoring a backup on a borrowed
+  device must not hand over someone's calendar.
 - The public address forces three things: only allow-listed e-mails may sign
   up (`EMAILS_PERMITIDOS`, and an empty list closes the door), a missing
   account answers exactly like a wrong password, and five wrong tries cool the
