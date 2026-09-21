@@ -135,15 +135,42 @@ export class ErroDoGoogle extends Error {
 
 const token = () => window.localStorage.getItem('msl-sessao');
 
-async function falar<T>(caminho: string, corpo?: unknown): Promise<T> {
+/**
+ * O método de cada rota, num lugar só.
+ *
+ * Existe porque o contrário já custou: o cliente mandava `POST` em
+ * `/api/google-estado`, que só exporta `GET`, e a resposta era 405. Os testes
+ * de ponta a ponta não pegaram porque a interceptação do Playwright responde a
+ * qualquer método — quem pegou foi a chamada ao endereço publicado.
+ *
+ * `src/servidor/api.test.ts` cobra o outro lado desta tabela: que cada função
+ * em `api/` exporte exatamente estes métodos.
+ */
+export const METODO: Record<string, 'GET' | 'POST'> = {
+  '/api/google-estado': 'GET',
+  '/api/google-conectar': 'POST',
+  '/api/google-sincronizar': 'POST',
+  '/api/google-desconectar': 'POST',
+};
+
+export async function falar<T>(
+  caminho: string,
+  corpo?: unknown,
+  buscar: typeof fetch = fetch,
+): Promise<T> {
   const acesso = token();
-  const resposta = await fetch(caminho, {
-    method: 'POST',
+  const metodo = METODO[caminho] ?? 'POST';
+  // `GET` com corpo é recusado pelo próprio `fetch`, e a rota de estado não
+  // precisa de nenhum.
+  const temCorpo = metodo !== 'GET';
+
+  const resposta = await buscar(caminho, {
+    method: metodo,
     headers: {
-      'Content-Type': 'application/json',
+      ...(temCorpo ? { 'Content-Type': 'application/json' } : {}),
       ...(acesso ? { Authorization: `Bearer ${acesso}` } : {}),
     },
-    body: JSON.stringify(corpo ?? {}),
+    body: temCorpo ? JSON.stringify(corpo ?? {}) : undefined,
   });
 
   const dados = (await resposta.json().catch(() => ({}))) as T & { mensagem?: string };
