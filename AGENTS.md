@@ -42,6 +42,14 @@ tests, and it does block. A fresh clone must opt in once:
 git config core.hooksPath .githooks
 ```
 
+**End-to-end runs against the built app**, not the dev server: `webServer`
+builds and serves `dist/`. Two reasons, and the second matters more. Vite's
+on-demand transforms buckled under 250 tests across two engines and WebKit
+started dying mid-run — `Target page, context or browser has been closed`, in
+different tests each time, while every spec passed alone. And it is what
+actually ships: this project has had two defects that only the published
+artefact revealed.
+
 End-to-end is deliberately not in the hook — it boots a server and would kill
 the habit of small commits. `git commit --no-verify` skips the gate for a
 draft.
