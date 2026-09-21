@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 /**
  * As superfícies que não podem quebrar.
@@ -22,6 +22,26 @@ test('a rota /app renderiza a casca', async ({ page }) => {
   expect(erros, 'nenhum erro de JavaScript').toEqual([]);
 });
 
+/**
+ * O menu está dentro da tela?
+ *
+ * Fechado, ele fica deslocado para fora pela esquerda (`translateX(-100%)`),
+ * então a caixa dele termina antes do zero.
+ *
+ * Antes isto se media por `toBeHidden()` num localizador por papel, que
+ * funcionava só porque o painel levava `aria-hidden` — o Playwright ignora
+ * quem tem esse atributo. Quando o `aria-hidden` virou `inert`, por causa de
+ * um defeito de foco de verdade, os dois testes quebraram sem que nada tivesse
+ * piorado: eles mediam o atributo, e não a posição. Agora medem a posição.
+ *
+ * (O `inert` **é** removido da árvore de acessibilidade pelos navegadores de
+ * verdade; o motor de papéis do Playwright é que ainda não modela isso.)
+ */
+async function menuNaTela(page: Page): Promise<boolean> {
+  const caixa = await page.getByRole('navigation').boundingBox();
+  return !!caixa && caixa.x + caixa.width > 1;
+}
+
 test('a casca serve o iPhone', async ({ page }, info) => {
   test.skip(info.project.name !== 'iphone', 'só interessa no iPhone');
 
@@ -43,22 +63,22 @@ test('a casca serve o iPhone', async ({ page }, info) => {
   expect(caixa.width, 'o título tem largura de verdade').toBeGreaterThan(40);
 
   // O rail de desktop não pode estar na tela do telefone.
-  await expect(page.getByRole('navigation')).toBeHidden();
+  await expect.poll(() => menuNaTela(page), { message: 'o menu apareceu sozinho' }).toBe(false);
 });
 
 test('a gaveta do iPhone abre, navega e fecha', async ({ page }, info) => {
   test.skip(info.project.name !== 'iphone', 'só interessa no iPhone');
 
   await page.goto('/app');
-  await expect(page.getByRole('navigation')).toBeHidden();
+  await expect.poll(() => menuNaTela(page), { message: 'começou aberto' }).toBe(false);
 
   await page.getByRole('button', { name: 'Abrir menu' }).tap();
-  await expect(page.getByRole('navigation')).toBeVisible();
+  await expect.poll(() => menuNaTela(page), { message: 'não abriu' }).toBe(true);
 
   await page.getByRole('button', { name: 'Financeiro' }).tap();
   await expect(page).toHaveURL(/\/app\/financeiro$/);
   await expect(page.getByRole('heading', { name: 'Financeiro', level: 1 })).toBeVisible();
-  await expect(page.getByRole('navigation')).toBeHidden();
+  await expect.poll(() => menuNaTela(page), { message: 'não fechou ao navegar' }).toBe(false);
 });
 
 test('nenhuma rota do produto vaza inglês na interface', async ({ page }) => {

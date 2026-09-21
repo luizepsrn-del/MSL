@@ -220,7 +220,11 @@ export interface MobileDrawerProps {
 export function MobileDrawer({ open, onClose, children }: MobileDrawerProps) {
   return (
     <div
-      aria-hidden={!open}
+      // `inert`, not `aria-hidden`: tapping a drawer item navigates *and*
+      // closes the drawer, so the tapped button still holds focus when the
+      // ancestor becomes hidden. Chrome blocks that and says so. `inert` both
+      // hides from assistive technology and drops the focus.
+      inert={!open}
       style={{
         position: 'absolute',
         inset: 0,

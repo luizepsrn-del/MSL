@@ -296,6 +296,15 @@ open session.
   already did not fit. There, use the reflowing grid DESIGN.md prescribes.
   The three style objects live in `src/casca/trilho.ts` — two copies of the
   rule is how it goes back to diverging.
+- **Hide a panel with `inert`, never `aria-hidden`.** Tapping an item in the
+  mobile drawer navigates *and* closes the drawer, so the tapped button still
+  holds focus when its ancestor becomes hidden — Chrome blocks that and logs
+  it. `aria-hidden` hides from assistive technology without removing
+  focusability, which strands keyboard and screen-reader users in a panel that,
+  for everyone else, is gone. `inert` does both. `e2e/acessibilidade.spec.ts`
+  guards it, **in Chromium at phone width**: the drawer only exists below
+  `--bp-desktop`, and in WebKit clicking a button does not even focus it, so
+  the first version of that test passed with the defect in place.
 - **A row with badges and buttons must wrap, or the text is crushed to one
   letter per line.** It happened twice: the Finance row when it got the pencil,
   and the task row when it got the skip button — photographed, with the title

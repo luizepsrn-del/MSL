@@ -266,9 +266,24 @@ function CascaMobile({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: strin
         <Conteudo pilar={pilar} />
       </main>
 
-      {/* Gaveta: o rail de 224px vira menu lateral, mesmas seções, mesmo ativo. */}
+      {/* Gaveta: o rail de 224px vira menu lateral, mesmas seções, mesmo ativo.
+
+          `inert`, e não `aria-hidden`.
+
+          Tocar num item da gaveta navega **e** fecha a gaveta — e o botão
+          tocado continua com o foco enquanto o pai vira escondido. Com
+          `aria-hidden` o Chrome recusa e registra no console: "Blocked
+          aria-hidden on an element because its descendant retained focus".
+          Ele tem razão: esconder da tecnologia assistiva algo que ainda pode
+          receber o foco deixa quem navega por teclado ou leitor de tela preso
+          num lugar que, para todo mundo, não existe mais.
+
+          `inert` faz as duas coisas — some da árvore de acessibilidade e tira
+          o foco de dentro. O `pointer-events` fica como rede: ele já era
+          necessário antes e continua protegendo o clique onde o `inert` não
+          chegar. */}
       <div
-        aria-hidden={!gaveta}
+        inert={!gaveta}
         style={{
           position: 'absolute',
           inset: 0,
