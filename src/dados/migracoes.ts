@@ -181,6 +181,20 @@ export const MIGRACOES: Record<number, Migracao> = {
    * comportamento certo para quem acabou de atualizar.
    */
   16: (dados) => ({ ...dados, versao: 17 }),
+
+  /**
+   * 17 → 18: os rótulos, as marcações de evento e a duração.
+   *
+   * Duas coleções novas, vazias, e dois campos opcionais que não precisam de
+   * valor: quem não declarar duração usa o bloco padrão da jornada, e quem não
+   * tiver rótulo continua contando só pelo contexto.
+   */
+  17: (dados) => ({
+    ...dados,
+    rotulos: Array.isArray(dados.rotulos) ? dados.rotulos : [],
+    marcacoes: Array.isArray(dados.marcacoes) ? dados.marcacoes : [],
+    versao: 18,
+  }),
 };
 
 export class ErroDeMigracao extends Error {

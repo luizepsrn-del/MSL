@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 17;
+export const VERSAO_ESQUEMA = 18;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -57,6 +57,9 @@ export interface Rotina extends Registro {
   arquivada: boolean;
   /** hora local `HH:MM` em que ela costuma acontecer, ou ausente */
   hora?: string;
+  /** quanto tempo ela toma, em minutos; sem isso, o bloco padrão da jornada */
+  duracao?: number;
+  rotuloId?: string;
 }
 
 /**
@@ -149,6 +152,17 @@ export interface Tarefa extends Registro {
    * pendência atrasada em vez de três.
    */
   repeticao?: RepeticaoDaTarefa;
+  /**
+   * Quanto tempo ela toma, em minutos.
+   *
+   * Opcional: quem não declarar nada usa o bloco padrão da jornada, como
+   * sempre foi. Existe porque sem ela "2h de reunião" e "15 min de e-mail"
+   * valem a mesma coisa em qualquer conta de carga horária — e porque o dia
+   * montado passa a reservar o tempo de verdade em vez de meia hora para tudo.
+   */
+  duracao?: number;
+  /** o rótulo livre, ao lado do contexto, que é fixo */
+  rotuloId?: string;
 }
 
 /* ── Projeto ─────────────────────────────────────────────────────────────── */
@@ -169,6 +183,61 @@ export interface Projeto extends Registro {
   prazo?: string;
   /** ISO UTC; arquivado some das listas sem perder o histórico */
   arquivadoEm?: string;
+}
+
+/* ── Rótulo ──────────────────────────────────────────────────────────────── */
+
+/**
+ * As cores que um rótulo pode ter.
+ *
+ * Só tokens que já existem — nenhum valor de cor escrito à mão, que é a regra
+ * do design system. São oito porque oito é o que se distingue de relance; com
+ * quinze, dois viram a mesma cor no gráfico.
+ */
+export const CORES_DE_ROTULO = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+  'var(--orange-500)',
+  'var(--green-500)',
+  'var(--blue-500)',
+] as const;
+
+export type CorDeRotulo = (typeof CORES_DE_ROTULO)[number];
+
+/**
+ * Um rótulo meu.
+ *
+ * É o eixo livre, ao lado do `contexto`, que é fixo. "Reunião com cliente",
+ * "Estudos", "Operação" — o que eu quiser medir, com o nome que eu uso.
+ *
+ * Os registros apontam para o **id**, e não para o nome: renomear um rótulo
+ * não pode obrigar a reescrever tudo que já foi marcado com ele.
+ */
+export interface Rotulo extends Registro {
+  nome: string;
+  cor: CorDeRotulo;
+  /** arquivado some das escolhas sem apagar o que já foi medido */
+  arquivado: boolean;
+}
+
+/**
+ * O rótulo de um evento que veio do Google.
+ *
+ * Eventos de lá são de outro sistema e o MSL não os edita — mas eu preciso
+ * poder dizer que aquela reunião de terça é "Reunião - Equipe", ou as horas de
+ * reunião ficariam todas num balde só.
+ *
+ * A chave é a **série**, e não a ocorrência: o Google dá um id diferente para
+ * cada terça-feira de uma reunião semanal, e marcar uma a uma seria trabalho
+ * sem fim. `chaveDoEvento` guarda o `recurringEventId` quando existe, e o `id`
+ * da ocorrência quando o evento é único.
+ */
+export interface MarcacaoDeEvento extends Registro {
+  chaveDoEvento: string;
+  rotuloId: string;
 }
 
 /* ── Modelo de projeto ───────────────────────────────────────────────────── */
@@ -432,6 +501,7 @@ export interface Peca extends Registro {
   publicadoEm?: string;
   /** projeto a que pertence, ou ausente */
   projetoId?: string;
+  rotuloId?: string;
 }
 
 /* ── Regras ──────────────────────────────────────────────────────────────── */
@@ -583,6 +653,8 @@ export interface Banco {
   modelos: Modelo[];
   regras: Regra[];
   pecas: Peca[];
+  rotulos: Rotulo[];
+  marcacoes: MarcacaoDeEvento[];
   preferencias?: Preferencias;
   /** o que foi apagado, para a junção entre aparelhos não ressuscitar nada */
   removidos?: Removido[];
@@ -599,6 +671,8 @@ export const COLECOES = [
   'modelos',
   'regras',
   'pecas',
+  'rotulos',
+  'marcacoes',
 ] as const;
 export type NomeColecao = (typeof COLECOES)[number];
 
@@ -620,6 +694,8 @@ export const ROTULO_COLECAO: Record<NomeColecao, [string, string]> = {
   modelos: ['modelo', 'modelos'],
   regras: ['regra', 'regras'],
   pecas: ['peça', 'peças'],
+  rotulos: ['rótulo', 'rótulos'],
+  marcacoes: ['marcação', 'marcações'],
 };
 
 /** `1 rotina`, `25 execuções` — o número e o nome concordando. */
@@ -641,6 +717,8 @@ export function bancoVazio(): Banco {
     modelos: [],
     regras: [],
     pecas: [],
+    rotulos: [],
+    marcacoes: [],
     removidos: [],
   };
 }
