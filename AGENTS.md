@@ -245,6 +245,15 @@ Two devices, one account, and the merge is the whole game.
   up (`EMAILS_PERMITIDOS`, and an empty list closes the door), a missing
   account answers exactly like a wrong password, and five wrong tries cool the
   account for fifteen minutes.
+- **Preferences merge by their own `alteradoEm`, never by `ultimoBackupEm`.**
+  Exporting is not editing: the backup stamp does not move when you change a
+  preference, so with both sides exported the same day the tie handed the
+  server's copy back and every edit — name, home blocks, working window,
+  calendar address — was discarded three seconds later, in silence. The test
+  that existed said "preferences follow whoever *exported* last", which was the
+  defect written as a rule. They still merge as one object, not field by field:
+  changing the name on the Mac and the working window on the phone between two
+  syncs keeps the later of the two.
 - The session token lives in `localStorage`, **outside the bank**. Inside, it
   would ride along in the exported backup, and restoring on a borrowed device
   would hand it your session.
