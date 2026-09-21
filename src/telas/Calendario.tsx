@@ -3,6 +3,11 @@ import {
   Card,
   Button,
   Badge,
+  BarChart,
+  DonutChart,
+  LineChart,
+  MetricBarList,
+  ProgressBar,
   Icon,
   IconButton,
   Checkbox,
@@ -15,7 +20,7 @@ import { FormularioTarefa } from './Tarefas';
 import { FormularioRotina } from './Rotinas';
 import { FormularioLancamento } from './Financeiro';
 import { useBanco } from '../dados/BancoContexto';
-import { CONTEXTOS, ROTULO_CONTEXTO, type Contexto } from '../dados/esquema';
+import { CONTEXTOS, ROTULO_CONTEXTO, type Banco, type Contexto } from '../dados/esquema';
 import {
   gradeDoMes,
   mesVizinho,
@@ -30,12 +35,24 @@ import {
   agendaEmLinha,
   filtrarDia,
   linhaDoTempo,
+  inicioDaSemana,
+  extremosDoMes,
   type ItensDoDia,
   type FiltroCalendario,
   type ItemDaAgenda,
 } from '../dominio/calendario';
 import { descreverRotina, somarDias, diaDaSemana, distanciaEmDias } from '../dominio/rotina';
 import { descreverPrazo, situacao } from '../dominio/tarefa';
+import {
+  tempoPorRotulo,
+  cargaDaJornada,
+  reunioesPorSemana,
+  planejadoContraFeito,
+  acharRotulo,
+  horas,
+  type CompromissoExterno,
+} from '../dominio/insights';
+import { JORNADA_PADRAO, type Jornada } from '../dominio/plano';
 import { efeitoDaOcorrencia } from '../dominio/financeiro';
 import {
   formatarDataLonga,
@@ -43,6 +60,7 @@ import {
   formatarDataRelativa,
   formatarDiaDaSemana,
   formatarMoeda,
+  formatarPorcento,
 } from '../formato';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 import { useAgendaExterna } from '../dados/agendaExterna';
@@ -56,13 +74,17 @@ import { eventosDoDia } from '../dominio/ical';
  * data dos lançamentos. Por isso mudar uma recorrência muda o passado e o
  * futuro na hora, sem nada para regenerar.
  */
-type Visao = 'mes' | 'semana' | 'dia' | 'linha';
+type Visao = 'mes' | 'semana' | 'dia' | 'linha' | 'insights';
+
+/** A janela que os insights medem. Os quatro números respondem os dois. */
+type Periodo = 'semana' | 'mes';
 
 const ROTULO_ANTERIOR: Record<Visao, string> = {
   mes: 'Mês anterior',
   semana: 'Semana anterior',
   dia: 'Dia anterior',
   linha: 'Anterior',
+  insights: 'Período anterior',
 };
 
 const ROTULO_PROXIMO: Record<Visao, string> = {
@@ -70,7 +92,11 @@ const ROTULO_PROXIMO: Record<Visao, string> = {
   semana: 'Próxima semana',
   dia: 'Próximo dia',
   linha: 'Próximo',
+  insights: 'Próximo período',
 };
+
+/** Quantas semanas o gráfico de reuniões olha para trás, contando a de hoje. */
+const SEMANAS_NO_GRAFICO = 5;
 
 /** O que dá para criar a partir de um dia do calendário. */
 type OQueCriar = 'tarefa' | 'rotina' | 'lancamento';
@@ -86,6 +112,7 @@ export function Calendario() {
   const [[ano, mes], setMes] = React.useState<[number, number]>([anoHoje, mesHoje]);
   const [selecionado, setSelecionado] = React.useState(hoje);
   const [visao, setVisao] = React.useState<Visao>('mes');
+  const [periodo, setPeriodo] = React.useState<Periodo>('semana');
   const [contextoFiltrado, setContextoFiltrado] = React.useState<Contexto | 'tudo'>('tudo');
   const [esconderFeitos, setEsconderFeitos] = React.useState(false);
   // Só vale para "o que vem": a rotina diária repetida sessenta vezes afoga o
@@ -103,12 +130,20 @@ export function Calendario() {
 
   // Uma apuração por janela, não uma por célula. A grade tem 42 dias, e
   // perguntar dia a dia reexpandiria a série de cada recorrente 42 vezes.
+  //
+  // Nos insights a janela é o mês **de verdade**, e não a grade: a grade tem 42
+  // dias e carrega as pontas dos meses vizinhos, o que poria dias de agosto na
+  // carga horária de setembro.
   const janela =
-    visao === 'mes'
-      ? [grade[0][0].dia, grade[grade.length - 1][6].dia]
-      : visao === 'dia'
-        ? [selecionado, selecionado]
-        : [diasDaSemana[0], diasDaSemana[6]];
+    visao === 'insights'
+      ? periodo === 'mes'
+        ? extremosDoMes(ano, mes)
+        : [diasDaSemana[0], diasDaSemana[6]]
+      : visao === 'mes'
+        ? [grade[0][0].dia, grade[grade.length - 1][6].dia]
+        : visao === 'dia'
+          ? [selecionado, selecionado]
+          : [diasDaSemana[0], diasDaSemana[6]];
   const agenda = React.useMemo(
     () => agendaDeIntervalo(banco, janela[0], janela[1]),
     [banco, janela[0], janela[1]],
@@ -119,8 +154,21 @@ export function Calendario() {
   //
   // Dois caminhos, e o com login ganha: quem conectou não deve ver os mesmos
   // compromissos duas vezes só porque a assinatura antiga continuava ligada.
-  const google = useGoogle(janela[0], janela[1]);
-  const assinatura = useAgendaExterna(janela[0], janela[1]);
+  //
+  // O gráfico de reuniões olha cinco semanas para trás, além da janela da tela.
+  // Recortar os eventos na janela deixaria quatro colunas zeradas que não são
+  // zero — e zero é uma afirmação, não uma ausência de dado.
+  const recuoDoGrafico = somarDias(inicioDaSemana(hoje), -7 * (SEMANAS_NO_GRAFICO - 1));
+  const janelaExterna =
+    visao === 'insights'
+      ? [
+          janela[0] < recuoDoGrafico ? janela[0] : recuoDoGrafico,
+          janela[1] > hoje ? janela[1] : somarDias(inicioDaSemana(hoje), 6),
+        ]
+      : janela;
+
+  const google = useGoogle(janelaExterna[0], janelaExterna[1]);
+  const assinatura = useAgendaExterna(janelaExterna[0], janelaExterna[1]);
   const eventosDe = (dia: string) =>
     google.conectado
       ? google.eventos.filter((e) => e.dia === dia)
@@ -128,20 +176,47 @@ export function Calendario() {
         ? eventosDoDia(assinatura.agenda, dia)
         : [];
 
+  // Os dois caminhos numa forma só, para as contas de insights.
+  //
+  // `serie` é o que separa a reunião semanal da pontual, e só o Google diz isso
+  // (pelo `recurringEventId`). No iCal cada ocorrência tem chave própria e não
+  // há como saber — por isso a tela não desenha a linha do que se repete
+  // quando a agenda veio por assinatura, em vez de chutar.
+  const externos: CompromissoExterno[] = React.useMemo(
+    () =>
+      google.conectado
+        ? google.eventos.map((e) => ({
+            id: e.chave,
+            serie: e.serie,
+            dia: e.dia,
+            hora: e.hora,
+            fim: e.fim,
+            diaInteiro: e.diaInteiro,
+          }))
+        : (assinatura.agenda?.eventos ?? []).map((e) => ({
+            id: e.chave,
+            dia: e.dia,
+            hora: e.hora,
+            fim: e.fim,
+            diaInteiro: e.diaInteiro,
+          })),
+    [google.conectado, google.eventos, assinatura.agenda],
+  );
+
   // O dia escolhido pode cair fora da janela enquanto eu navego; aí vale
   // perguntar direto, em vez de mostrar um dia vazio que não é vazio.
   const detalhe = filtrarDia(agenda.get(selecionado) ?? itensDoDia(banco, selecionado), filtro);
   const paraOlho = (dia: string) =>
     filtrarDia(agenda.get(dia) ?? itensDoDia(banco, dia), filtro);
-  const noPresente =
-    visao === 'mes'
-      ? ano === anoHoje && mes === mesHoje
-      : visao === 'dia'
-        ? selecionado === hoje
-        : diasDaSemana.includes(hoje);
+  const porMes = visao === 'mes' || (visao === 'insights' && periodo === 'mes');
+  const noPresente = porMes
+    ? ano === anoHoje && mes === mesHoje
+    : visao === 'dia'
+      ? selecionado === hoje
+      : diasDaSemana.includes(hoje);
 
   const andar = (passo: number) => {
-    if (visao === 'semana' || visao === 'dia') {
+    if (!porMes && visao !== 'linha') {
       const novo = somarDias(selecionado, passo * (visao === 'dia' ? 1 : 7));
       setSelecionado(novo);
       const [a, m] = anoMesDe(novo);
@@ -236,9 +311,9 @@ export function Calendario() {
       >
         <Card
           title={
-            visao === 'mes'
+            porMes
               ? nomeDoMes(ano, mes)
-              : visao === 'semana'
+              : visao === 'semana' || visao === 'insights'
                 ? nomeDaSemana(selecionado)
                 : visao === 'dia'
                   ? selecionado === hoje
@@ -246,6 +321,7 @@ export function Calendario() {
                     : formatarDataLonga(comoData(selecionado))
                   : 'O que vem pela frente'
           }
+          subtitle={visao === 'insights' ? 'O que o período já tem dentro' : undefined}
           action={
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-4)' }}>
               <div style={{ minWidth: 130 }}>
@@ -259,9 +335,26 @@ export function Calendario() {
                     { value: 'semana', label: 'Semana' },
                     { value: 'dia', label: 'Dia' },
                     { value: 'linha', label: 'O que vem' },
+                    { value: 'insights', label: 'Insights' },
                   ]}
                 />
               </div>
+              {/* Semana e mês respondem perguntas diferentes: "esta semana deu
+                  para respirar?" e "para onde foi o mês?". */}
+              {visao === 'insights' && (
+                <div style={{ minWidth: 120 }}>
+                  <Select
+                    id="cal-periodo"
+                    value={periodo}
+                    onChange={(v) => setPeriodo(v as Periodo)}
+                    size="sm"
+                    options={[
+                      { value: 'semana', label: 'Semana' },
+                      { value: 'mes', label: 'Mês' },
+                    ]}
+                  />
+                </div>
+              )}
               {/* Na visão de dia o painel lateral não existe, e sem isto o
                   botão de adicionar sumiria justo onde o dia está aberto. */}
               {visao === 'dia' && (
@@ -301,7 +394,18 @@ export function Calendario() {
             </div>
           }
         >
-          {visao === 'linha' ? (
+          {visao === 'insights' ? (
+            <VistaInsights
+              banco={banco}
+              externos={externos}
+              hoje={hoje}
+              de={janela[0]}
+              ate={janela[1]}
+              jornada={banco.preferencias?.jornada ?? JORNADA_PADRAO}
+              desktop={desktop}
+              sabeRepeticao={google.conectado}
+            />
+          ) : visao === 'linha' ? (
             <VistaLinha
               linha={linhaDoTempo(banco, hoje, 60, filtro, rotinasNaLinha)}
               hoje={hoje}
@@ -789,6 +893,402 @@ function EstadoDoGoogle({ google }: { google: ReturnType<typeof useGoogle> }) {
         </Button>
       </div>
     </Card>
+  );
+}
+
+/* ── Insights ────────────────────────────────────────────────────────────── */
+
+/**
+ * Para onde foi o meu tempo.
+ *
+ * Quatro leituras, e nenhuma delas calcula nada aqui: tudo vem de
+ * `src/dominio/insights.ts`, provado à parte. Esta função escolhe a cor, a
+ * palavra e o que fica de fora quando o número não é confiável.
+ *
+ * `sabeRepeticao` é a única coisa que muda conforme a origem da agenda: o
+ * Google diz quais eventos são de uma série, a assinatura iCal não diz. Sem
+ * isso a linha do que se repete some, em vez de mentir que tudo se repete.
+ */
+function VistaInsights({
+  banco,
+  externos,
+  hoje,
+  de,
+  ate,
+  jornada,
+  desktop,
+  sabeRepeticao,
+}: {
+  banco: Banco;
+  externos: CompromissoExterno[];
+  hoje: string;
+  de: string;
+  ate: string;
+  jornada: Jornada;
+  desktop: boolean;
+  sabeRepeticao: boolean;
+}) {
+  const fatias = tempoPorRotulo(banco, externos, de, ate, jornada);
+  const carga = cargaDaJornada(banco, externos, de, ate, jornada);
+  const semanas = reunioesPorSemana(externos, hoje, 5, jornada);
+  const feito = planejadoContraFeito(banco, de, ate);
+
+  const total = fatias.reduce((t, f) => t + f.minutos, 0);
+  const nome = (id: string | null) => acharRotulo(banco.rotulos, id).nome;
+  const cor = (id: string | null) => acharRotulo(banco.rotulos, id).cor;
+
+  if (total === 0 && feito.length === 0) return <SemNadaParaMedir temRotulos={banco.rotulos.length > 0} />;
+
+  // Num mês são trinta colunas: rotular todas vira uma tarja ilegível.
+  const rotularTudo = carga.porDia.length <= 10;
+  const diaDoMes = (dia: string) => String(Number(dia.slice(8)));
+  const teto = Math.max(...semanas.map((s) => s.total), 60);
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: desktop ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)',
+        gap: 'var(--sp-12)',
+        alignItems: 'start',
+      }}
+    >
+      <Secao titulo="Onde foi o seu tempo">
+        <Nota>
+          {total === 0
+            ? 'Nada com hora ou duração nesta janela'
+            : `${horas(total)} em ${fatias.length} ${fatias.length === 1 ? 'rótulo' : 'rótulos'}`}
+        </Nota>
+
+        {total === 0 ? (
+          <Explicacao>
+            Só conta o que tem <strong>hora marcada</strong> ou <strong>duração declarada</strong>.
+            Uma tarefa com prazo, mas sem nenhum dos dois, é intenção — não compromisso.
+          </Explicacao>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'center', margin: 'var(--sp-6) 0' }}>
+              <DonutChart
+                size={168}
+                thickness={24}
+                centerValue={horas(total)}
+                centerLabel="no período"
+                segments={fatias.map((f) => ({
+                  // Uma fatia de zero minuto não existe no gráfico; o mínimo
+                  // mantém a cor visível na lista sem inventar tempo.
+                  value: Math.max(f.minutos, 0.001),
+                  color: cor(f.rotuloId),
+                  label: nome(f.rotuloId),
+                }))}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-5)' }}>
+              {fatias.map((f) => (
+                <LinhaDeFatia
+                  key={f.rotuloId ?? 'sem-rotulo'}
+                  cor={cor(f.rotuloId)}
+                  nome={nome(f.rotuloId)}
+                  valor={horas(f.minutos)}
+                  fracao={f.minutos / total}
+                  detalhe={`${f.itens} ${f.itens === 1 ? 'compromisso' : 'compromissos'}`}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </Secao>
+
+      <Secao titulo="Quanto da jornada já tem dono">
+        <Nota>
+          {horas(carga.minutosComprometidos)} de {horas(carga.minutosDisponiveis)}
+        </Nota>
+
+        <ProgressBar
+          value={Math.round(Math.min(carga.fracao, 1) * 100)}
+          valueLabel={formatarPorcento(Math.min(carga.fracao, 1))}
+          tone={carga.fracao > 0.9 ? 'orange' : carga.fracao > 0.6 ? 'purple' : 'green'}
+          label={
+            carga.fracao >= 1
+              ? 'Você se comprometeu com mais do que cabe'
+              : `Livre: ${horas(carga.minutosDisponiveis - carga.minutosComprometidos)}`
+          }
+          style={{ margin: 'var(--sp-6) 0 var(--sp-8)' }}
+        />
+
+        <BarChart
+          height={140}
+          highlightIndex={carga.porDia.findIndex((d) => d.dia === hoje)}
+          data={carga.porDia.map((d) =>
+            d.minutosDisponiveis === 0
+              ? 0
+              : Math.round((d.minutosComprometidos / d.minutosDisponiveis) * 100),
+          )}
+          labels={carga.porDia.map((d, i) =>
+            rotularTudo || i % 5 === 0 ? diaDoMes(d.dia) : '',
+          )}
+        />
+
+        {carga.estourados.length > 0 && (
+          <p
+            style={{
+              marginTop: 'var(--sp-7)',
+              font: 'var(--type-body)',
+              color: 'var(--orange-500)',
+              lineHeight: 'var(--lh-normal)',
+            }}
+          >
+            {carga.estourados.length === 1
+              ? `Dia ${diaDoMes(carga.estourados[0])} passou`
+              : `${carga.estourados.length} dias passaram`}{' '}
+            do que cabe na jornada.
+          </p>
+        )}
+
+        <Explicacao>
+          A jornada vale todo dia, inclusive no fim de semana: descontá-lo exigiria você dizer em
+          que dias trabalha, e inventar daria uma porcentagem que parece precisa e não é. O horário
+          fica em Ajustes.
+        </Explicacao>
+      </Secao>
+
+      <Secao titulo="Reuniões, semana a semana">
+        <Nota>
+          {semanas.every((s) => s.total === 0)
+            ? 'Nenhum compromisso externo nas últimas cinco semanas'
+            : `Esta semana: ${horas(semanas[semanas.length - 1].total)}`}
+        </Nota>
+
+        {semanas.every((s) => s.total === 0) ? (
+          <Explicacao>
+            Vem da agenda externa. Conecte o Google em Ajustes para esta leitura existir.
+          </Explicacao>
+        ) : (
+          <>
+            <div style={{ marginTop: 'var(--sp-6)' }}>
+              <LineChart
+                height={160}
+                labels={semanas.map((s) => `${diaDoMes(s.de)}/${Number(s.de.slice(5, 7))}`)}
+                yTicks={[horas(teto), horas(Math.round(teto / 2)), '0']}
+                highlightIndex={semanas.length - 1}
+                series={
+                  sabeRepeticao
+                    ? [
+                        { data: semanas.map((s) => s.total), color: 'var(--chart-1)' },
+                        {
+                          data: semanas.map((s) => s.minutosRecorrentes),
+                          color: 'var(--chart-1)',
+                          width: 1.5,
+                          dashed: true,
+                        },
+                      ]
+                    : [{ data: semanas.map((s) => s.total), color: 'var(--chart-1)' }]
+                }
+              />
+            </div>
+
+            {sabeRepeticao ? (
+              <>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 'var(--sp-8)',
+                    flexWrap: 'wrap',
+                    marginTop: 'var(--sp-6)',
+                  }}
+                >
+                  <Legenda cor="var(--chart-1)" texto="Tudo" />
+                  <Legenda cor="var(--chart-1)" texto="Só o que se repete" tracejada />
+                </div>
+                <Explicacao>
+                  O que se repete é custo fixo: você escolheu uma vez e paga toda semana. A
+                  distância entre as duas linhas é o que foi decidido naquela semana.
+                </Explicacao>
+              </>
+            ) : (
+              <Explicacao>
+                Com agenda assinada por link eu não sei quais eventos são de uma série, então não
+                separo o que se repete do que foi uma vez só.
+              </Explicacao>
+            )}
+          </>
+        )}
+      </Secao>
+
+      <Secao titulo="O planejado contra o feito">
+        <Nota>
+          {feito.length === 0
+            ? 'Nada planejado nesta janela'
+            : `${feito.reduce((t, f) => t + f.feitos, 0)} de ${feito.reduce((t, f) => t + f.planejados, 0)}`}
+        </Nota>
+
+        {feito.length === 0 ? (
+          <Explicacao>Tarefa com prazo, rotina e peça com data de publicar entram aqui.</Explicacao>
+        ) : (
+          <>
+            <div style={{ marginTop: 'var(--sp-6)' }}>
+              <MetricBarList
+                items={feito.map((f) => ({
+                  label: nome(f.rotuloId),
+                  value: Math.round(f.fracao * 100),
+                  valueLabel: `${f.feitos}/${f.planejados}`,
+                  tone: f.fracao >= 0.8 ? 'green' : f.fracao >= 0.5 ? 'purple' : 'orange',
+                }))}
+              />
+            </div>
+            <Explicacao>
+              Conta <strong>itens</strong>, e não minutos: o tempo de um compromisso é estimado, e
+              comparar duas estimativas daria uma precisão que nenhum dos dois lados tem.
+            </Explicacao>
+          </>
+        )}
+      </Secao>
+    </div>
+  );
+}
+
+/** O número que resume a seção, logo abaixo do título. */
+function Nota({ children }: { children: React.ReactNode }) {
+  return <p style={{ font: 'var(--type-body)', color: 'var(--text-muted)' }}>{children}</p>;
+}
+
+/** Uma linha da repartição, com a barra proporcional. */
+function LinhaDeFatia({
+  cor,
+  nome,
+  valor,
+  fracao,
+  detalhe,
+}: {
+  cor: string;
+  nome: string;
+  valor: string;
+  fracao: number;
+  detalhe: string;
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--sp-5)',
+          flexWrap: 'wrap',
+          marginBottom: 'var(--sp-3)',
+        }}
+      >
+        <Bolinha cor={cor} />
+        <span
+          style={{
+            flex: '1 1 var(--grid-min)',
+            minWidth: 0,
+            font: 'var(--type-body)',
+            color: 'var(--text-body)',
+            overflowWrap: 'anywhere',
+          }}
+        >
+          {nome}
+        </span>
+        <span style={{ flex: '0 0 auto', font: 'var(--type-body)', color: 'var(--text-muted)' }}>
+          {valor} · {detalhe}
+        </span>
+      </div>
+      <span
+        style={{
+          display: 'block',
+          height: 'var(--sp-2)',
+          borderRadius: 'var(--r-pill)',
+          background: 'var(--surface-raised)',
+          overflow: 'hidden',
+        }}
+      >
+        <span
+          style={{
+            display: 'block',
+            width: `${Math.round(fracao * 100)}%`,
+            height: '100%',
+            borderRadius: 'var(--r-pill)',
+            background: cor,
+          }}
+        />
+      </span>
+    </div>
+  );
+}
+
+function Bolinha({ cor }: { cor: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: 'var(--sp-5)',
+        height: 'var(--sp-5)',
+        flex: '0 0 auto',
+        borderRadius: 'var(--r-pill)',
+        background: cor,
+      }}
+    />
+  );
+}
+
+function Legenda({ cor, texto, tracejada }: { cor: string; texto: string; tracejada?: boolean }) {
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-4)' }}>
+      <span
+        aria-hidden="true"
+        style={{
+          width: 'var(--sp-10)',
+          height: 0,
+          flex: '0 0 auto',
+          borderTop: `2px ${tracejada ? 'dashed' : 'solid'} ${cor}`,
+        }}
+      />
+      <span style={{ font: 'var(--type-body)', color: 'var(--text-muted)' }}>{texto}</span>
+    </span>
+  );
+}
+
+/** A nota de rodapé que diz o que o número quer dizer — e o que ele não diz. */
+function Explicacao({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      style={{
+        marginTop: 'var(--sp-7)',
+        font: 'var(--type-body)',
+        color: 'var(--text-subtle)',
+        lineHeight: 'var(--lh-normal)',
+      }}
+    >
+      {children}
+    </p>
+  );
+}
+
+function SemNadaParaMedir({ temRotulos }: { temRotulos: boolean }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 'var(--sp-6)',
+        padding: 'var(--sp-14) var(--sp-8)',
+        textAlign: 'center',
+      }}
+    >
+      <Icon name="pie-chart" size={28} color="var(--text-subtle)" />
+      <p
+        style={{
+          font: 'var(--type-body)',
+          color: 'var(--text-subtle)',
+          maxWidth: 460,
+          lineHeight: 'var(--lh-normal)',
+        }}
+      >
+        {temRotulos
+          ? 'Nada nesta janela tem hora marcada nem duração declarada. Diga quanto tempo cada compromisso toma e a conta aparece aqui.'
+          : 'Para medir para onde o seu tempo vai, duas coisas: crie rótulos em Ajustes — "Reunião", "Estudo", "Operação" — e diga quanto tempo cada compromisso toma. Sem isso, tudo pesa igual e a conta não diz nada.'}
+      </p>
+    </div>
   );
 }
 

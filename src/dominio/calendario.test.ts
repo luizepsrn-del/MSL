@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   gradeDoMes,
+  extremosDoMes,
   mesVizinho,
   itensDoDia,
   resumoDoDia,
@@ -109,6 +110,22 @@ describe('grade do mês', () => {
     expect(primeira[0]).toEqual({ dia: '2026-08-30', doMes: false });
     expect(primeira[1]).toEqual({ dia: '2026-08-31', doMes: false });
     expect(primeira[2]).toEqual({ dia: '2026-09-01', doMes: true });
+  });
+
+  it('os extremos do mês são o primeiro e o último dia, e nada do vizinho', () => {
+    // A grade do mês tem 42 dias e inclui as pontas dos meses vizinhos. Medir
+    // carga horária nela inflaria o mês com dias que não são dele.
+    expect(extremosDoMes(2026, 9)).toEqual(['2026-09-01', '2026-09-30']);
+    expect(extremosDoMes(2026, 2)).toEqual(['2026-02-01', '2026-02-28']);
+    expect(extremosDoMes(2028, 2)).toEqual(['2028-02-01', '2028-02-29']);
+    expect(extremosDoMes(2026, 12)).toEqual(['2026-12-01', '2026-12-31']);
+  });
+
+  it('os extremos são o primeiro e o último da grade que pertencem ao mês', () => {
+    for (const mes of [1, 2, 4, 7, 11, 12]) {
+      const doMes = gradeDoMes(2026, mes).flat().filter((d) => d.doMes).map((d) => d.dia);
+      expect(extremosDoMes(2026, mes), String(mes)).toEqual([doMes[0], doMes[doMes.length - 1]]);
+    }
   });
 
   it('os dias são contínuos, sem buraco nem repetição', () => {

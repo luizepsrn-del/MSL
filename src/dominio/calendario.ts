@@ -62,6 +62,18 @@ export function gradeDoMes(ano: number, mes: number): DiaDaGrade[][] {
   return grade;
 }
 
+/**
+ * O primeiro e o último dia de um mês.
+ *
+ * Existe porque a grade **não** serve para medir: ela tem 42 dias e carrega as
+ * pontas dos meses vizinhos, então somar carga horária sobre ela poria dias de
+ * agosto na conta de setembro.
+ */
+export function extremosDoMes(ano: number, mes: number): [string, string] {
+  const mm = String(mes).padStart(2, '0');
+  return [`${ano}-${mm}-01`, `${ano}-${mm}-${String(diasNoMes(ano, mes)).padStart(2, '0')}`];
+}
+
 /** Mês seguinte / anterior, atravessando o ano. */
 export function mesVizinho(ano: number, mes: number, passo: number): [number, number] {
   const total = ano * 12 + (mes - 1) + passo;
