@@ -56,7 +56,9 @@ test('criar uma rotina e vê-la no Início', async ({ page }) => {
   await expect(page.getByText('Todo dia').first()).toBeVisible();
 
   await page.goto('/app/inicio');
-  await expect(page.getByText('Ler 20 páginas')).toBeVisible();
+  // `exact`: o título também aparece na linha "Não coube hoje" do cartão do
+  // dia montado, e sem isto o localizador pega dois elementos.
+  await expect(page.getByText('Ler 20 páginas', { exact: true })).toBeVisible();
   // Um indicador de 0 de 1 cumprida.
   // "0/1" aparece no indicador, no centro do donut e na barra de contexto:
   // escopar ao cartão que interessa, senão o localizador é ambíguo.
@@ -72,11 +74,11 @@ test('marcar como feita move o indicador e sobrevive ao recarregar', async ({ pa
   await criarRotina(page, 'Caminhar');
 
   await page.goto('/app/inicio');
-  await expect(page.getByText('Caminhar')).toBeVisible();
+  await expect(page.getByText('Caminhar', { exact: true })).toBeVisible();
 
   // Clicar no título, que é o rótulo da caixa — como uma pessoa faz. A caixa
   // em si é visualmente escondida por design no componente.
-  await page.getByText('Caminhar').click();
+  await page.getByText('Caminhar', { exact: true }).click();
   // A fila esvazia e o indicador vira 100%. A frase é a do cartão "Precisa de
   // você hoje", que passou a ser onde a rotina do dia aparece.
   await expect(page.getByText('O dia está seu')).toBeVisible();
@@ -146,7 +148,7 @@ test('o Início funciona no iPhone', async ({ page }, info) => {
   await criarRotina(page, 'Alongar');
 
   await page.goto('/app/inicio');
-  await expect(page.getByText('Alongar')).toBeVisible();
+  await expect(page.getByText('Alongar', { exact: true })).toBeVisible();
 
   const vazamento = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,
@@ -154,7 +156,7 @@ test('o Início funciona no iPhone', async ({ page }, info) => {
   expect(vazamento, 'sem rolagem horizontal').toBeLessThanOrEqual(0);
 
   // Marcar pelo toque, que é como eu vou usar de verdade.
-  await page.getByText('Alongar').tap();
+  await page.getByText('Alongar', { exact: true }).tap();
   await expect(page.getByText('O dia está seu')).toBeVisible();
 });
 

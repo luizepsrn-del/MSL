@@ -56,9 +56,9 @@ design-system/         the component library (see its README for the map)
 src/
   casca/               the product shell: navigation, desktop and mobile
   dados/               schema, migrations, repository seam, React context
-  dominio/             the tested logic: rotina, tarefa, calendario, projeto,
-                       financeiro, meta, foco, ical, pedido, agente,
-                       preferencias
+  dominio/             the tested logic: rotina, tarefa, repeticao, calendario,
+                       projeto, modelo, financeiro, meta, foco, plano, regra,
+                       criacao, ical, pedido, agente, preferencias
   telas/               one screen per pillar (Agente.tsx serves /app/pedir)
   formato/             pt-BR formatting — dates, money, sorting
   routes/Showcase.tsx  the /design-system showcase page
@@ -138,8 +138,34 @@ reading its test is how the system starts lying.
 - **Compare in percentage points, not percent.** Going from 50% to 58% is not
   an 8% rise, and calling it that makes the number lie in the flattering
   direction.
+- **A recurring task is generated, not derived** — the one declared exception,
+  and the reason is in the schema. A task occurrence needs identity: it goes
+  overdue, collects a note, moves on the board. The next one is born when the
+  current is **completed**, not before, so the future does not fill with tasks
+  nobody asked for and skipping three weeks leaves one overdue item, not three.
+  `aoPular` exists for pushing one without pretending it was done.
+- **The 31st in a 30-day month clamps to the last day — the opposite of what
+  the iCal reader does.** There, a date that does not exist did not happen;
+  here, a bill does not vanish for want of a day in the calendar. Both rules
+  are right in their own file, and each says so.
+- **A template's deadlines are relative to the delivery, never dates.** A
+  template with fixed dates serves once and then becomes a list of expired
+  deadlines. Project → template → project round-trips, and there is a test.
+- **The day plan is a proposal, and nothing writes it.** A suggested time
+  stored as data would be an appointment where there was a guess. Same reason
+  there is no per-task estimate: every task asks for the same block, because a
+  number nobody measured is invented precision.
+- **Rules never write on their own.** They compute what they would do and show
+  it; applying is one tap. There is no fired-log either — every effect is
+  idempotent instead, which swaps a forever-growing collection that would have
+  to sync for a property of the calculation. A device that was offline repeats
+  nothing on return, because the question is always about the state now.
+- **A "piece" with a publish date is in the calendar and in the queue.** That
+  is what makes Criação part of the system instead of a notepad beside it. A
+  `semente` never enters the queue — it is raw material, and an idea that turns
+  into nagging is the shortest path to not writing ideas down.
 
-Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `metas`, `pedir`, `ajustes`. Each has its own URL.
+Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `criacao`, `metas`, `pedir`, `regras`, `ajustes`. Each has its own URL.
 `/design-system` is the library showcase.
 
 ## Editing
@@ -235,6 +261,14 @@ open session.
 - **The rail is for the phone.** On the desktop it has no scrollbar, so
   anything past the fold is simply invisible: five tiles of `--grid-min`
   already did not fit. There, use the reflowing grid DESIGN.md prescribes.
+  The three style objects live in `src/casca/trilho.ts` — two copies of the
+  rule is how it goes back to diverging.
+- **A row with badges and buttons must wrap, or the text is crushed to one
+  letter per line.** It happened twice: the Finance row when it got the pencil,
+  and the task row when it got the skip button — photographed, with the title
+  running vertically down the screen. `flexWrap: 'wrap'` plus
+  `flex: '1 1 var(--grid-min)'` on the text column. `e2e/tarefa.spec.ts`
+  measures the title's width so it cannot come back.
 
 ## Language
 

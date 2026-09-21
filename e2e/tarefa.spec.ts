@@ -133,11 +133,13 @@ test('o Início mostra o que vence e deixa marcar de lá', async ({ page }) => {
   await page.goto('/app/inicio');
   // A tarefa atrasada abre a fila, e leva o motivo junto.
   await expect(page.getByRole('heading', { name: 'Precisa de você hoje' })).toBeVisible();
-  await expect(page.getByText('Enviar a nota')).toBeVisible();
+  // `exact`: o título também aparece na linha "Não coube hoje" do cartão do
+  // dia montado, e sem isto o localizador pega dois elementos.
+  await expect(page.getByText('Enviar a nota', { exact: true })).toBeVisible();
   await expect(page.getByText('Atrasada há 1 dia')).toBeVisible();
 
   // Marcar do Início tira da fila sem precisar ir à outra tela.
-  await page.getByText('Enviar a nota').click();
+  await page.getByText('Enviar a nota', { exact: true }).click();
   await expect(page.getByText('Enviar a nota')).toHaveCount(0);
   await expect(page.getByText('O dia está seu')).toBeVisible();
 });
