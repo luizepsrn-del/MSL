@@ -212,7 +212,7 @@ export interface Google {
  * saíram da vista mas não da vida.
  */
 export function useGoogle(de: string, ate: string): Google {
-  const { banco, hoje, editarTarefa, editarPeca } = useBanco();
+  const { banco, hoje, carregando, editarTarefa, editarPeca } = useBanco();
 
   const [conectado, setConectado] = React.useState(false);
   const [guardado, setGuardado] = React.useState<Guardado | null>(() =>
@@ -230,6 +230,19 @@ export function useGoogle(de: string, ate: string): Google {
 
   const sincronizar = React.useCallback(
     async (forcar: boolean) => {
+      // **Nunca antes de o banco terminar de carregar.**
+      //
+      // O espelhamento manda "isto é tudo o que existe aqui", e o servidor
+      // apaga da agenda o que ele criou e não está mais na lista. Com o banco
+      // ainda vazio, essa frase vira "não existe nada" — e abrir o calendário
+      // rápido demais limparia da agenda de verdade tudo o que o MSL tinha
+      // posto lá.
+      //
+      // A sincronização de conta já esperava por isto; esta não esperava. Quem
+      // mostrou foi o WebKit, onde a hidratação chega depois da resposta da
+      // rota, e sete testes de ponta a ponta caíam no iPhone e em nenhum outro
+      // lugar.
+      if (carregando) return;
       if (emVoo.current) return;
       if (!forcar && !estaVelho(lerCache(window.localStorage), new Date())) return;
 
@@ -281,11 +294,14 @@ export function useGoogle(de: string, ate: string): Google {
         setSincronizando(false);
       }
     },
-    [hoje, editarTarefa, editarPeca],
+    [carregando, hoje, editarTarefa, editarPeca],
   );
 
   // Ao abrir: pergunta se está conectado e sincroniza se fizer sentido.
   React.useEffect(() => {
+    // Perguntar antes de o banco carregar só adiantaria a pergunta; o que vem
+    // depois dela precisa do banco de qualquer jeito.
+    if (carregando) return;
     let vivo = true;
     void (async () => {
       try {
@@ -305,7 +321,7 @@ export function useGoogle(de: string, ate: string): Google {
     return () => {
       vivo = false;
     };
-  }, [sincronizar]);
+  }, [carregando, sincronizar]);
 
   const eventos = React.useMemo(
     () =>
