@@ -29,6 +29,11 @@ demonstration to "clean up".
 Run `npm run verificar && npm run build` before calling work done, and
 `npm run test:e2e` at any gate that touches a surface.
 
+**There is no Prettier here, and running it reformats the whole file.** The
+project has no config and no dependency on it; `npx prettier --write` on a
+screen turned a 200-line change into a 1600-line diff. Match the file you are
+in by hand.
+
 **Test layout.** Domain logic is tested next to the code it covers
 (`**/*.test.ts`, Node environment — recurrence, balance, deadlines, schema
 migration). End-to-end specs live in `e2e/` and run against both real clients:
@@ -194,6 +199,22 @@ reading its test is how the system starts lying.
 Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `criacao`, `metas`, `pedir`, `regras`, `ajustes`. Each has its own URL.
 `/design-system` is the library showcase.
 
+- **`BarChart` normalizes to its own tallest bar.** Feed it percentages and a
+  day at 37% of the working window draws a full column, so a light week looks
+  exactly like a drowned one. Where the ceiling is meaningful — a load, a
+  budget, a quota — the ceiling has to be the scale. `ColunasDaJornada` in
+  `src/telas/Calendario.tsx` is that: the journey is the top, always, and a
+  day that bursts changes colour instead of stretching out of the chart.
+- **An external event's identity is its `uid`, never the occurrence key.** A
+  label is stored under `serie ?? uid` (`chaveDeRotulo` in
+  `src/dominio/insights.ts`). Keying on the occurrence would turn a three-day
+  trip into three distinct events, and labelling one would leave the other two
+  bare. The same key must be built on both sides — the screen and the metrics
+  — or labelling appears to work and changes no number.
+- **Only Google says what repeats.** `recurringEventId` gives `serie`; an iCal
+  subscription has one `UID` per series and no flag, so the screen drops the
+  "what repeats" line entirely rather than claiming everything is recurring.
+
 ## Editing
 
 Every form serves two modes, create and correct — one form per record, never
@@ -272,6 +293,13 @@ Two devices, one account, and the merge is the whole game.
   however creative the body. `https://calendar.google.com@evil.com` is a URL
   whose host is `evil.com`; that is how this fence is usually jumped.
 
+**Nothing that mirrors outward may run before the bank has loaded.** `banco`
+starts as `bancoVazio()` and hydrates in an effect. The Google mirror sends
+"this is everything that exists here", and the server deletes the events it
+owns that are missing from that list — so one sync from an unloaded bank wipes
+the person's real calendar. Account sync already waited (`if (carregando)
+return`); `useGoogle` did not, until it did.
+
 ## Storage
 
 The data lives in this device's browser, and there are three ways it can go:
@@ -322,12 +350,31 @@ open session.
   guards it, **in Chromium at phone width**: the drawer only exists below
   `--bp-desktop`, and in WebKit clicking a button does not even focus it, so
   the first version of that test passed with the defect in place.
+- **A second control in a Card header crushes the title.** `Card`'s header is
+  a `space-between` flex row that does not wrap. One `Select` fits beside the
+  title; two, plus the arrows, left "20 a 26 de setembro" at 85px and then
+  one word per line. A control that belongs to the *content* goes in the body
+  — the insights period selector does. `e2e/calendario.spec.ts` guards it by
+  measuring that title against the week view's rather than against a fixed
+  number: a constant would only record what it measures today.
 - **A row with badges and buttons must wrap, or the text is crushed to one
   letter per line.** It happened twice: the Finance row when it got the pencil,
   and the task row when it got the skip button — photographed, with the title
   running vertically down the screen. `flexWrap: 'wrap'` plus
   `flex: '1 1 var(--grid-min)'` on the text column. `e2e/tarefa.spec.ts`
   measures the title's width so it cannot come back.
+
+## The e2e harness
+
+- **The service worker is blocked in tests** (`serviceWorkers: 'block'`). It
+  only registers in the build, and the suite runs against the build. In WebKit
+  a page controlled by a worker stops passing its requests through Playwright's
+  interception, so `page.route('**/api/*')` silently stopped applying: the
+  request reached `vite preview`, which answered the SPA `index.html` with 200,
+  and the client tried to read JSON out of HTML. Seven tests were red on the
+  iPhone and none in Chromium, and not one of them for a defect in the system.
+- The blocked-worker console notice is filtered in
+  `e2e/acessibilidade.spec.ts`; it comes from Playwright, not from the app.
 
 ## Language
 
