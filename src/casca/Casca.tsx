@@ -6,11 +6,13 @@ import {
   PageHeader,
   Icon,
   Avatar,
+  Button,
   SearchInput,
 } from '../../design-system';
 import { useTheme } from '../theme';
 import { useBanco } from '../dados/BancoContexto';
 import { useLarguraDesktop } from './useLarguraDesktop';
+import { useVersaoNova } from './versaoNova';
 import { SECOES, porId, PILAR_INICIAL, type Pilar } from './navegacao';
 import { TelaEmBranco } from './TelaEmBranco';
 import { Inicio } from '../telas/Inicio';
@@ -110,6 +112,54 @@ function useQuemUsa(): { name: string; role: string } {
   return { name: nome || 'My System Life', role: 'Pessoal e profissional' };
 }
 
+/**
+ * "Tem uma versão nova."
+ *
+ * O operário de serviço não troca por baixo de uma sessão aberta, de
+ * propósito. O preço é que a versão nova fica esperando — e num app instalado
+ * na tela de início isso durou dias, com uma visão já publicada que
+ * simplesmente não aparecia no aparelho. Aqui ela pede licença, e quem decide
+ * a hora é quem está usando.
+ */
+function AvisoDeVersao() {
+  const { tem, atualizar } = useVersaoNova();
+  if (!tem) return null;
+
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--sp-6)',
+        flexWrap: 'wrap',
+        marginBottom: 'var(--sp-9)',
+        padding: 'var(--sp-6) var(--sp-8)',
+        borderRadius: 'var(--r-card)',
+        border: 'var(--bw-hairline) solid var(--border-default)',
+        background: 'var(--surface-raised)',
+      }}
+    >
+      <span style={{ color: 'var(--accent)', display: 'flex', flex: '0 0 auto' }}>
+        <Icon name="arrow-down-circle" size={18} />
+      </span>
+      <span
+        style={{
+          flex: '1 1 var(--grid-min)',
+          minWidth: 0,
+          font: 'var(--type-body)',
+          color: 'var(--text-body)',
+        }}
+      >
+        Tem uma versão nova do sistema pronta neste aparelho.
+      </span>
+      <Button variant="primary" size="sm" onClick={atualizar} style={{ flex: '0 0 auto' }}>
+        Atualizar
+      </Button>
+    </div>
+  );
+}
+
 function CascaDesktop({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: string) => void }) {
   const { theme, setTheme } = useTheme();
   const quem = useQuemUsa();
@@ -150,6 +200,7 @@ function CascaDesktop({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: stri
           }}
         >
           <div style={{ maxWidth: 'var(--content-max)', margin: '0 auto' }}>
+            <AvisoDeVersao />
             <Conteudo pilar={pilar} />
           </div>
         </main>
@@ -263,6 +314,7 @@ function CascaMobile({ pilar, aoNavegar }: { pilar: Pilar; aoNavegar: (id: strin
           subtitle={pilar.subtitulo}
           style={{ marginBottom: 'var(--sp-9)' }}
         />
+        <AvisoDeVersao />
         <Conteudo pilar={pilar} />
       </main>
 

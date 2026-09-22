@@ -23,6 +23,7 @@ demonstration to "clean up".
 | `npm run lint` | ESLint, including the design-system adherence rules |
 | `npm test` | Vitest — domain logic, Node environment |
 | `npm run test:e2e` | Playwright — `mac` (Chromium) and `iphone` (WebKit) |
+| `npm run test:operario` | Playwright — the service worker with a deploy mid-session |
 | `npm run verificar` | lint + typecheck + test, the pre-commit gate |
 | `npm run preview` | Serve the production build |
 
@@ -363,6 +364,35 @@ open session.
   running vertically down the screen. `flexWrap: 'wrap'` plus
   `flex: '1 1 var(--grid-min)'` on the text column. `e2e/tarefa.spec.ts`
   measures the title's width so it cannot come back.
+
+## The service worker
+
+It caches files, not data, and it exists so the app opens without signal. What
+it must never do is pin an old version of the app.
+
+- **`VERSAO` is stamped at build time** by `scripts/carimbar-operario.mjs`,
+  from a hash of the built `index.html`. It used to be the hand-written
+  `'msl-v1'` and never changed: the cache name never changed, `activate` never
+  deleted anything, `install` never ran again (`sw.js` never changed either),
+  and the stored copy of an old `index.html` plus its old `/assets/` stayed
+  valid forever.
+- **Fall back to the shell from *this version's* box only.** `caches.match`
+  with no box searches every box, including the previous version's, which
+  still exists while the new worker is taking over. A navigation that fails at
+  exactly that moment — and it does, it is when the old worker is being shut
+  down — resurrected the old `index.html`, which then asks for the old chunks,
+  which are cached. The whole app went back a version after the new one had
+  already arrived. This is what put a published screen out of reach of the
+  device that was asking for it.
+- **Nothing reloads the page except the person.** The first version of
+  `useVersaoNova` reloaded on `controllerchange`, assuming whoever took over
+  was the person. It is not: the waiting worker activates on its own when the
+  last client of the previous version goes away. The notice appeared and
+  vanished before it could be read, and on a normal day it would take an open
+  form with it. `skipWaiting` only ever runs from the `assumir` message, which
+  only the notice's button sends.
+- The lifecycle is covered by `npm run test:operario`, which performs a real
+  deploy — rewriting `dist/index.html` and `dist/sw.js` — while a page is open.
 
 ## The e2e harness
 

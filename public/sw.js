@@ -12,10 +12,19 @@
  * Sem `skipWaiting` de propósito: uma versão nova assume no próximo
  * carregamento, e não por baixo de uma sessão aberta. Trocar os pedaços de
  * JavaScript enquanto a página está de pé é como um pedido some no meio do
- * caminho.
+ * caminho. Quem pode furar essa fila é a pessoa, pelo aviso de versão nova —
+ * é o que a mensagem `assumir` faz, logo abaixo.
  */
 
-const VERSAO = 'msl-v1';
+/**
+ * A versão, carimbada no build por `scripts/carimbar-operario.mjs`.
+ *
+ * Ela era `'msl-v1'` escrita à mão, e nunca mudou. Como o nome da caixa vem
+ * daqui, o `activate` nunca apagava nada e a cópia guardada de uma versão
+ * anterior ficava válida para sempre — uma falha de rede numa abertura servia
+ * o app inteiro do mês passado, e ele ficava.
+ */
+const VERSAO = '__VERSAO_DO_BUILD__';
 const CAIXA = `caixa-${VERSAO}`;
 
 /**
@@ -67,6 +76,20 @@ self.addEventListener('install', (evento) => {
   );
 });
 
+/**
+ * A pessoa pediu para assumir agora.
+ *
+ * O aviso de versão nova é quem manda esta mensagem, e só depois de ela
+ * clicar. A regra de não trocar por baixo de uma sessão aberta continua
+ * valendo para tudo o que ela não pediu.
+ */
+self.addEventListener('message', (evento) => {
+  // `waitUntil`, e não a chamada solta: sem ele o operário pode ser desligado
+  // antes de `skipWaiting` resolver, e a mensagem vira um pedido que ninguém
+  // atendeu — o operário novo fica na fila e a caixa velha fica junto.
+  if (evento.data?.tipo === 'assumir') evento.waitUntil(self.skipWaiting());
+});
+
 self.addEventListener('activate', (evento) => {
   evento.waitUntil(
     caches
@@ -107,7 +130,16 @@ self.addEventListener('fetch', (evento) => {
           // Nunca devolver `undefined`: `respondWith` exige uma resposta, e o
           // que acontece é a aba morrer com "Failed to convert value to
           // 'Response'" em vez de mostrar a tela guardada.
-          const guardada = (await caches.match('/index.html')) ?? (await caches.match('/'));
+          //
+          // **Só a caixa desta versão.** `caches.match` sem caixa procura em
+          // todas, inclusive na da versão anterior, que ainda existe enquanto
+          // o operário novo não terminou de assumir. Uma navegação que falhe
+          // justo nesse instante — e ela falha, é quando o operário velho está
+          // sendo desligado — ressuscitava o `index.html` antigo, que por sua
+          // vez pede os pedaços antigos, que estão guardados. O app inteiro
+          // voltava para a versão anterior depois de a nova já ter chegado.
+          const caixa = await caches.open(CAIXA);
+          const guardada = (await caixa.match('/index.html')) ?? (await caixa.match('/'));
           return guardada ?? new Response('Sem conexão e sem cópia guardada.', {
             status: 503,
             headers: { 'Content-Type': 'text/plain; charset=utf-8' },

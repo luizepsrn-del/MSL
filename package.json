@@ -6,12 +6,13 @@
   "description": "My System Life — logistics admin dashboard built on the My System Life design system.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && node scripts/copy-reference.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/copy-reference.mjs && node scripts/carimbar-operario.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:operario": "playwright test --config=playwright.operario.config.ts",
     "verificar": "npm run lint && npm run typecheck && npm test",
     "preview": "vite preview",
     "test:instalado": "playwright test --config playwright.instalado.config.ts"
