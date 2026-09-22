@@ -423,3 +423,165 @@ test('a agenda do Google aparece no calendário, e o erro não esvazia a tela', 
 
   expect(erros, 'nenhum erro de JavaScript').toEqual([]);
 });
+
+test('os insights contam o tempo, e rotular o compromisso move a fatia', async ({ page }) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  const hoje = diaLocal(0);
+
+  // Um banco só para esta conta: um rótulo, uma tarefa de duas horas com ele,
+  // e uma tarefa de uma hora sem nenhum.
+  await page.addInitScript(
+    ({ banco }) => {
+      try {
+        if (!sessionStorage.getItem('teste-ja-semeou')) {
+          localStorage.setItem('msl-banco', JSON.stringify(banco));
+          localStorage.setItem('msl-sessao', 'token-de-teste');
+          sessionStorage.setItem('teste-ja-semeou', '1');
+        }
+      } catch {
+        /* janela privada */
+      }
+    },
+    {
+      banco: {
+        versao: 2,
+        preferencias: {
+          agendaExterna: {
+            url: 'https://calendar.google.com/calendar/ical/x/private-y/basic.ics',
+          },
+        },
+        rotulos: [
+          { id: 'rot1', criadoEm: 'x', alteradoEm: 'x', nome: 'Estudo', cor: 'var(--chart-2)', arquivado: false },
+        ],
+        marcacoes: [],
+        tarefas: [
+          {
+            id: 'comRotulo',
+            criadoEm: 'x',
+            alteradoEm: 'x',
+            titulo: 'Estudar inglês',
+            contexto: 'pessoal',
+            prazo: hoje,
+            duracao: 120,
+            rotuloId: 'rot1',
+          },
+          {
+            id: 'semRotulo',
+            criadoEm: 'x',
+            alteradoEm: 'x',
+            titulo: 'Revisar o contrato',
+            contexto: 'profissional',
+            prazo: hoje,
+            duracao: 60,
+          },
+        ],
+      },
+    },
+  );
+
+  const comoIcal = hoje.replace(/-/g, '');
+  await page.route('**/api/agenda', async (rota) => {
+    await rota.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        texto: [
+          'BEGIN:VCALENDAR',
+          'BEGIN:VEVENT',
+          'UID:reuniao-semanal',
+          'SUMMARY:Reunião de equipe',
+          `DTSTART;TZID=America/Sao_Paulo:${comoIcal}T100000`,
+          `DTEND;TZID=America/Sao_Paulo:${comoIcal}T113000`,
+          'END:VEVENT',
+          'END:VCALENDAR',
+        ].join('\r\n'),
+        buscadoEm: new Date().toISOString(),
+      }),
+    });
+  });
+
+  await page.goto('/app/calendario');
+  await expect(page.getByText('Reunião de equipe')).toBeVisible();
+
+  // Insights: 2h com rótulo, 1h de tarefa sem rótulo e 1h30 de reunião.
+  await page.getByRole('button', { name: 'Mês', exact: true }).first().click();
+  await page.getByRole('option', { name: 'Insights', exact: true }).click();
+
+  await expect(page.getByText('Onde foi o seu tempo')).toBeVisible();
+  await expect(page.getByText('Quanto da jornada já tem dono')).toBeVisible();
+  await expect(page.getByText('Reuniões, semana a semana')).toBeVisible();
+  await expect(page.getByText('O planejado contra o feito')).toBeVisible();
+
+  // 2h + 1h + 1h30 = 4h30, e dois baldes: "Estudo" e o resto sem rótulo.
+  await expect(page.getByText('4h30 em 2 rótulos')).toBeVisible();
+  // "Estudo" aparece duas vezes: na repartição do tempo e no planejado
+  // contra o feito. As duas leituras são do mesmo rótulo.
+  await expect(page.getByText('Estudo', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Sem rótulo', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('2h · 1 compromisso')).toBeVisible();
+  await expect(page.getByText('2h30 · 2 compromissos')).toBeVisible();
+
+  // Com agenda assinada por link, a tela se recusa a separar o que se repete.
+  await expect(page.getByText(/não sei quais eventos são de uma série/)).toBeVisible();
+
+  // Agora rotulo a reunião, no dia.
+  await page.getByRole('button', { name: 'Insights', exact: true }).first().click();
+  await page.getByRole('option', { name: 'Dia', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Rótulo de Reunião de equipe' }).click();
+  await page.getByRole('option', { name: 'Estudo' }).click();
+
+  // O rótulo ficou na linha, e a fatia mudou de lado: 3h30 no rótulo, e o
+  // "sem rótulo" agora é só a tarefa de uma hora.
+  await expect(page.getByRole('button', { name: 'Rótulo de Reunião de equipe' })).toContainText(
+    'Estudo',
+  );
+
+  await page.getByRole('button', { name: 'Dia', exact: true }).first().click();
+  await page.getByRole('option', { name: 'Insights', exact: true }).click();
+  await expect(page.getByText('3h30 · 2 compromissos')).toBeVisible();
+  await expect(page.getByText('1h · 1 compromisso')).toBeVisible();
+
+  expect(erros, 'nenhum erro de JavaScript').toEqual([]);
+});
+
+test('os insights não custam largura do título do período', async ({ page }, info) => {
+  test.skip(info.project.name !== 'iphone', 'é uma armadilha de telefone');
+
+  // Defeito real: o seletor de período começou no cabeçalho do cartão, ao
+  // lado do de visão. Dois controles sobrando, e "20 a 26 de setembro" descia
+  // uma palavra por linha — do mesmo tipo do título de tarefa que já tinha
+  // acontecido. Nenhum teste verde pegou; a foto pegou.
+  //
+  // A medida é relativa à semana de propósito. Um número fixo aqui só diria
+  // quanto o título mede hoje; o que precisa valer é que a visão nova não
+  // cobre o título mais do que a visão que já existia.
+  await semear(page);
+  await page.goto('/app/calendario');
+
+  const tituloDoPeriodo = () =>
+    page
+      .getByRole('heading', { level: 3 })
+      .filter({ hasText: /\d+ a \d+ de |\d+ de \w+ a / })
+      .first();
+
+  const trocarPara = async (de: string, para: string) => {
+    await page.getByRole('button', { name: de, exact: true }).first().click();
+    await page.getByRole('option', { name: para, exact: true }).click();
+  };
+
+  await trocarPara('Mês', 'Semana');
+  await expect(tituloDoPeriodo()).toBeVisible();
+  const naSemana = (await tituloDoPeriodo().boundingBox())!;
+
+  await trocarPara('Semana', 'Insights');
+  await expect(page.getByText('Onde foi o seu tempo')).toBeVisible();
+  const nosInsights = (await tituloDoPeriodo().boundingBox())!;
+
+  expect(nosInsights.width, 'o título não encolheu').toBeGreaterThanOrEqual(naSemana.width);
+  expect(nosInsights.height, 'o título não desceu mais linhas').toBeLessThanOrEqual(
+    naSemana.height,
+  );
+});

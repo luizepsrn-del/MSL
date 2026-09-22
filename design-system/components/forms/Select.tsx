@@ -14,6 +14,14 @@ export interface SelectProps {
    * dropdown with no name.
    */
   id?: string;
+  /**
+   * The control's accessible name when no Field labels it.
+   *
+   * Without it the button is announced by its current value alone, so four
+   * selects that all read "None" in a list are indistinguishable to a screen
+   * reader. Prefer a Field; use this where the control sits inline in a row.
+   */
+  'aria-label'?: string;
   options: SelectOption[];
   value?: string;
   onChange?: (value: string) => void;
@@ -34,6 +42,7 @@ interface Posicao {
 
 export function Select({
   id,
+  'aria-label': ariaLabel,
   options = [],
   value,
   onChange,
@@ -109,6 +118,7 @@ export function Select({
       <button
         id={id}
         type="button"
+        aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}

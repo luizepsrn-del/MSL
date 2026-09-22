@@ -446,6 +446,19 @@ describe('a agenda de um dia em linha', () => {
     expect(uma).toEqual(outra);
   });
 
+  it('o evento externo carrega a série, e o que é meu não carrega nenhuma', () => {
+    // O rótulo de um evento é guardado pela série: sem ela chegar à tela,
+    // marcar a reunião de segunda marcaria só aquela segunda.
+    const linha = agendaEmLinha(itensDoDia(banco, '2026-09-16'), [
+      { chave: 'abc@2026-09-16', uid: 'abc', serie: 'toda-segunda', titulo: 'Diária' },
+      { chave: 'xyz@2026-09-16', uid: 'xyz', titulo: 'Almoço' },
+    ]);
+    const daSerie = linha.find((i) => i.titulo === 'Diária');
+    expect(daSerie).toMatchObject({ tipo: 'evento', id: 'abc', serie: 'toda-segunda' });
+    expect(linha.find((i) => i.titulo === 'Almoço')?.serie).toBeUndefined();
+    expect(linha.find((i) => i.tipo === 'rotina')?.serie).toBeUndefined();
+  });
+
   it('dia vazio devolve lista vazia, e não quebra', () => {
     expect(agendaEmLinha(itensDoDia(bancoVazio(), '2026-09-16'))).toEqual([]);
   });

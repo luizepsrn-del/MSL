@@ -306,6 +306,14 @@ export interface ItemDaAgenda {
   feito: boolean;
   /** o id do registro, para a tela saber o que alternar */
   id: string;
+  /**
+   * A série, quando o item é um evento externo que se repete.
+   *
+   * Vem junto porque o rótulo de um evento é guardado pela série: marcar a
+   * reunião de segunda marca todas as segundas, que é o que "esta reunião"
+   * quer dizer. Ausente em tudo que não vem de fora.
+   */
+  serie?: string;
   /** uma linha a mais: o lugar do evento, o fim do horário */
   detalhe?: string;
 }
@@ -314,6 +322,8 @@ export interface ItemDaAgenda {
 export interface EventoNaAgenda {
   chave: string;
   uid: string;
+  /** a série, quando ele se repete */
+  serie?: string;
   titulo: string;
   hora?: string;
   fim?: string;
@@ -341,6 +351,7 @@ export function agendaEmLinha(
       // Sem contexto: ver `ItemDaAgenda`.
       feito: false,
       id: e.uid,
+      serie: e.serie,
       detalhe: [e.hora && e.fim ? `até ${e.fim}` : null, e.local].filter(Boolean).join(' · ') || undefined,
     })),
     ...itens.rotinas.map(({ rotina, feita }) => ({

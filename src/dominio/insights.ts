@@ -35,7 +35,13 @@ export interface FatiaDeTempo {
 
 /** O que o MSL sabe de um compromisso externo, para as contas. */
 export interface CompromissoExterno {
-  /** único por ocorrência */
+  /**
+   * A identidade do evento — **a mesma em todas as ocorrências dele**.
+   *
+   * É a chave do rótulo quando não há série. Usar a ocorrência aqui faria uma
+   * viagem de três dias virar três eventos distintos, e marcar um deles
+   * deixaria os outros dois sem rótulo.
+   */
   id: string;
   /** a série, quando o evento se repete; é por ela que o rótulo é guardado */
   serie?: string;
@@ -86,10 +92,24 @@ export function minutosDoEvento(evento: CompromissoExterno, jornada: Jornada): n
 
 const dentro = (dia: string, de: string, ate: string) => dia >= de && dia <= ate;
 
+/**
+ * Onde o rótulo de um evento fica guardado.
+ *
+ * A série quando ela existe, senão o evento. É o que faz marcar a reunião de
+ * segunda marcar todas as segundas — que é o que "esta reunião" quer dizer.
+ */
+export function chaveDeRotulo(evento: { id: string; serie?: string }): string {
+  return evento.serie ?? evento.id;
+}
+
+/** O rótulo guardado sob uma chave, ou nenhum. */
+export function rotuloMarcado(banco: Banco, chave: string): string | null {
+  return banco.marcacoes.find((m) => m.chaveDoEvento === chave)?.rotuloId ?? null;
+}
+
 /** O rótulo de um evento externo, pela série quando ela existe. */
 export function rotuloDoEvento(banco: Banco, evento: CompromissoExterno): string | null {
-  const chave = evento.serie ?? evento.id;
-  return banco.marcacoes.find((m) => m.chaveDoEvento === chave)?.rotuloId ?? null;
+  return rotuloMarcado(banco, chaveDeRotulo(evento));
 }
 
 /**
