@@ -30,6 +30,23 @@ export default defineConfig({
     baseURL: BASE,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+
+    /*
+     * Sem operário de serviço aqui dentro.
+     *
+     * Ele só se registra no build, e os testes passaram a rodar contra o build.
+     * A partir dali, no WebKit, `page.route('**\/api/*')` deixou de valer: a
+     * página controlada por um operário não passa mais os pedidos dela pela
+     * interceptação do Playwright. O pedido ia ao `vite preview` de verdade,
+     * que devolvia o `index.html` da SPA com 200, o cliente tentava ler JSON
+     * de um HTML e caía no `catch` — e a tela abria como se não houvesse
+     * conexão nenhuma.
+     *
+     * Eram sete testes vermelhos só no iPhone, nenhum no Chromium, e nenhum
+     * deles por defeito do sistema. O operário guarda arquivo, e não dado:
+     * bloqueá-lo aqui não tira de teste nenhum comportamento que ele decida.
+     */
+    serviceWorkers: 'block',
   },
 
   projects: [
@@ -52,7 +69,7 @@ export default defineConfig({
    *    defeitos que só o artefato publicado revelou.
    */
   webServer: {
-    command: `npm run build && npx vite preview --port ${PORTA} --strictPort`,
+    command: `npm run build && npx vite preview --host 127.0.0.1 --port ${PORTA} --strictPort`,
     url: BASE,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

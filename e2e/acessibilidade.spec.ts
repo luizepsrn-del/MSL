@@ -108,8 +108,14 @@ test('nenhuma tela reclama no console ao abrir', async ({ page }) => {
 
   // O 401 das rotas do Google sem sessão é esperado, e o navegador o registra
   // sozinho. Não é o sistema reclamando.
+  //
+  // O aviso do operário de serviço também não é: quem o bloqueia é o próprio
+  // Playwright, de propósito — ver `serviceWorkers: 'block'` na configuração.
   const doSistema = reclamacoes.filter(
-    (r) => !r.includes('401') && !r.includes('Failed to load resource'),
+    (r) =>
+      !r.includes('401') &&
+      !r.includes('Failed to load resource') &&
+      !r.includes('Service Worker registration blocked by Playwright'),
   );
   expect(doSistema).toEqual([]);
 });
