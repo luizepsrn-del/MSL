@@ -150,9 +150,29 @@ e um salto; ganha o arquivo ficar atrás da sessão. URL pública do Blob é leg
 por quem a tiver, para sempre — o mesmo problema já nomeado no endereço iCal
 ("o endereço é uma senha"), e sem motivo para repetir.
 
+Duas cercas dentro do `GET`, e as duas são obrigatórias:
+
+- **A chave é prefixada pelo id do dono, no servidor.** O aparelho manda
+  `a1/foto.png` e nunca vê o prefixo. Sem isso, duas contas no mesmo acervo leem
+  o arquivo uma da outra com um palpite — e um id de arquivo não é segredo: ele
+  viaja no banco, no backup e na sincronização. O arquivo de outra conta
+  responde 404, e não 403: um 403 confirmaria que a chave existe.
+- **`Content-Disposition: attachment` para o que `abreNoNavegador` recusa.** Uma
+  primeira versão deste desenho achava que `nosniff` resolvia o HTML guardado.
+  Não resolve: `nosniff` impede que um tipo seja *adivinhado* como HTML e não faz
+  nada com uma resposta honestamente rotulada `text/html`. Sem `attachment`, uma
+  página que eu guardei roda com a minha sessão, na minha origem. O
+  `abreNoNavegador` do domínio era uma convenção do cliente; a cerca é o
+  cabeçalho.
+
 ## O que fica pior do que hoje
 
-Dois, declarados e não escondidos:
+Três, declarados e não escondidos:
+
+- **O acervo exige conta conectada.** O resto do MSL funciona sozinho no
+  aparelho — o banco mora no `localStorage` e a conta é opcional. As três rotas
+  ficam atrás de `validarSessao`, então sem entrar não há acervo. A tela precisa
+  dizer isso com todas as letras em vez de mostrar erro de rede.
 
 - **O acervo não funciona offline.** O resto do MSL funciona, porque o banco
   está no `localStorage`. Arquivo exige rede. Cache no `sw.js` do que já foi
@@ -195,7 +215,15 @@ Entra neste trabalho. Sem ela, `exportar()` deixaria de devolver tudo que existe
 Exportar passa a produzir um `.zip` com `banco.json` e uma pasta de arquivos,
 escrito à mão sem dependência nova, no mesmo espírito do PDF que sai da
 impressão do navegador. Importar aceita os dois: o `.zip` completo e o `.json`
-puro de antes.
+puro de antes — todo backup que já existe é `.json`, e recusá-lo quebraria o que
+funcionava.
+
+O `Repositorio` **não muda**: `exportar()` continua devolvendo a string do banco
+e `importar()` continua recebendo texto. Montar e abrir o zip é assunto de
+`Ajustes.tsx`, que já lida com `Blob` e `download`. Trocar o contrato para
+binário obrigaria a mexer na interface, nas duas implementações, no espelho do
+`BancoContexto` e em todo teste que compara a saída com JSON — tudo para mover
+três linhas de camada.
 
 ## As fases
 
