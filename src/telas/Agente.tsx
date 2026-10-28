@@ -165,6 +165,11 @@ export function Agente() {
       case 'excluir-tarefa':
         await removerTarefa(efeito.id);
         return;
+      case 'editar-tarefa':
+        // A mudança já vem só com o que a frase pediu — campo ausente é campo
+        // que não se mexe, e mandá-lo como `undefined` apagaria o que havia.
+        await editarTarefa(efeito.id, efeito.mudanca);
+        return;
       case 'criar-lancamento':
         await criarLancamento({
           descricao: efeito.descricao,

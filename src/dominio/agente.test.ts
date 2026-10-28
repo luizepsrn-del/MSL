@@ -9,7 +9,7 @@ import {
   exigeConfirmacao,
   type CompromissoExterno,
 } from './agente';
-import { bancoVazio, type Banco, type Tarefa, type Lancamento, type Rotina } from '../dados/esquema';
+import { bancoVazio, type Banco, type Tarefa, type Lancamento, type Rotina, type Projeto } from '../dados/esquema';
 
 /** 2026-09-17 é uma quinta-feira. Toda data escrita aqui parte dela. */
 const HOJE = '2026-09-17';
@@ -21,6 +21,17 @@ function tarefa(extras: Partial<Tarefa> = {}): Tarefa {
     alteradoEm: '2026-09-01T09:00:00.000Z',
     titulo: 'Tarefa',
     contexto: 'pessoal',
+    ...extras,
+  };
+}
+
+function projeto(extras: Partial<Projeto> = {}): Projeto {
+  return {
+    id: 'p1',
+    criadoEm: '2026-09-01T09:00:00.000Z',
+    alteradoEm: '2026-09-01T09:00:00.000Z',
+    titulo: 'Projeto',
+    contexto: 'profissional',
     ...extras,
   };
 }
@@ -698,5 +709,150 @@ describe('a agenda de fora aparece na conversa', () => {
     const com = responder(bancoVazio(), { tipo: 'agenda', periodo: 'hoje' }, HOJE, []);
     const sem = responder(bancoVazio(), { tipo: 'agenda', periodo: 'hoje' }, HOJE);
     expect(com).toEqual(sem);
+  });
+});
+
+describe('editar tarefa', () => {
+  it('renomeia pelo nome antigo, guardando só o título novo', () => {
+    expect(interpretar('renomeia a reunião para call de alinhamento', HOJE)).toEqual({
+      tipo: 'editar-tarefa',
+      alvo: 'reunião',
+      mudanca: { titulo: 'Call de alinhamento' },
+    });
+  });
+
+  it('renomear sem destino não vira comando', () => {
+    expect(interpretar('renomeia a reunião', HOJE).tipo).toBe('pedido');
+  });
+
+  it('muda só a hora, sem precisar repetir o dia', () => {
+    expect(interpretar('muda o dentista para as 16h', HOJE)).toEqual({
+      tipo: 'editar-tarefa',
+      alvo: 'dentista',
+      mudanca: { hora: '16:00' },
+    });
+  });
+
+  it('"remarcar" com data continua sendo adiar, como antes', () => {
+    expect(interpretar('remarcar o dentista para sexta às 16h', HOJE)).toEqual({
+      tipo: 'adiar-tarefa',
+      alvo: 'dentista',
+      prazo: '2026-09-18',
+      hora: '16:00',
+    });
+  });
+
+  it('"remarcar" só com hora cai no editar, e não some calado', () => {
+    expect(interpretar('remarcar o dentista para as 16h', HOJE)).toEqual({
+      tipo: 'editar-tarefa',
+      alvo: 'dentista',
+      mudanca: { hora: '16:00' },
+    });
+  });
+
+  it('mudar a hora não mexe no prazo — a mudança não carrega o dia', () => {
+    const b = banco({ tarefas: [tarefa({ id: 'd', titulo: 'Dentista', prazo: '2026-09-20', hora: '09:00' })] });
+    const r = responder(b, interpretar('muda o dentista para as 16h', HOJE), HOJE);
+    expect(r.efeito).toMatchObject({ tipo: 'editar-tarefa', id: 'd', mudanca: { hora: '16:00' } });
+    expect(Object.keys((r.efeito as { mudanca: object }).mudanca)).toEqual(['hora']);
+  });
+
+  it('a prévia de hora mostra o antes virando o depois, e não só o antes', () => {
+    const b = banco({ tarefas: [tarefa({ id: 'd', titulo: 'Dentista', prazo: '2026-09-20', hora: '09:00' })] });
+    const r = responder(b, interpretar('muda o dentista para as 16h', HOJE), HOJE);
+    const lista = r.blocos.find((x) => x.tipo === 'lista') as { itens: { detalhe?: string }[] };
+    expect(lista.itens[0].detalhe).toContain('09:00');
+    expect(lista.itens[0].detalhe).toContain('16:00');
+  });
+
+  it('anota numa tarefa que já existe', () => {
+    expect(interpretar('anota na reunião que o cliente pediu orçamento', HOJE)).toEqual({
+      tipo: 'editar-tarefa',
+      alvo: 'reunião',
+      mudanca: { anotacao: 'O cliente pediu orçamento' },
+    });
+  });
+
+  it('"anotar" sem alvo continua criando tarefa, como antes', () => {
+    expect(interpretar('anotar comprar pão', HOJE)).toMatchObject({
+      tipo: 'criar-tarefa',
+      titulo: 'Comprar pão',
+    });
+  });
+
+  it('o "que" que separa é o primeiro — a anotação pode ter os seus', () => {
+    expect(interpretar('anota na reunião que o cliente disse que volta', HOJE)).toMatchObject({
+      alvo: 'reunião',
+      mudanca: { anotacao: 'O cliente disse que volta' },
+    });
+  });
+
+  it('a prévia avisa quando a anotação vai por cima de outra', () => {
+    const b = banco({ tarefas: [tarefa({ id: 'r', titulo: 'Reunião', anotacao: 'Levar contrato' })] });
+    const r = responder(b, interpretar('anota na reunião que o cliente pediu prazo', HOJE), HOJE);
+    const lista = r.blocos.find((x) => x.tipo === 'lista') as { itens: { detalhe?: string }[] };
+    expect(lista.itens[0].detalhe).toContain('Levar contrato');
+  });
+
+  it('move para um projeto pelo nome escrito', () => {
+    expect(interpretar('joga o dentista para o projeto Acttus', HOJE)).toEqual({
+      tipo: 'editar-tarefa',
+      alvo: 'dentista',
+      mudanca: { projeto: 'Acttus' },
+    });
+  });
+
+  it('"mover para sexta" continua sendo adiar — só "projeto" vira projeto', () => {
+    expect(interpretar('mover a reunião para sexta', HOJE)).toMatchObject({
+      tipo: 'adiar-tarefa',
+      prazo: '2026-09-18',
+    });
+  });
+
+  it('o nome do projeto vira id na hora de responder', () => {
+    const b = banco({
+      tarefas: [tarefa({ id: 'd', titulo: 'Dentista' })],
+      projetos: [projeto({ id: 'p9', titulo: 'Acttus' })],
+    });
+    const r = responder(b, interpretar('joga o dentista para o projeto acttus', HOJE), HOJE);
+    expect(r.efeito).toMatchObject({ tipo: 'editar-tarefa', id: 'd', mudanca: { projetoId: 'p9' } });
+  });
+
+  it('projeto que não existe não vira efeito nenhum', () => {
+    const b = banco({ tarefas: [tarefa({ id: 'd', titulo: 'Dentista' })] });
+    const r = responder(b, interpretar('joga o dentista para o projeto Fantasma', HOJE), HOJE);
+    expect(r.titulo).toBe('Não achei esse projeto');
+    expect(r.efeito).toBeUndefined();
+  });
+
+  it('o que nasceu no Google recebe recusa honesta, e não "não achei"', () => {
+    const b = banco({ tarefas: [] });
+    const fora: CompromissoExterno[] = [
+      { titulo: 'Reunião de equipe', dia: HOJE, hora: '10:00', diaInteiro: false },
+    ];
+    const r = responder(b, interpretar('cancela a reunião de equipe', HOJE), HOJE, fora);
+
+    expect(r.titulo).not.toBe('Não achei essa tarefa');
+    const texto = JSON.stringify(r.blocos);
+    expect(texto).toContain('Google');
+    expect(r.efeito).toBeUndefined();
+  });
+
+  it('sem nada parecido na agenda de fora, continua sendo "não achei"', () => {
+    const r = responder(banco({ tarefas: [] }), interpretar('cancela o dentista', HOJE), HOJE, []);
+    expect(r.titulo).toBe('Não achei essa tarefa');
+  });
+
+  it('a prévia mostra o título antigo virando o novo, e espera confirmação', () => {
+    const b = banco({ tarefas: [tarefa({ id: 'r', titulo: 'Reunião' })] });
+    const r = responder(b, interpretar('renomeia a reunião para Call', HOJE), HOJE);
+
+    expect(r.efeito).toEqual({
+      tipo: 'editar-tarefa',
+      id: 'r',
+      titulo: 'Reunião',
+      mudanca: { titulo: 'Call' },
+    });
+    expect(exigeConfirmacao(r.efeito!)).toBe(true);
   });
 });

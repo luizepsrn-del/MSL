@@ -4,6 +4,7 @@ import {
   type Banco,
   type Categoria,
   type Contexto,
+  type Projeto,
   type Tarefa,
 } from '../dados/esquema';
 import {
@@ -268,6 +269,32 @@ export function lerHora(texto: string): HoraLida {
 
 export type Periodo = 'hoje' | 'semana' | 'mes';
 
+/**
+ * O que a frase **pediu** que mudasse numa tarefa que já existe.
+ *
+ * Um objeto só, e não uma intenção por campo: a camada de dados já fala
+ * `editarTarefa(id, mudanca)`, e repetir a mesma forma aqui evita quatro ramos
+ * quase idênticos. Campo ausente é campo que não se mexe — e não campo que se
+ * apaga, que é o que um `undefined` solto significaria.
+ *
+ * O projeto vem por **nome**: `interpretar` não recebe o banco, e inventar um
+ * id a partir de texto seria apontar para um projeto que pode não existir.
+ */
+export interface MudancaPedida {
+  titulo?: string;
+  hora?: string;
+  anotacao?: string;
+  projeto?: string;
+}
+
+/** O que o banco vai **aplicar**, com o projeto já resolvido em id. */
+export interface MudancaDeTarefa {
+  titulo?: string;
+  hora?: string;
+  anotacao?: string;
+  projetoId?: string;
+}
+
 export type Intencao =
   | { tipo: 'ajuda' }
   | { tipo: 'resumo'; periodo: Periodo }
@@ -281,6 +308,7 @@ export type Intencao =
   | { tipo: 'concluir-tarefa'; alvo: string }
   | { tipo: 'adiar-tarefa'; alvo: string; prazo: string; hora?: string }
   | { tipo: 'excluir-tarefa'; alvo: string }
+  | { tipo: 'editar-tarefa'; alvo: string; mudanca: MudancaPedida }
   | { tipo: 'lancar'; descricao: string; valor: number; entrada: boolean; categoria: Categoria }
   | { tipo: 'pedido'; descricao: string };
 
@@ -325,6 +353,19 @@ function categoriaCitada(texto: string): Categoria | undefined {
  * ao Claude Code por último, como rede. O que não casa com nada **não é
  * adivinhado** — vira pedido, e a tela diz isso claramente.
  */
+/**
+ * O alvo, sem as sobras da frase.
+ *
+ * Tira o artigo da frente e o "para" que fica pendurado quando a data saiu do
+ * meio: "adiar o dentista para sexta às 16h" deixava o alvo como
+ * "dentista para", e nenhuma tarefa se chama assim.
+ */
+const alvoLimpo = (texto: string) =>
+  texto
+    .replace(/^[oa]\s+/i, '')
+    .replace(/\s+(para|pra)\s*$/i, '')
+    .trim();
+
 export function interpretar(texto: string, hoje: string): Intencao {
   const cru = texto.trim();
   const t = normalizar(cru);
@@ -373,28 +414,77 @@ export function interpretar(texto: string, hoje: string): Intencao {
     }
   }
 
-  const adiar = cru.match(/^(adiar|adia|remarcar|remarque|mover|passar)\s+(?:[oa]\s+)?(?:tarefa\s+)?(.+)$/i);
+  // Antes de `adiar`, que também responde por "mover", "passar" e "mudar". O
+  // que desempata é a expressão "para o projeto", que data nenhuma tem.
+  const paraProjeto = cru.match(
+    /^(mover|move|mova|passar|passa|passe|jogar|joga|jogue|mudar|muda|mude)\s+(?:[oa]\s+)?(?:tarefa\s+)?(.+?)\s+para\s+(?:[o]\s+)?projeto\s+(.+)$/i,
+  );
+  if (paraProjeto) {
+    const alvoProjeto = alvoLimpo(paraProjeto[2]);
+    const nome = paraProjeto[3].trim();
+    if (alvoProjeto !== '' && nome !== '') {
+      return { tipo: 'editar-tarefa', alvo: alvoProjeto, mudanca: { projeto: nome } };
+    }
+  }
+
+  const adiar = cru.match(
+    /^(adiar|adia|remarcar|remarque|mover|passar|mudar|muda|mude|trocar|troca|troque)\s+(?:[oa]\s+)?(?:tarefa\s+)?(.+)$/i,
+  );
   if (adiar) {
     const data = lerPrazo(adiar[2], hoje);
     const { hora, resto } = lerHora(data.resto);
-    const alvoAdiar = resto.replace(/^[oa]\s+/i, '').trim();
+    const alvoAdiar = alvoLimpo(resto);
     // Adiar sem destino não é um comando, é meia frase: sem a data eu não
     // tenho para onde mover, e adivinhar "amanhã" seria inventar ordem minha.
     if (alvoAdiar !== '' && data.prazo) {
       return { tipo: 'adiar-tarefa', alvo: alvoAdiar, prazo: data.prazo, hora };
     }
+    // Hora sem data é mudar o horário e **manter o dia**. Cai aqui e não no
+    // ramo de cima de propósito: quem tem data é adiar, quem só tem hora é
+    // edição — o mesmo critério que separou "agendar" de "concluir".
+    if (alvoAdiar !== '' && hora) {
+      return { tipo: 'editar-tarefa', alvo: alvoAdiar, mudanca: { hora } };
+    }
   }
 
-  const excluir = cru.match(/^(excluir|exclua|apagar|apague|deletar|remover|remova|cancelar|cancele)\s+(?:[oa]\s+)?(?:tarefa\s+)?(.+)$/i);
+  const excluir = cru.match(/^(excluir|exclua|exclui|apagar|apague|apaga|deletar|deleta|remover|remova|remove|cancelar|cancele|cancela)\s+(?:[oa]\s+)?(?:tarefa\s+)?(.+)$/i);
   if (excluir) {
     const alvoExcluir = excluir[2].replace(/^[oa]\s+/i, '').trim();
     if (alvoExcluir !== '') return { tipo: 'excluir-tarefa', alvo: alvoExcluir };
+  }
+
+  // Guloso de propósito: ganha o **último** "para". "renomear a ida para o
+  // mercado para compras" tem dois, e é o segundo que separa alvo de destino.
+  const renomear = cru.match(
+    /^(renomear|renomeia|renomeie|rebatizar|rebatize)\s+(?:[oa]\s+)?(?:tarefa\s+)?(.+)\s+para\s+(.+)$/i,
+  );
+  if (renomear) {
+    const alvoRenomear = renomear[2].trim();
+    const novo = renomear[3].trim();
+    if (alvoRenomear !== '' && novo !== '') {
+      return { tipo: 'editar-tarefa', alvo: alvoRenomear, mudanca: { titulo: maiuscula(novo) } };
+    }
   }
 
   const concluir = t.match(/^(concluir|concluido|terminei|finalizei|marcar|feito)\s+(.+)$/);
   if (concluir) {
     const alvo = concluir[2].replace(/^(a\s+)?tarefa\s+/, '').trim();
     if (alvo !== '') return { tipo: 'concluir-tarefa', alvo };
+  }
+
+  // Antes de `criar`, que também responde por "anotar": sem este ramo,
+  // "anota na reunião que..." viraria uma tarefa nova chamada "na reunião
+  // que...". O que separa os dois é o alvo seguido de "que".
+  //
+  // Preguiçoso aqui, ao contrário de renomear: ganha o **primeiro** "que",
+  // porque a anotação costuma trazer os seus — "disse que volta".
+  const anotar = cru.match(/^(anotar|anota|anote)\s+(?:n[oa]\s+)?(.+?)\s+que\s+(.+)$/i);
+  if (anotar) {
+    const alvoAnotar = alvoLimpo(anotar[2]);
+    const nota = anotar[3].trim();
+    if (alvoAnotar !== '' && nota !== '') {
+      return { tipo: 'editar-tarefa', alvo: alvoAnotar, mudanca: { anotacao: maiuscula(nota) } };
+    }
   }
 
   const criar = cru.match(
@@ -466,6 +556,25 @@ export function acharTarefas(banco: Banco, alvo: string): Tarefa[] {
   );
 }
 
+/** Compromissos de fora cujo título contém o procurado. */
+function acharCompromissos(
+  compromissos: readonly CompromissoExterno[],
+  alvo: string,
+): CompromissoExterno[] {
+  const procurado = normalizar(alvo);
+  if (procurado === '') return [];
+  return compromissos.filter((c) => normalizar(c.titulo).includes(procurado));
+}
+
+/** Projetos ativos cujo nome contém o procurado. Mesma régua de `acharTarefas`. */
+export function acharProjetos(banco: Banco, nome: string): Projeto[] {
+  const procurado = normalizar(nome);
+  if (procurado === '') return [];
+  return banco.projetos.filter(
+    (p) => !p.arquivadoEm && normalizar(p.titulo).includes(procurado),
+  );
+}
+
 /* ── O que vem da agenda de fora ─────────────────────────────────────────── */
 
 /**
@@ -526,10 +635,42 @@ function listaDeCompromissos(itens: readonly CompromissoExterno[], titulo: strin
  */
 type Alvo = { achou: true; tarefa: Tarefa } | { achou: false; resposta: Resposta };
 
-function umaTarefa(banco: Banco, alvo: string, hoje: string): Alvo {
+function umaTarefa(
+  banco: Banco,
+  alvo: string,
+  hoje: string,
+  compromissos: readonly CompromissoExterno[] = [],
+): Alvo {
   const candidatas = acharTarefas(banco, alvo);
 
   if (candidatas.length === 0) {
+    // Antes de dizer "não achei", olhar a agenda de fora. O agente **mostra**
+    // esses compromissos desde que passou a enxergar o Google, e responder
+    // "não achei" sobre algo que ele acabou de listar é mentir por tecnicismo.
+    const deFora = acharCompromissos(compromissos, alvo);
+    if (deFora.length > 0) {
+      return {
+        achou: false,
+        resposta: {
+          titulo: 'Essa é do Google',
+          blocos: [
+            { tipo: 'lista', itens: deFora.slice(0, LIMITE_DA_LISTA).map((c) => ({
+              texto: c.titulo,
+              detalhe: c.diaInteiro ? c.dia : `${c.dia}${c.hora ? `, ${c.hora}` : ''}`,
+              tom: 'neutro' as const,
+            })) },
+            {
+              tipo: 'texto',
+              texto:
+                'Esse compromisso nasceu no Google, e eu só mexo no que foi criado aqui. ' +
+                'Por ora, altere direto no Google Agenda.',
+            },
+            { tipo: 'atalho', rotulo: 'Abrir calendário', destino: '/app/calendario' },
+          ],
+        },
+      };
+    }
+
     return {
       achou: false,
       resposta: {
@@ -578,6 +719,8 @@ export type Efeito =
   | { tipo: 'concluir-tarefa'; id: string; titulo: string }
   | { tipo: 'adiar-tarefa'; id: string; titulo: string; prazo: string; hora?: string }
   | { tipo: 'excluir-tarefa'; id: string; titulo: string }
+  /** `titulo` é o nome de **agora**, para a tela conseguir dizer o que mexeu */
+  | { tipo: 'editar-tarefa'; id: string; titulo: string; mudanca: MudancaDeTarefa }
   | {
       tipo: 'criar-lancamento';
       descricao: string;
@@ -611,6 +754,7 @@ export function exigeConfirmacao(efeito: Efeito): boolean {
     case 'concluir-tarefa':
     case 'adiar-tarefa':
     case 'excluir-tarefa':
+    case 'editar-tarefa':
       return true;
     case 'criar-tarefa':
     case 'criar-lancamento':
@@ -628,9 +772,45 @@ export function rotuloDaConfirmacao(efeito: Efeito): string {
       return 'Adiar';
     case 'excluir-tarefa':
       return 'Excluir';
+    case 'editar-tarefa':
+      return 'Salvar';
     default:
       return 'Confirmar';
   }
+}
+
+/**
+ * O que a prévia mostra embaixo do nome: o antes virando o depois.
+ *
+ * Só fala do que mudou. Uma mudança de projeto não precisa repetir a hora.
+ */
+function descreverMudanca(
+  alvo: Tarefa,
+  mudanca: MudancaDeTarefa,
+  hoje: string,
+  destino?: string,
+): string {
+  if (destino !== undefined) return `Vai para ${destino}`;
+  if (mudanca.titulo !== undefined) return `${alvo.titulo} → ${mudanca.titulo}`;
+  // Mesma forma que adiar usa: antes → depois. Mostrar só o antes faria a
+  // prévia de uma mudança de hora exibir justamente o horário que vai sair.
+  if (mudanca.hora !== undefined) {
+    return `${detalheDe(alvo.prazo, alvo.hora, hoje)} → ${detalheDe(alvo.prazo, mudanca.hora, hoje)}`;
+  }
+  // A anotação **substitui** a que havia. Quando havia uma, a prévia mostra
+  // qual vai embora: confirmar sem ver o que se perde não é confirmar.
+  if (mudanca.anotacao !== undefined) {
+    return alvo.anotacao ? `${alvo.anotacao} → ${mudanca.anotacao}` : mudanca.anotacao;
+  }
+  return detalheDe(alvo.prazo, alvo.hora, hoje);
+}
+
+function listaDeProjetos(projetos: readonly Projeto[]): Bloco {
+  return {
+    tipo: 'lista',
+    itens: projetos.slice(0, LIMITE_DA_LISTA).map((p) => ({ texto: p.titulo, tom: 'neutro' })),
+    restantes: Math.max(0, projetos.length - LIMITE_DA_LISTA),
+  };
 }
 
 const plural = (n: number, um: string, muitos: string) => `${n} ${n === 1 ? um : muitos}`;
@@ -737,14 +917,28 @@ export function responder(
             ],
           },
           {
-            tipo: 'texto',
-            texto:
-              'O que mexe no que já existe — concluir, adiar, excluir — mostra antes o que vai ' +
-              'fazer e espera o seu toque. O que só soma acontece na hora.',
+            tipo: 'lista',
+            titulo: 'Ou mande mudar o que já existe',
+            itens: [
+              { texto: 'Renomear a reunião para call de alinhamento', detalhe: 'troca só o nome' },
+              { texto: 'Mudar o dentista para as 16h', detalhe: 'muda a hora e mantém o dia' },
+              {
+                texto: 'Anotar na reunião que o cliente pediu orçamento',
+                detalhe: 'escreve por cima da anotação que houver',
+              },
+              { texto: 'Jogar o dentista para o projeto Acttus', detalhe: 'move entre projetos' },
+            ],
           },
           {
             tipo: 'texto',
             texto:
+              'O que mexe no que já existe — concluir, adiar, excluir, mudar — mostra antes o ' +
+              'que vai fazer e espera o seu toque. O que só soma acontece na hora.',
+          },
+          {
+            tipo: 'texto',
+            texto:
+              'Compromisso que nasceu no Google eu mostro, mas não mexo: altere direto lá. ' +
               'Qualquer outra coisa vira um pedido pronto para colar no Claude Code, que é onde ' +
               'o sistema muda — com teste e revisão.',
           },
@@ -981,7 +1175,7 @@ export function responder(
       };
 
     case 'concluir-tarefa': {
-      const achado = umaTarefa(banco, intencao.alvo, hoje);
+      const achado = umaTarefa(banco, intencao.alvo, hoje, compromissos);
       if (!achado.achou) return achado.resposta;
       const alvo = achado.tarefa;
       // No passado ("Concluída", "Marcada agora") esta resposta mentia: ela é
@@ -1002,7 +1196,7 @@ export function responder(
     }
 
     case 'adiar-tarefa': {
-      const alvo = umaTarefa(banco, intencao.alvo, hoje);
+      const alvo = umaTarefa(banco, intencao.alvo, hoje, compromissos);
       if (!alvo.achou) return alvo.resposta;
 
       const antes = detalheDe(alvo.tarefa.prazo, alvo.tarefa.hora, hoje);
@@ -1026,7 +1220,7 @@ export function responder(
     }
 
     case 'excluir-tarefa': {
-      const alvo = umaTarefa(banco, intencao.alvo, hoje);
+      const alvo = umaTarefa(banco, intencao.alvo, hoje, compromissos);
       if (!alvo.achou) return alvo.resposta;
 
       return {
@@ -1045,6 +1239,71 @@ export function responder(
           { tipo: 'texto', texto: 'Excluir apaga a tarefa e o histórico dela. Não tem desfazer.' },
         ],
         efeito: { tipo: 'excluir-tarefa', id: alvo.tarefa.id, titulo: alvo.tarefa.titulo },
+      };
+    }
+
+    case 'editar-tarefa': {
+      const alvo = umaTarefa(banco, intencao.alvo, hoje, compromissos);
+      if (!alvo.achou) return alvo.resposta;
+
+      const pedida = intencao.mudanca;
+      const mudanca: MudancaDeTarefa = {};
+      // Um por um, e não um espalhamento: `{ hora: undefined }` chegaria no
+      // banco como ordem de apagar a hora, e a frase não pediu isso.
+      if (pedida.titulo !== undefined) mudanca.titulo = pedida.titulo;
+      if (pedida.hora !== undefined) mudanca.hora = pedida.hora;
+      if (pedida.anotacao !== undefined) mudanca.anotacao = pedida.anotacao;
+
+      let destino: string | undefined;
+      if (pedida.projeto !== undefined) {
+        const achados = acharProjetos(banco, pedida.projeto);
+        if (achados.length === 0) {
+          return {
+            titulo: 'Não achei esse projeto',
+            blocos: [
+              {
+                tipo: 'texto',
+                texto: `Nenhum projeto ativo com "${pedida.projeto}" no nome.`,
+              },
+              { tipo: 'atalho', rotulo: 'Abrir projetos', destino: '/app/projetos' },
+            ],
+          };
+        }
+        if (achados.length > 1) {
+          return {
+            titulo: 'Qual deles?',
+            blocos: [
+              listaDeProjetos(achados),
+              { tipo: 'texto', texto: 'Escreva o nome com mais letras e eu mexo no certo.' },
+            ],
+          };
+        }
+        mudanca.projetoId = achados[0].id;
+        destino = achados[0].titulo;
+      }
+
+      // No infinitivo, como concluir, adiar e excluir: isto é desenhado antes
+      // da confirmação, e o efeito pode nunca acontecer.
+      return {
+        titulo: 'Salvar',
+        blocos: [
+          {
+            tipo: 'lista',
+            itens: [
+              {
+                texto: alvo.tarefa.titulo,
+                detalhe: descreverMudanca(alvo.tarefa, mudanca, hoje, destino),
+                tom: 'atencao',
+              },
+            ],
+          },
+        ],
+        efeito: {
+          tipo: 'editar-tarefa',
+          id: alvo.tarefa.id,
+          titulo: alvo.tarefa.titulo,
+          mudanca,
+        },
       };
     }
 
