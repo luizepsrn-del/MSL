@@ -10,9 +10,11 @@ import {
   Field,
   Select,
   SuccessDialog,
+  IconButton,
 } from '../../design-system';
 import { Link } from 'react-router-dom';
 import { useBanco } from '../dados/BancoContexto';
+import { useDitado, DITADO_DISPONIVEL } from '../dados/ditado';
 import { COLECOES } from '../dados/esquema';
 import {
   interpretar,
@@ -98,6 +100,19 @@ export function Agente() {
   const [nivel, setNivel] = React.useState<NivelDeDados>('estrutura');
   const [copiado, setCopiado] = React.useState(false);
   const fim = React.useRef<HTMLDivElement>(null);
+
+  // O que já estava escrito quando o microfone ligou. A fala é encaixada
+  // depois disso, para ditar no meio de uma frase digitada não apagar o começo.
+  const baseDoDitado = React.useRef('');
+  const ditado = useDitado((frase) => {
+    const base = baseDoDitado.current;
+    setTexto(base === '' ? frase : `${base} ${frase}`);
+  });
+
+  const alternarDitado = () => {
+    if (ditado.estado === 'parado') baseDoDitado.current = texto.trim();
+    ditado.alternar();
+  };
 
   const contexto: ContextoDoPedido = {
     modulos: [...PILARES, EXTENSAO, AJUSTES].map((p) => p.rotulo),
@@ -214,7 +229,11 @@ export function Agente() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--card-gap)' }}>
       <Card
         title="O seu agente"
-        subtitle="Local — nada sai deste aparelho"
+        subtitle={
+          ditado.estado === 'ouvindo'
+            ? 'Ouvindo — a frase ditada sai do aparelho para virar texto'
+            : 'Os seus dados ficam aqui. Só o que você ditar sai, enquanto dita.'
+        }
         action={
           <Badge tone="ontime" dot={false}>
             {formatarNumero(totalRegistros)} registros
@@ -310,13 +329,37 @@ export function Agente() {
             </div>
           )}
 
-          <MessageComposer
-            value={texto}
-            onChange={setTexto}
-            onSend={enviar}
-            placeholder="Pergunte, ou mande fazer…"
-            tools={[]}
-          />
+          <div style={{ display: 'flex', gap: 'var(--sp-6)', alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <MessageComposer
+                value={texto}
+                onChange={setTexto}
+                onSend={enviar}
+                placeholder={ditado.estado === 'ouvindo' ? 'Pode falar…' : 'Pergunte, ou mande fazer…'}
+                tools={[]}
+              />
+            </div>
+            {DITADO_DISPONIVEL && (
+              <IconButton
+                icon="mic"
+                label={ditado.estado === 'ouvindo' ? 'Parar de ditar' : 'Ditar'}
+                variant={ditado.estado === 'ouvindo' ? 'accent' : 'ghost'}
+                size={34}
+                onClick={alternarDitado}
+              />
+            )}
+          </div>
+
+          {ditado.erro && (
+            <span
+              style={{
+                color: 'var(--orange-500)',
+                font: 'var(--fw-regular) var(--fs-micro)/1.4 var(--font-core)',
+              }}
+            >
+              {ditado.erro}
+            </span>
+          )}
 
           <div style={{ display: 'flex', gap: 'var(--sp-5)', flexWrap: 'wrap' }}>
             {ATALHOS.map((atalho) => (
