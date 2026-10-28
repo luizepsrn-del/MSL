@@ -15,6 +15,9 @@ import {
 import { Link } from 'react-router-dom';
 import { useBanco } from '../dados/BancoContexto';
 import { useDitado, DITADO_DISPONIVEL } from '../dados/ditado';
+import { useAgendaExterna } from '../dados/agendaExterna';
+import { useGoogle } from '../dados/google';
+import { semanaDe } from '../dominio/calendario';
 import { COLECOES } from '../dados/esquema';
 import {
   interpretar,
@@ -23,6 +26,7 @@ import {
   type Bloco,
   type Tom,
   type Efeito,
+  type CompromissoExterno,
   exigeConfirmacao,
   rotuloDaConfirmacao,
 } from '../dominio/agente';
@@ -114,6 +118,19 @@ export function Agente() {
     ditado.alternar();
   };
 
+  // A janela é a semana de hoje: é o alcance das perguntas que olham a agenda
+  // ("o que tenho hoje?", "e nesta semana?"), e pedir mais seria buscar rede
+  // para responder o que ninguém perguntou.
+  const semana = semanaDe(hoje);
+  const google = useGoogle(semana[0], semana[6]);
+  const assinatura = useAgendaExterna(semana[0], semana[6]);
+
+  // A mesma regra do calendário: conectado ao Google, ele manda; senão vale a
+  // agenda assinada. Duas fontes ao mesmo tempo mostrariam tudo em dobro.
+  const compromissos: readonly CompromissoExterno[] = google.conectado
+    ? google.eventos
+    : (assinatura.agenda?.eventos ?? []);
+
   const contexto: ContextoDoPedido = {
     modulos: [...PILARES, EXTENSAO, AJUSTES].map((p) => p.rotulo),
     componentes: COMPONENTES,
@@ -172,7 +189,7 @@ export function Agente() {
     // A resposta é calculada **antes** do efeito: "concluir o seguro" precisa
     // achar a tarefa enquanto ela ainda está pendente.
     const intencao = interpretar(limpo, hoje);
-    const resposta = responder(banco, intencao, hoje);
+    const resposta = responder(banco, intencao, hoje, compromissos);
 
     // Nada é gravado enquanto o efeito pedir confirmação. O turno entra na
     // conversa já dizendo em que pé está, e a prévia é a própria resposta —
@@ -242,7 +259,7 @@ export function Agente() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
           {turnos.length === 0 ? (
-            <Resposta resposta={responder(banco, { tipo: 'ajuda' }, hoje)} />
+            <Resposta resposta={responder(banco, { tipo: 'ajuda' }, hoje, compromissos)} />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-9)' }}>
               {turnos.map((t) => (

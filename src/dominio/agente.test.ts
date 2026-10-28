@@ -7,6 +7,7 @@ import {
   acharTarefas,
   responder,
   exigeConfirmacao,
+  type CompromissoExterno,
 } from './agente';
 import { bancoVazio, type Banco, type Tarefa, type Lancamento, type Rotina } from '../dados/esquema';
 
@@ -642,5 +643,60 @@ describe('a voz da prévia', () => {
       expect(r.efeito && exigeConfirmacao(r.efeito)).toBe(true);
       expect(['Concluir', 'Adiar', 'Excluir']).toContain(r.titulo);
     }
+  });
+});
+
+describe('a agenda de fora aparece na conversa', () => {
+  const reuniao: CompromissoExterno = {
+    titulo: 'Reunião no cartório',
+    dia: HOJE,
+    hora: '15:00',
+    diaInteiro: false,
+  };
+
+  it('"o que tenho hoje?" lista o compromisso do Google', () => {
+    const r = responder(bancoVazio(), { tipo: 'agenda', periodo: 'hoje' }, HOJE, [reuniao]);
+    const texto = JSON.stringify(r.blocos);
+    expect(texto).toContain('Reunião no cartório');
+    expect(texto).toContain('15:00');
+  });
+
+  it('dia sem tarefa mas com reunião não é "dia cumprido"', () => {
+    const banco: Banco = { ...bancoVazio(), tarefas: [tarefa({ concluidaEm: '2026-09-17T10:00:00.000Z' })] };
+    const vazio = responder(banco, { tipo: 'agenda', periodo: 'hoje' }, HOJE);
+    expect(JSON.stringify(vazio.blocos)).toMatch(/Dia cumprido|Nada cadastrado/);
+
+    const cheio = responder(banco, { tipo: 'agenda', periodo: 'hoje' }, HOJE, [reuniao]);
+    expect(JSON.stringify(cheio.blocos)).not.toMatch(/Dia cumprido|Nada cadastrado/);
+  });
+
+  it('evento de dia inteiro aparece sem hora inventada', () => {
+    const feriado: CompromissoExterno = { titulo: 'Feriado', dia: HOJE, diaInteiro: true };
+    const r = responder(bancoVazio(), { tipo: 'agenda', periodo: 'hoje' }, HOJE, [feriado]);
+    expect(JSON.stringify(r.blocos)).toContain('Dia inteiro');
+  });
+
+  it('ordena por hora, e o dia inteiro vem primeiro', () => {
+    const tarde: CompromissoExterno = { titulo: 'Tarde', dia: HOJE, hora: '16:00', diaInteiro: false };
+    const manha: CompromissoExterno = { titulo: 'Manhã', dia: HOJE, hora: '09:00', diaInteiro: false };
+    const inteiro: CompromissoExterno = { titulo: 'Inteiro', dia: HOJE, diaInteiro: true };
+    const r = responder(bancoVazio(), { tipo: 'agenda', periodo: 'hoje' }, HOJE, [tarde, manha, inteiro]);
+    const texto = JSON.stringify(r.blocos);
+    expect(texto.indexOf('Inteiro')).toBeLessThan(texto.indexOf('Manhã'));
+    expect(texto.indexOf('Manhã')).toBeLessThan(texto.indexOf('Tarde'));
+  });
+
+  it('a semana conta os compromissos e ignora os de fora dela', () => {
+    const fora: CompromissoExterno = { titulo: 'Mês que vem', dia: '2026-11-20', hora: '10:00', diaInteiro: false };
+    const r = responder(bancoVazio(), { tipo: 'agenda', periodo: 'semana' }, HOJE, [reuniao, fora]);
+    const texto = JSON.stringify(r.blocos);
+    expect(texto).toContain('Reunião no cartório');
+    expect(texto).not.toContain('Mês que vem');
+  });
+
+  it('sem agenda assinada, nada muda — o parâmetro é opcional', () => {
+    const com = responder(bancoVazio(), { tipo: 'agenda', periodo: 'hoje' }, HOJE, []);
+    const sem = responder(bancoVazio(), { tipo: 'agenda', periodo: 'hoje' }, HOJE);
+    expect(com).toEqual(sem);
   });
 });

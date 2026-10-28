@@ -466,6 +466,55 @@ export function acharTarefas(banco: Banco, alvo: string): Tarefa[] {
   );
 }
 
+/* ── O que vem da agenda de fora ─────────────────────────────────────────── */
+
+/**
+ * Um compromisso que não nasceu aqui.
+ *
+ * O agente respondia "o que tenho hoje?" olhando só o banco, e por isso mentia
+ * por omissão: uma reunião marcada direto no Google não existia para ele. O
+ * calendário já mostrava esses eventos; quem não os via era a conversa.
+ *
+ * O tipo é o mínimo que a resposta usa, de propósito — tanto o `EventoExterno`
+ * do iCal quanto o `EventoParaTela` do Google servem sem conversão, e o
+ * domínio não passa a depender de nenhum dos dois.
+ *
+ * Eles chegam por parâmetro, e não de dentro: buscar na rede é trabalho da
+ * tela, e `responder` continua sendo função pura que se prova sem navegador.
+ */
+export interface CompromissoExterno {
+  titulo: string;
+  /** dia local `AAAA-MM-DD` */
+  dia: string;
+  /** `HH:MM` de início; ausente quando ocupa o dia inteiro */
+  hora?: string;
+  diaInteiro: boolean;
+}
+
+/** Os compromissos de um dia, em ordem de hora. Dia inteiro vem primeiro. */
+function compromissosDoDia(
+  compromissos: readonly CompromissoExterno[],
+  dia: string,
+): CompromissoExterno[] {
+  return compromissos
+    .filter((c) => c.dia === dia)
+    .sort((a, b) => (a.hora ?? '').localeCompare(b.hora ?? ''));
+}
+
+/** A linha de um compromisso numa lista: a hora, ou a marca de dia inteiro. */
+function listaDeCompromissos(itens: readonly CompromissoExterno[], titulo: string): Bloco {
+  const mostrados = itens.slice(0, LIMITE_DA_LISTA);
+  return {
+    tipo: 'lista',
+    titulo,
+    restantes: itens.length - mostrados.length,
+    itens: mostrados.map((c) => ({
+      texto: c.titulo,
+      detalhe: c.hora ?? 'Dia inteiro',
+    })),
+  };
+}
+
 /* ── Achar uma tarefa só ─────────────────────────────────────────────────── */
 
 /**
@@ -642,7 +691,14 @@ function tomDoSaldo(centavos: number): Tom {
  * `efeito`, que a tela executa — assim tudo aqui é testável sem navegador, e
  * nenhuma resposta grava nada por conta própria.
  */
-export function responder(banco: Banco, intencao: Intencao, hoje: string): Resposta {
+export function responder(
+  banco: Banco,
+  intencao: Intencao,
+  hoje: string,
+  // Opcional porque a maioria das respostas não olha a agenda, e porque um
+  // aparelho sem agenda assinada é um estado normal, não uma falta.
+  compromissos: readonly CompromissoExterno[] = [],
+): Resposta {
   switch (intencao.tipo) {
     case 'ajuda':
       return {
@@ -735,7 +791,9 @@ export function responder(banco: Banco, intencao: Intencao, hoje: string): Respo
     }
 
     case 'agenda':
-      return intencao.periodo === 'hoje' ? agendaDeHoje(banco, hoje) : agendaDaSemana(banco, hoje);
+      return intencao.periodo === 'hoje'
+        ? agendaDeHoje(banco, hoje, compromissos)
+        : agendaDaSemana(banco, hoje, compromissos);
 
     case 'gastos': {
       const { lancamentos, ano, mes } = mesCorrente(banco, hoje);
@@ -1034,12 +1092,19 @@ export function responder(banco: Banco, intencao: Intencao, hoje: string): Respo
 
 /* ── Relatórios ──────────────────────────────────────────────────────────── */
 
-function agendaDeHoje(banco: Banco, hoje: string): Resposta {
+function agendaDeHoje(
+  banco: Banco,
+  hoje: string,
+  compromissos: readonly CompromissoExterno[] = [],
+): Resposta {
   const rotinas = agendaDoDia(banco, hoje);
   const pendentesDeRotina = rotinas.filter((i) => !i.feita);
   const tarefas = tarefasDoDia(banco, hoje);
+  const doDia = compromissosDoDia(compromissos, hoje);
 
-  if (pendentesDeRotina.length === 0 && tarefas.length === 0) {
+  // "Dia cumprido" com uma reunião às 15h é a mentira que este caso existia
+  // para evitar: o compromisso entra na conta do vazio, não só na lista.
+  if (pendentesDeRotina.length === 0 && tarefas.length === 0 && doDia.length === 0) {
     return {
       titulo: 'Hoje',
       blocos: [
@@ -1055,6 +1120,12 @@ function agendaDeHoje(banco: Banco, hoje: string): Resposta {
   }
 
   const blocos: Bloco[] = [];
+  // A agenda vem primeiro: compromisso tem hora marcada, e é ele que decide o
+  // que cabe no resto do dia.
+  if (doDia.length > 0) {
+    blocos.push(listaDeCompromissos(doDia, 'Na agenda'));
+    blocos.push({ tipo: 'atalho', rotulo: 'Abrir calendário', destino: '/app/calendario' });
+  }
   if (pendentesDeRotina.length > 0) {
     blocos.push({
       tipo: 'lista',
@@ -1073,10 +1144,15 @@ function agendaDeHoje(banco: Banco, hoje: string): Resposta {
   return { titulo: 'Hoje', blocos };
 }
 
-function agendaDaSemana(banco: Banco, hoje: string): Resposta {
+function agendaDaSemana(
+  banco: Banco,
+  hoje: string,
+  compromissos: readonly CompromissoExterno[] = [],
+): Resposta {
   const dias = semanaDe(hoje);
   const semana = semanaDeTarefas(banco, dias[0]);
   const total = semana.reduce((s, d) => s + d.pendentes.length, 0);
+  const naSemana = dias.flatMap((d) => compromissosDoDia(compromissos, d));
 
   return {
     titulo: nomeDaSemana(hoje),
@@ -1085,6 +1161,7 @@ function agendaDaSemana(banco: Banco, hoje: string): Resposta {
         tipo: 'metricas',
         itens: [
           { rotulo: 'Vencem nesta semana', valor: formatarNumero(total) },
+          { rotulo: 'Na agenda', valor: formatarNumero(naSemana.length) },
           {
             rotulo: 'Já concluídas',
             valor: formatarNumero(semana.reduce((s, d) => s + d.concluidas.length, 0)),
@@ -1092,11 +1169,23 @@ function agendaDaSemana(banco: Banco, hoje: string): Resposta {
           },
         ],
       },
-      ...(total === 0
-        ? [{ tipo: 'texto' as const, texto: 'Nenhuma tarefa vence nesta semana.' }]
-        : semana
-            .filter((d) => d.pendentes.length > 0)
-            .map((d) => listaDeTarefas(ordenarTarefas(d.pendentes, hoje), hoje, tituloDoDia(d.dia, hoje)))),
+      // Um dia por vez, com o compromisso ao lado da tarefa que vence nele —
+      // separar as duas listas obrigaria a cruzar datas de cabeça.
+      ...dias.flatMap((dia): Bloco[] => {
+        const doDia = compromissosDoDia(compromissos, dia);
+        const pendentes = semana.find((d) => d.dia === dia)?.pendentes ?? [];
+        if (doDia.length === 0 && pendentes.length === 0) return [];
+        const titulo = tituloDoDia(dia, hoje);
+        return [
+          ...(doDia.length > 0 ? [listaDeCompromissos(doDia, titulo)] : []),
+          ...(pendentes.length > 0
+            ? [listaDeTarefas(ordenarTarefas(pendentes, hoje), hoje, doDia.length > 0 ? undefined : titulo)]
+            : []),
+        ];
+      }),
+      ...(total === 0 && naSemana.length === 0
+        ? [{ tipo: 'texto' as const, texto: 'Nada marcado nem vencendo nesta semana.' }]
+        : []),
       { tipo: 'atalho', rotulo: 'Abrir calendário', destino: '/app/calendario' },
     ],
   };
