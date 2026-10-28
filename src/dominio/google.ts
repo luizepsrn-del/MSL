@@ -170,7 +170,9 @@ export function corpoDoMover(
 ): Pick<CorpoDoEvento, 'start' | 'end'> {
   const inicio = evento.start?.dateTime;
   const fim = evento.end?.dateTime;
-  const horaFinal = hora ?? (inicio ? ajuda.paraLocal(inicio).hora : undefined);
+  // Vazio vem de parser e quer dizer "sem hora": tratá-lo como hora apagaria o
+  // horário do evento, que é justamente o que esta função não pode fazer.
+  const horaFinal = hora || (inicio ? ajuda.paraLocal(inicio).hora : undefined);
 
   if (!horaFinal) {
     const de = evento.start?.date;
@@ -182,9 +184,18 @@ export function corpoDoMover(
   const medida = inicio && fim ? (Date.parse(fim) - Date.parse(inicio)) / 60_000 : NaN;
   const minutos = Number.isFinite(medida) && medida > 0 ? medida : MINUTOS_PADRAO;
 
+  // O fim sai do total de minutos e cai no dia que tiver que cair. Não é
+  // `somarMinutos`: o teto de 23:59 dela serve ao bloco padrão de um item do
+  // MSL, mas aqui cortaria em silêncio a reunião que passa da meia-noite — e o
+  // Google aceitaria o evento errado.
+  const [h, m] = horaFinal.split(':').map(Number);
+  const total = h * 60 + m + minutos;
+  const fimDia = ajuda.somarDias(dia, Math.floor(total / 1440));
+  const fimHora = `${doisDigitos(Math.floor((total % 1440) / 60))}:${doisDigitos(total % 60)}`;
+
   return {
     start: { dateTime: `${dia}T${horaFinal}:00`, timeZone: fuso },
-    end: { dateTime: `${dia}T${somarMinutos(horaFinal, minutos)}:00`, timeZone: fuso },
+    end: { dateTime: `${fimDia}T${fimHora}:00`, timeZone: fuso },
   };
 }
 

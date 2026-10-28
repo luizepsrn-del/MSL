@@ -440,6 +440,8 @@ describe('mover um evento', () => {
     const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO, AJUDA);
     expect(c.start.dateTime).toContain('2026-11-02T09:00');
     expect(c.end.dateTime).toContain('2026-11-02T10:30');
+    expect(c.start.timeZone).toBe(FUSO);
+    expect(c.end.timeZone).toBe(FUSO);
   });
 
   it('evento de dia inteiro que ganha hora deixa de ser de dia inteiro', () => {
@@ -478,6 +480,38 @@ describe('mover um evento', () => {
     expect(c.end.dateTime).toContain('2026-11-02T16:00');
     expect(c.start.date).toBeUndefined();
     expect(c.end.date).toBeUndefined();
+  });
+
+  it('o fim que passa da meia-noite cai no dia seguinte, sem perder minutos', () => {
+    const e = evento({
+      start: { dateTime: '2026-10-29T14:00:00Z' },
+      end: { dateTime: '2026-10-29T15:30:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', '23:00', FUSO, AJUDA);
+    expect(c.start.dateTime).toContain('2026-11-02T23:00');
+    expect(c.end.dateTime).toContain('2026-11-03T00:30');
+  });
+
+  it('evento de dois dias e meio cai no dia certo, na hora certa', () => {
+    // 42 h: de 18:00Z de 29/10 a 12:00Z de 31/10.
+    const e = evento({
+      start: { dateTime: '2026-10-29T18:00:00Z' },
+      end: { dateTime: '2026-10-31T12:00:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO, AJUDA);
+    expect(c.start.dateTime).toContain('2026-11-02T09:00');
+    expect(c.end.dateTime).toContain('2026-11-04T03:00');
+  });
+
+  it('hora vazia vale como ausente e não apaga o horário do evento', () => {
+    const e = evento({
+      start: { dateTime: '2026-10-29T18:00:00Z' },
+      end: { dateTime: '2026-10-29T19:00:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', '', FUSO, AJUDA);
+    expect(c.start.dateTime).toContain('2026-11-02T15:00');
+    expect(c.end.dateTime).toContain('2026-11-02T16:00');
+    expect(c.start.date).toBeUndefined();
   });
 
   it('fim antes do começo não vira duração negativa', () => {
