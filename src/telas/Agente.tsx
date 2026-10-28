@@ -21,6 +21,8 @@ import {
   type Bloco,
   type Tom,
   type Efeito,
+  exigeConfirmacao,
+  rotuloDaConfirmacao,
 } from '../dominio/agente';
 import {
   montarPrompt,
@@ -64,16 +66,33 @@ const ATALHOS = [
   'Como estão meus projetos?',
 ];
 
+/**
+ * Em que pé está o efeito deste turno.
+ *
+ * `aguardando` é o estado que faz a prévia existir: o domínio já decidiu o que
+ * fazer e mostrou na tela, e nada foi gravado. Só sai dele por um toque meu.
+ */
+type EstadoDoTurno = 'sem-efeito' | 'aplicado' | 'aguardando' | 'confirmado' | 'cancelado';
+
 interface Turno {
   id: string;
   /** o que eu escrevi */
   eu: string;
   hora: string;
   resposta: Resposta;
+  estado: EstadoDoTurno;
 }
 
 export function Agente() {
-  const { banco, hoje, criarTarefa, alternarTarefa, criarLancamento } = useBanco();
+  const {
+    banco,
+    hoje,
+    criarTarefa,
+    alternarTarefa,
+    editarTarefa,
+    removerTarefa,
+    criarLancamento,
+  } = useBanco();
   const [turnos, setTurnos] = React.useState<Turno[]>([]);
   const [texto, setTexto] = React.useState('');
   const [nivel, setNivel] = React.useState<NivelDeDados>('estrutura');
@@ -97,10 +116,22 @@ export function Agente() {
           titulo: efeito.titulo,
           contexto: efeito.contexto,
           prazo: efeito.prazo,
+          hora: efeito.hora,
         });
         return;
       case 'concluir-tarefa':
         await alternarTarefa(efeito.id);
+        return;
+      case 'adiar-tarefa':
+        // A hora só é tocada quando a frase trouxe uma: adiar "para sexta" não
+        // pode apagar o horário que o compromisso já tinha.
+        await editarTarefa(efeito.id, {
+          prazo: efeito.prazo,
+          ...(efeito.hora ? { hora: efeito.hora } : {}),
+        });
+        return;
+      case 'excluir-tarefa':
+        await removerTarefa(efeito.id);
         return;
       case 'criar-lancamento':
         await criarLancamento({
@@ -128,6 +159,16 @@ export function Agente() {
     const intencao = interpretar(limpo, hoje);
     const resposta = responder(banco, intencao, hoje);
 
+    // Nada é gravado enquanto o efeito pedir confirmação. O turno entra na
+    // conversa já dizendo em que pé está, e a prévia é a própria resposta —
+    // ela mostra a tarefa, o antes e o depois.
+    const espera = resposta.efeito !== undefined && exigeConfirmacao(resposta.efeito);
+    const estado: EstadoDoTurno = !resposta.efeito
+      ? 'sem-efeito'
+      : espera
+        ? 'aguardando'
+        : 'aplicado';
+
     setTurnos((anteriores) => [
       ...anteriores,
       {
@@ -135,11 +176,23 @@ export function Agente() {
         eu: limpo,
         hora: formatarHora(new Date()),
         resposta,
+        estado,
       },
     ]);
     setTexto('');
 
-    if (resposta.efeito) await aplicar(resposta.efeito);
+    if (resposta.efeito && !espera) await aplicar(resposta.efeito);
+  };
+
+  const marcar = (id: string, estado: EstadoDoTurno) =>
+    setTurnos((anteriores) => anteriores.map((t) => (t.id === id ? { ...t, estado } : t)));
+
+  const confirmar = async (turno: Turno) => {
+    if (!turno.resposta.efeito) return;
+    // O estado muda antes de aplicar: gravar é assíncrono, e sem isto um toque
+    // duplo no botão executa o efeito duas vezes.
+    marcar(turno.id, 'confirmado');
+    await aplicar(turno.resposta.efeito);
   };
 
   React.useEffect(() => {
@@ -198,6 +251,44 @@ export function Agente() {
                     }}
                   >
                     <Resposta resposta={t.resposta} />
+
+                    {t.estado === 'aguardando' && t.resposta.efeito && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 'var(--sp-6)',
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Button onClick={() => void confirmar(t)}>
+                          {rotuloDaConfirmacao(t.resposta.efeito)}
+                        </Button>
+                        <Button variant="ghost" onClick={() => marcar(t.id, 'cancelado')}>
+                          Cancelar
+                        </Button>
+                        <span
+                          style={{
+                            color: 'var(--text-muted)',
+                            font: 'var(--fw-regular) var(--fs-micro)/1.4 var(--font-core)',
+                          }}
+                        >
+                          Nada foi gravado ainda.
+                        </span>
+                      </div>
+                    )}
+
+                    {t.estado === 'confirmado' && (
+                      <Badge tone="ontime" dot={false}>
+                        Feito
+                      </Badge>
+                    )}
+                    {t.estado === 'cancelado' && (
+                      <Badge tone="neutral" dot={false}>
+                        Cancelado — nada mudou
+                      </Badge>
+                    )}
+
                     {t.resposta.efeito?.tipo === 'montar-pedido' && (
                       <Pedido
                         descricao={t.resposta.efeito.descricao}
