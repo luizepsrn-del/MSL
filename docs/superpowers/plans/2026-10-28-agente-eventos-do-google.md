@@ -42,14 +42,16 @@
 
 - [ ] **Step 1: Write the failing tests**
 
+Assinatura real: `paraTela(eventos, de, ate, ajuda)` — ver `src/dominio/google.ts:339`. `OPCOES` no arquivo de teste já é o quarto argumento.
+
 ```ts
 it('organizer.self verdadeiro vira souOrganizador', () => {
-  const [e] = paraTela([evento({ organizer: { self: true } })], JANELA, OPCOES);
+  const [e] = paraTela([evento({ organizer: { self: true } })], '2026-09-01', '2026-09-30', OPCOES);
   expect(e.souOrganizador).toBe(true);
 });
 
 it('sem organizer, assume que não sou — o estrago menor', () => {
-  const [e] = paraTela([evento({})], JANELA, OPCOES);
+  const [e] = paraTela([evento({})], '2026-09-01', '2026-09-30', OPCOES);
   expect(e.souOrganizador).toBe(false);
 });
 ```
@@ -218,7 +220,11 @@ it('renomear um compromisso do Google leva o título novo', () => {});
 **Files:**
 - Modify: `src/dados/google.ts` (`useGoogle` ganha a ação; limpar cache)
 - Modify: `src/telas/Agente.tsx` (preencher `CompromissoExterno`; aplicar o efeito; estado de falha)
-- Test: `src/dados/google.test.ts`, `src/telas/Agente.test.tsx`
+- Test: `src/dados/google.test.ts`, `src/dominio/agente.test.ts`
+
+**Restrição de teste:** o projeto roda `environment: 'node'` e não tem jsdom nem
+testing-library, e não é para ganhar. A lógica desta task vai para funções puras
+testáveis em node, e a tela só as chama.
 
 **Interfaces:**
 - Consumes: rota da Task 3; efeito da Task 5
@@ -227,15 +233,23 @@ it('renomear um compromisso do Google leva o título novo', () => {});
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
-it('o ramo do Google marca mexivel; o da assinatura não', () => {});
-it('rota recusando não escreve "Feito" — mostra o motivo', () => {});
-it('404 diz que o evento já não existe, e não que falhou', () => {});
+// src/dados/google.test.ts — a escolha da fonte, pura
+it('o ramo do Google marca mexivel; o da assinatura não', () => {
+  expect(compromissosDaAgenda(googleConectado, assinatura)[0].mexivel).toBe(true);
+  expect(compromissosDaAgenda(googleDesconectado, assinatura)[0].mexivel).toBeUndefined();
+});
 it('depois de mexer, o cache de eventos é limpo', () => {});
+
+// src/dominio/agente.test.ts — as frases de falha, puras
+it('404 diz que o evento já não existe, e não que falhou', () => {
+  expect(frasePorMotivo('inexistente')).toContain('já não está');
+});
+it('cada motivo tem a sua frase, e nenhuma diz "Feito"', () => {});
 ```
 
 - [ ] **Step 2: Rodar e ver falhar.**
 
-- [ ] **Step 3: Implementar** — em `Agente.tsx`, onde hoje escolhe entre `google.eventos` e `assinatura.agenda.eventos`, o ramo do Google acrescenta `uid`, `mexivel: true` e `souOrganizador`. `aplicar()` ganha o caso `evento-do-google`, que chama `mexerNoEvento` e **devolve o resultado**; o estado do turno passa a distinguir falha de sucesso, com as quatro frases da tabela de erros da spec. Depois de qualquer ação bem-sucedida, `limparCache(window.localStorage)`.
+- [ ] **Step 3: Implementar** — em `Agente.tsx`, onde hoje escolhe entre `google.eventos` e `assinatura.agenda.eventos`, o ramo do Google acrescenta `uid`, `mexivel: true` e `souOrganizador`. `aplicar()` ganha o caso `evento-do-google`, que chama `mexerNoEvento` e **devolve o resultado**; o estado do turno passa a distinguir falha de sucesso. As quatro frases da tabela de erros da spec moram em `frasePorMotivo(motivo)`, função pura em `src/dominio/agente.ts`, e a escolha da fonte mora em `compromissosDaAgenda(google, assinatura)`, função pura em `src/dados/google.ts` — a tela só chama as duas. Depois de qualquer ação bem-sucedida, `limparCache(window.localStorage)`.
 
 - [ ] **Step 4: Rodar a suíte inteira**, mais `npm run typecheck` e `npm run lint`.
 
