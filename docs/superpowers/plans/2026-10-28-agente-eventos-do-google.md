@@ -58,7 +58,7 @@ it('sem organizer, assume que não sou — o estrago menor', () => {
 
 - [ ] **Step 2: Rodar e ver falhar** — `npx vitest run src/dominio/google.test.ts`. Esperado: `souOrganizador` não existe.
 
-- [ ] **Step 3: Implementar** — campo `organizer` em `EventoDoGoogle`, `souOrganizador: boolean` em `EventoParaTela`, preenchido por `paraTela` como `evento.organizer?.self === true`. Em `src/servidor/google.ts`, acrescentar `organizer` aos campos pedidos ao Google.
+- [ ] **Step 3: Implementar** — campo `organizer` em `EventoDoGoogle`, `souOrganizador: boolean` em `EventoParaTela`, preenchido por `paraTela` como `evento.organizer?.self === true`. Nada a mudar em `src/servidor/google.ts`: a listagem não usa `fields`, então o Google já devolve `organizer`. Conferido, não suposto.
 
 - [ ] **Step 4: Rodar e ver passar** — mesmo comando, mais `npm run typecheck`.
 
