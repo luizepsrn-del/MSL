@@ -138,6 +138,63 @@ export function corpoDoEvento(
 }
 
 /**
+ * Soma dias a um `AAAA-MM-DD`. Local a este arquivo: o domínio do Google não
+ * importa nada, e o que muda de fora (`diaSeguinte`) é injetado — mas mover
+ * precisa de mais de um dia, e a assinatura pública não tem como receber isso.
+ */
+function maisDias(dia: string, dias: number): string {
+  const [a, m, d] = dia.split('-').map(Number);
+  return new Date(Date.UTC(a, m - 1, d + dias)).toISOString().slice(0, 10);
+}
+
+/** Quantos dias separam dois `AAAA-MM-DD`. */
+function diasEntre(de: string, ate: string): number {
+  return Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86_400_000);
+}
+
+/**
+ * O novo `start` e `end` de um evento movido para outro dia (e, se vier, hora).
+ *
+ * A duração é do evento, não do destino: uma reunião de uma hora e meia
+ * continua com uma hora e meia ao mudar de dia. Ela sai da diferença entre os
+ * dois instantes — que têm deslocamento, então a conta vale em qualquer fuso —
+ * e, se o evento não tem os dois (era de dia inteiro, ou o fim veio estranho),
+ * cai no bloco padrão em vez de inventar uma duração.
+ *
+ * Cada lado leva `date` **ou** `dateTime`, nunca os dois: o Google recusa o
+ * evento que tem ambos. Por isso o corpo é montado do zero, e não aproveitando
+ * o `start` antigo — que carregaria o campo do tipo anterior para o novo.
+ *
+ * Evento de dia inteiro movido sem hora continua de dia inteiro e leva os
+ * dias dele junto (uma viagem de três dias segue com três). Evento com hora
+ * movido sem hora vira dia inteiro de um dia: sem hora não há onde pôr o bloco.
+ */
+export function corpoDoMover(
+  evento: EventoDoGoogle,
+  dia: string,
+  hora: string | undefined,
+  fuso: string,
+): Pick<CorpoDoEvento, 'start' | 'end'> {
+  if (!hora) {
+    const eraDiaInteiro = !!evento.start?.date && !!evento.end?.date;
+    const dias = eraDiaInteiro
+      ? Math.max(diasEntre(evento.start!.date!, evento.end!.date!), 1)
+      : 1;
+    return { start: { date: dia }, end: { date: maisDias(dia, dias) } };
+  }
+
+  const inicio = evento.start?.dateTime;
+  const fim = evento.end?.dateTime;
+  const medida = inicio && fim ? (Date.parse(fim) - Date.parse(inicio)) / 60_000 : NaN;
+  const minutos = Number.isFinite(medida) && medida > 0 ? medida : MINUTOS_PADRAO;
+
+  return {
+    start: { dateTime: `${dia}T${hora}:00`, timeZone: fuso },
+    end: { dateTime: `${dia}T${somarMinutos(hora, minutos)}:00`, timeZone: fuso },
+  };
+}
+
+/**
  * O dia e a hora locais de um evento, do jeito que o MSL guarda.
  *
  * Evento de dia inteiro não tem hora e não tem fuso — `date` já é o dia local,

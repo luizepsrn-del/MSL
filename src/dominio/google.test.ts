@@ -9,6 +9,7 @@ import {
   MARCA,
   MINUTOS_PADRAO,
   eventosParaTela,
+  corpoDoMover,
   type EventoDoGoogle,
   type ItemParaEspelhar,
 } from './google';
@@ -420,5 +421,63 @@ describe('quem organiza o evento', () => {
   it('sem organizer, assume que não sou — o estrago menor', () => {
     const [e] = eventosParaTela([evento({})], '2026-09-01', '2026-09-30', AJUDA);
     expect(e.souOrganizador).toBe(false);
+  });
+});
+
+describe('mover um evento', () => {
+  it('mantém os minutos que o evento tinha', () => {
+    const e = evento({
+      start: { dateTime: '2026-10-29T14:00:00Z' },
+      end: { dateTime: '2026-10-29T15:30:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO);
+    expect(c.start.dateTime).toContain('2026-11-02T09:00');
+    expect(c.end.dateTime).toContain('2026-11-02T10:30');
+  });
+
+  it('evento de dia inteiro que ganha hora deixa de ser de dia inteiro', () => {
+    const e = evento({ start: { date: '2026-10-29' }, end: { date: '2026-10-30' } });
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO);
+    expect(c.start.date).toBeUndefined();
+    expect(c.start.dateTime).toContain('2026-11-02T09:00');
+    expect(c.end.date).toBeUndefined();
+    expect(c.end.dateTime).toContain(`2026-11-02T${somarMinutos('09:00', MINUTOS_PADRAO)}`);
+  });
+
+  it('sem hora, continua de dia inteiro no dia novo', () => {
+    const e = evento({ start: { date: '2026-10-29' }, end: { date: '2026-10-30' } });
+    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO);
+    expect(c.start.date).toBe('2026-11-02');
+    expect(c.start.dateTime).toBeUndefined();
+    expect(c.end.date).toBe('2026-11-03');
+    expect(c.end.dateTime).toBeUndefined();
+  });
+
+  it('viagem de vários dias leva os dias junto', () => {
+    const e = evento({ start: { date: '2026-10-17' }, end: { date: '2026-10-20' } });
+    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO);
+    expect(c.start.date).toBe('2026-11-02');
+    expect(c.end.date).toBe('2026-11-05');
+  });
+
+  it('evento com hora que perde a hora vira dia inteiro de um dia', () => {
+    const e = evento({
+      start: { dateTime: '2026-10-29T14:00:00Z' },
+      end: { dateTime: '2026-10-29T15:30:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO);
+    expect(c.start.date).toBe('2026-11-02');
+    expect(c.end.date).toBe('2026-11-03');
+    expect(c.start.dateTime).toBeUndefined();
+    expect(c.end.dateTime).toBeUndefined();
+  });
+
+  it('fim antes do começo não vira duração negativa', () => {
+    const e = evento({
+      start: { dateTime: '2026-10-29T15:00:00Z' },
+      end: { dateTime: '2026-10-29T14:00:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO);
+    expect(c.end.dateTime).toContain(`2026-11-02T${somarMinutos('09:00', MINUTOS_PADRAO)}`);
   });
 });
