@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { normalizar, lerPrazo, lerHora, interpretar, acharTarefas, responder } from './agente';
+import {
+  normalizar,
+  lerPrazo,
+  lerHora,
+  interpretar,
+  acharTarefas,
+  responder,
+  exigeConfirmacao,
+} from './agente';
 import { bancoVazio, type Banco, type Tarefa, type Lancamento, type Rotina } from '../dados/esquema';
 
 /** 2026-09-17 é uma quinta-feira. Toda data escrita aqui parte dela. */
@@ -522,5 +530,88 @@ describe('lerHora', () => {
     expect(data.prazo).toBe('2026-09-25');
     const hora = lerHora(data.resto);
     expect(hora).toEqual({ hora: '14:00', resto: 'marcar o dentista' });
+  });
+});
+
+describe('agendar, adiar e excluir', () => {
+  it('"marcar" com data é agendar, e não concluir', () => {
+    const i = interpretar('marcar reunião com o cliente sexta às 15h', HOJE);
+    expect(i).toEqual({
+      tipo: 'criar-tarefa',
+      titulo: 'Reunião com o cliente',
+      prazo: '2026-09-18',
+      hora: '15:00',
+      contexto: 'profissional',
+    });
+  });
+
+  it('o dia da semana escrito inclui hoje — HOJE é quinta', () => {
+    const i = interpretar('marcar dentista quinta às 9h', HOJE);
+    expect(i).toMatchObject({ prazo: HOJE, hora: '09:00' });
+  });
+
+  it('"marcar" sem data continua concluindo, como antes', () => {
+    expect(interpretar('marcar renovar o seguro', HOJE)).toEqual({
+      tipo: 'concluir-tarefa',
+      alvo: 'renovar o seguro',
+    });
+  });
+
+  it('adia para a data escrita, tirando o artigo do alvo', () => {
+    expect(interpretar('adiar o dentista para sexta', HOJE)).toEqual({
+      tipo: 'adiar-tarefa',
+      alvo: 'dentista',
+      prazo: '2026-09-18',
+      hora: undefined,
+    });
+  });
+
+  it('adiar sem data não vira comando — vira pedido', () => {
+    expect(interpretar('adiar o dentista', HOJE).tipo).toBe('pedido');
+  });
+
+  it('exclui pelo nome', () => {
+    expect(interpretar('excluir a tarefa comprar cadeira', HOJE)).toEqual({
+      tipo: 'excluir-tarefa',
+      alvo: 'comprar cadeira',
+    });
+  });
+
+  it('adiar devolve o antes e o depois, e o efeito com o id', () => {
+    const banco: Banco = {
+      ...bancoVazio(),
+      tarefas: [tarefa({ id: 't9', titulo: 'Dentista', prazo: '2026-09-18' })],
+    };
+    const r = responder(banco, interpretar('adiar o dentista para dia 25', HOJE), HOJE);
+    expect(r.titulo).toBe('Adiar');
+    expect(r.efeito).toEqual({
+      tipo: 'adiar-tarefa',
+      id: 't9',
+      titulo: 'Dentista',
+      prazo: '2026-09-25',
+      hora: undefined,
+    });
+  });
+
+  it('não escolhe sozinho quando duas tarefas combinam', () => {
+    const banco: Banco = {
+      ...bancoVazio(),
+      tarefas: [
+        tarefa({ id: 'a', titulo: 'Pagar o IPVA' }),
+        tarefa({ id: 'b', titulo: 'Pagar o IPTU' }),
+      ],
+    };
+    const r = responder(banco, { tipo: 'excluir-tarefa', alvo: 'pagar' }, HOJE);
+    expect(r.titulo).toBe('Qual delas?');
+    expect(r.efeito).toBeUndefined();
+  });
+
+  it('o que soma dispensa confirmação; o que mexe no que existe, não', () => {
+    expect(exigeConfirmacao({ tipo: 'criar-tarefa', titulo: 'X', contexto: 'pessoal' })).toBe(false);
+    expect(exigeConfirmacao({ tipo: 'concluir-tarefa', id: 'a', titulo: 'X' })).toBe(true);
+    expect(exigeConfirmacao({ tipo: 'excluir-tarefa', id: 'a', titulo: 'X' })).toBe(true);
+    expect(
+      exigeConfirmacao({ tipo: 'adiar-tarefa', id: 'a', titulo: 'X', prazo: '2026-09-25' }),
+    ).toBe(true);
   });
 });

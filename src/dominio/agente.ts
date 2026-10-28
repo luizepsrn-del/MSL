@@ -277,8 +277,10 @@ export type Intencao =
   | { tipo: 'saldo' }
   | { tipo: 'projetos' }
   | { tipo: 'rotina' }
-  | { tipo: 'criar-tarefa'; titulo: string; prazo?: string; contexto: Contexto }
+  | { tipo: 'criar-tarefa'; titulo: string; prazo?: string; hora?: string; contexto: Contexto }
   | { tipo: 'concluir-tarefa'; alvo: string }
+  | { tipo: 'adiar-tarefa'; alvo: string; prazo: string; hora?: string }
+  | { tipo: 'excluir-tarefa'; alvo: string }
   | { tipo: 'lancar'; descricao: string; valor: number; entrada: boolean; categoria: Categoria }
   | { tipo: 'pedido'; descricao: string };
 
@@ -300,6 +302,13 @@ function categoriaPorPista(texto: string, entrada: boolean): Categoria {
     if (contem(texto, ...pistas)) return categoria;
   }
   return entrada ? 'receita' : 'outros';
+}
+
+/** Trabalho ou vida: a pista está na palavra, e três ramos do parser perguntam. */
+function contextoDe(texto: string): Contexto {
+  return contem(texto, 'trabalho', 'cliente', 'reuniao', 'proposta', 'contrato')
+    ? 'profissional'
+    : 'pessoal';
 }
 
 /** A categoria citada por nome: "quanto gastei com moradia". */
@@ -346,6 +355,42 @@ export function interpretar(texto: string, hoje: string): Intencao {
     }
   }
 
+  const agendar = cru.match(/^(agendar|agende|marcar|marque)\s+(?:um[a]?\s+)?(.+)$/i);
+  if (agendar) {
+    const data = lerPrazo(agendar[2], hoje);
+    const { hora, resto } = lerHora(data.resto);
+    const titulo = resto.trim();
+    // Sem dia nem hora não há compromisso nenhum, e "marcar" volta a querer
+    // dizer concluir — que é o que a frase seguinte trata.
+    if (titulo !== '' && (data.prazo || hora)) {
+      return {
+        tipo: 'criar-tarefa',
+        titulo: maiuscula(titulo),
+        prazo: data.prazo,
+        hora,
+        contexto: contextoDe(t),
+      };
+    }
+  }
+
+  const adiar = cru.match(/^(adiar|adia|remarcar|remarque|mover|passar)\s+(?:[oa]\s+)?(?:tarefa\s+)?(.+)$/i);
+  if (adiar) {
+    const data = lerPrazo(adiar[2], hoje);
+    const { hora, resto } = lerHora(data.resto);
+    const alvoAdiar = resto.replace(/^[oa]\s+/i, '').trim();
+    // Adiar sem destino não é um comando, é meia frase: sem a data eu não
+    // tenho para onde mover, e adivinhar "amanhã" seria inventar ordem minha.
+    if (alvoAdiar !== '' && data.prazo) {
+      return { tipo: 'adiar-tarefa', alvo: alvoAdiar, prazo: data.prazo, hora };
+    }
+  }
+
+  const excluir = cru.match(/^(excluir|exclua|apagar|apague|deletar|remover|remova|cancelar|cancele)\s+(?:[oa]\s+)?(?:tarefa\s+)?(.+)$/i);
+  if (excluir) {
+    const alvoExcluir = excluir[2].replace(/^[oa]\s+/i, '').trim();
+    if (alvoExcluir !== '') return { tipo: 'excluir-tarefa', alvo: alvoExcluir };
+  }
+
   const concluir = t.match(/^(concluir|concluido|terminei|finalizei|marcar|feito)\s+(.+)$/);
   if (concluir) {
     const alvo = concluir[2].replace(/^(a\s+)?tarefa\s+/, '').trim();
@@ -356,16 +401,16 @@ export function interpretar(texto: string, hoje: string): Intencao {
     /^(criar|nova|novo|adicionar|anotar|lembrar)\s+(?:de\s+)?(?:uma\s+)?(?:tarefa\s+)?(.+)$/i,
   );
   if (criar) {
-    const { prazo, resto } = lerPrazo(criar[2], hoje);
+    const data = lerPrazo(criar[2], hoje);
+    const { hora, resto } = lerHora(data.resto);
     const titulo = resto.trim();
     if (titulo !== '') {
       return {
         tipo: 'criar-tarefa',
         titulo: maiuscula(titulo),
-        prazo,
-        contexto: contem(t, 'trabalho', 'cliente', 'reuniao', 'proposta', 'contrato')
-          ? 'profissional'
-          : 'pessoal',
+        prazo: data.prazo,
+        hora,
+        contexto: contextoDe(t),
       };
     }
   }
@@ -421,6 +466,46 @@ export function acharTarefas(banco: Banco, alvo: string): Tarefa[] {
   );
 }
 
+/* ── Achar uma tarefa só ─────────────────────────────────────────────────── */
+
+/**
+ * O alvo de um comando, quando ele precisa de exatamente uma tarefa.
+ *
+ * Três comandos — concluir, adiar e excluir — fazem a mesma pergunta e erram
+ * do mesmo jeito caro: agir na tarefa errada só se descobre depois. A escolha
+ * aqui é nunca escolher por conta própria quando há empate.
+ */
+type Alvo = { achou: true; tarefa: Tarefa } | { achou: false; resposta: Resposta };
+
+function umaTarefa(banco: Banco, alvo: string, hoje: string): Alvo {
+  const candidatas = acharTarefas(banco, alvo);
+
+  if (candidatas.length === 0) {
+    return {
+      achou: false,
+      resposta: {
+        titulo: 'Não achei essa tarefa',
+        blocos: [{ tipo: 'texto', texto: `Nenhuma tarefa pendente com "${alvo}" no nome.` }],
+      },
+    };
+  }
+
+  if (candidatas.length > 1) {
+    return {
+      achou: false,
+      resposta: {
+        titulo: 'Qual delas?',
+        blocos: [
+          { tipo: 'texto', texto: `${candidatas.length} tarefas combinam com o que você escreveu.` },
+          listaDeTarefas(ordenarTarefas(candidatas, hoje), hoje),
+        ],
+      },
+    };
+  }
+
+  return { achou: true, tarefa: candidatas[0] };
+}
+
 /* ── Resposta ────────────────────────────────────────────────────────────── */
 
 export type Tom = 'neutro' | 'bom' | 'atencao' | 'ruim';
@@ -440,8 +525,10 @@ export type Bloco =
 
 /** O que a resposta pede que o banco faça. A tela executa; o domínio não. */
 export type Efeito =
-  | { tipo: 'criar-tarefa'; titulo: string; prazo?: string; contexto: Contexto }
+  | { tipo: 'criar-tarefa'; titulo: string; prazo?: string; hora?: string; contexto: Contexto }
   | { tipo: 'concluir-tarefa'; id: string; titulo: string }
+  | { tipo: 'adiar-tarefa'; id: string; titulo: string; prazo: string; hora?: string }
+  | { tipo: 'excluir-tarefa'; id: string; titulo: string }
   | {
       tipo: 'criar-lancamento';
       descricao: string;
@@ -456,6 +543,45 @@ export interface Resposta {
   titulo: string;
   blocos: Bloco[];
   efeito?: Efeito;
+}
+
+/**
+ * O efeito precisa de um toque meu antes de acontecer?
+ *
+ * A régua é o estrago de um engano, não a importância do comando. Criar tarefa
+ * e lançar gasto **somam**: se vier errado eu vejo na tela e corrijo, e o custo
+ * do engano é uma linha a mais. Concluir, adiar e excluir **mexem no que já
+ * existe** — e concluir a tarefa errada ou apagar a história dela é o tipo de
+ * erro que só se descobre dias depois, quando já não dá para saber o que havia.
+ *
+ * A diferença ficou maior com o ditado: voz erra palavra, e palavra errada aqui
+ * escolhe outra tarefa. A prévia existe para esse caso.
+ */
+export function exigeConfirmacao(efeito: Efeito): boolean {
+  switch (efeito.tipo) {
+    case 'concluir-tarefa':
+    case 'adiar-tarefa':
+    case 'excluir-tarefa':
+      return true;
+    case 'criar-tarefa':
+    case 'criar-lancamento':
+    case 'montar-pedido':
+      return false;
+  }
+}
+
+/** A frase do botão que confirma. Curta, e dizendo o que vai acontecer. */
+export function rotuloDaConfirmacao(efeito: Efeito): string {
+  switch (efeito.tipo) {
+    case 'concluir-tarefa':
+      return 'Concluir';
+    case 'adiar-tarefa':
+      return 'Adiar';
+    case 'excluir-tarefa':
+      return 'Excluir';
+    default:
+      return 'Confirmar';
+  }
 }
 
 const plural = (n: number, um: string, muitos: string) => `${n} ${n === 1 ? um : muitos}`;
@@ -481,6 +607,18 @@ function listaDeTarefas(
   };
 }
 
+
+/**
+ * Prazo e hora na mesma linha.
+ *
+ * A hora só aparece acompanhada do dia: "às 15h" sozinho não diz de quando, e
+ * uma tarefa com hora e sem prazo não chega a ser compromisso.
+ */
+function detalheDe(prazo: string | undefined, hora: string | undefined, hoje: string): string {
+  if (!prazo) return 'Sem prazo';
+  const dia = descreverPrazo({ prazo } as Tarefa, hoje);
+  return hora ? `${dia}, ${hora}` : dia;
+}
 
 /** O mês de hoje, já com as repetições, no formato que o financeiro espera. */
 function mesCorrente(banco: Banco, hoje: string) {
@@ -757,12 +895,7 @@ export function responder(banco: Banco, intencao: Intencao, hoje: string): Respo
             itens: [
               {
                 texto: intencao.titulo,
-                detalhe: intencao.prazo
-                  ? descreverPrazo(
-                      { prazo: intencao.prazo } as Tarefa,
-                      hoje,
-                    )
-                  : 'Sem prazo',
+                detalhe: detalheDe(intencao.prazo, intencao.hora, hoje),
               },
             ],
           },
@@ -772,43 +905,68 @@ export function responder(banco: Banco, intencao: Intencao, hoje: string): Respo
           tipo: 'criar-tarefa',
           titulo: intencao.titulo,
           prazo: intencao.prazo,
+          hora: intencao.hora,
           contexto: intencao.contexto,
         },
       };
 
     case 'concluir-tarefa': {
-      const candidatas = acharTarefas(banco, intencao.alvo);
-
-      if (candidatas.length === 0) {
-        return {
-          titulo: 'Não achei essa tarefa',
-          blocos: [
-            {
-              tipo: 'texto',
-              texto: `Nenhuma tarefa pendente com "${intencao.alvo}" no nome.`,
-            },
-          ],
-        };
-      }
-
-      if (candidatas.length > 1) {
-        // Concluir a errada é o tipo de erro que só se descobre depois.
-        return {
-          titulo: 'Qual delas?',
-          blocos: [
-            { tipo: 'texto', texto: `${candidatas.length} tarefas combinam com o que você escreveu.` },
-            listaDeTarefas(ordenarTarefas(candidatas, hoje), hoje),
-          ],
-        };
-      }
-
-      const alvo = candidatas[0];
+      const achado = umaTarefa(banco, intencao.alvo, hoje);
+      if (!achado.achou) return achado.resposta;
+      const alvo = achado.tarefa;
       return {
         titulo: 'Concluída',
         blocos: [
           { tipo: 'lista', itens: [{ texto: alvo.titulo, detalhe: 'Marcada agora', tom: 'bom' }] },
         ],
         efeito: { tipo: 'concluir-tarefa', id: alvo.id, titulo: alvo.titulo },
+      };
+    }
+
+    case 'adiar-tarefa': {
+      const alvo = umaTarefa(banco, intencao.alvo, hoje);
+      if (!alvo.achou) return alvo.resposta;
+
+      const antes = detalheDe(alvo.tarefa.prazo, alvo.tarefa.hora, hoje);
+      const depois = detalheDe(intencao.prazo, intencao.hora ?? alvo.tarefa.hora, hoje);
+      return {
+        titulo: 'Adiar',
+        blocos: [
+          {
+            tipo: 'lista',
+            itens: [{ texto: alvo.tarefa.titulo, detalhe: `${antes} → ${depois}`, tom: 'atencao' }],
+          },
+        ],
+        efeito: {
+          tipo: 'adiar-tarefa',
+          id: alvo.tarefa.id,
+          titulo: alvo.tarefa.titulo,
+          prazo: intencao.prazo,
+          hora: intencao.hora,
+        },
+      };
+    }
+
+    case 'excluir-tarefa': {
+      const alvo = umaTarefa(banco, intencao.alvo, hoje);
+      if (!alvo.achou) return alvo.resposta;
+
+      return {
+        titulo: 'Excluir',
+        blocos: [
+          {
+            tipo: 'lista',
+            itens: [
+              {
+                texto: alvo.tarefa.titulo,
+                detalhe: detalheDe(alvo.tarefa.prazo, alvo.tarefa.hora, hoje),
+                tom: 'ruim',
+              },
+            ],
+          },
+          { tipo: 'texto', texto: 'Excluir apaga a tarefa e o histórico dela. Não tem desfazer.' },
+        ],
+        efeito: { tipo: 'excluir-tarefa', id: alvo.tarefa.id, titulo: alvo.tarefa.titulo },
       };
     }
 
