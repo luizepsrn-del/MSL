@@ -398,3 +398,27 @@ describe('a série de um evento que se repete', () => {
     expect(eventosParaTela([avulso], '2026-09-01', '2026-09-30', AJUDA2)[0].serie).toBeUndefined();
   });
 });
+
+describe('quem organiza o evento', () => {
+  const AJUDA = {
+    somarDias,
+    distanciaEmDias: (a: string, b: string) =>
+      Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000),
+    paraLocal: OPCOES.paraLocal,
+  };
+
+  it('organizer.self verdadeiro vira souOrganizador', () => {
+    const [e] = eventosParaTela(
+      [evento({ organizer: { self: true } })],
+      '2026-09-01',
+      '2026-09-30',
+      AJUDA,
+    );
+    expect(e.souOrganizador).toBe(true);
+  });
+
+  it('sem organizer, assume que não sou — o estrago menor', () => {
+    const [e] = eventosParaTela([evento({})], '2026-09-01', '2026-09-30', AJUDA);
+    expect(e.souOrganizador).toBe(false);
+  });
+});

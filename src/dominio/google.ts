@@ -70,6 +70,12 @@ export interface EventoDoGoogle {
   start?: { date?: string; dateTime?: string };
   end?: { date?: string; dateTime?: string };
   extendedProperties?: { private?: Record<string, string> };
+  /**
+   * Quem organiza o evento. `self` é o Google dizendo que sou eu, sem eu
+   * precisar comparar e-mails — o que falharia com alias e com agenda
+   * compartilhada.
+   */
+  organizer?: { self?: boolean; email?: string };
 }
 
 /** A marca do MSL num evento, ou `null` quando o evento é do Google. */
@@ -327,6 +333,13 @@ export interface EventoParaTela {
   fim?: string;
   local?: string;
   diaInteiro: boolean;
+  /**
+   * Se o evento é meu. Evento de outro organizador não aceita alteração
+   * minha (o Google recusa ou, pior, aceita só para mim), então o agente só
+   * mexe nos que são meus. Na dúvida é `false`: perder uma edição permitida
+   * custa menos que tentar uma proibida.
+   */
+  souOrganizador: boolean;
 }
 
 /**
@@ -387,6 +400,7 @@ export function eventosParaTela(
             : undefined,
         local: evento.location?.trim() || undefined,
         diaInteiro,
+        souOrganizador: evento.organizer?.self === true,
       });
     }
   }
