@@ -31,6 +31,7 @@ const METODOS: Record<string, string[]> = {
   'google-conectar.ts': ['POST'],
   'google-desconectar.ts': ['POST'],
   'google-estado.ts': ['GET'],
+  'google-evento.ts': ['POST'],
   'google-sincronizar.ts': ['POST'],
   'agenda.ts': ['POST'],
   'sair.ts': ['POST'],

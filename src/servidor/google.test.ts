@@ -253,6 +253,27 @@ describe('a API do calendário', () => {
     expect(pedidos[1].url).toContain('/ev1');
   });
 
+  it('toda escrita leva sendUpdates=none, para nada sair por e-mail', async () => {
+    // Decisão do dono: o MSL nunca avisa terceiro. Fica no cliente, e não em
+    // cada chamador, para uma chamada nova não poder esquecer.
+    const { buscar, pedidos } = falso({ id: 'x' });
+    const cliente = clienteDoCalendario('acesso', buscar);
+    const corpo = {
+      summary: 'X',
+      start: { date: '2026-09-17' },
+      end: { date: '2026-09-18' },
+      extendedProperties: { private: { msl: 'tarefa:t1' } },
+    };
+
+    await cliente.criar(corpo);
+    await cliente.atualizar('ev1', corpo);
+    await cliente.apagar('ev1');
+    await cliente.listar('2026-09-01', '2026-09-30');
+
+    const escritas = pedidos.slice(0, 3);
+    for (const e of escritas) expect(new URL(e.url).searchParams.get('sendUpdates')).toBe('none');
+  });
+
   it('o id do evento é escapado no endereço', async () => {
     const { buscar, pedidos } = falso(null);
     await clienteDoCalendario('acesso', buscar).apagar('a/b?c');

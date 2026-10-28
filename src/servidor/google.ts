@@ -285,12 +285,24 @@ export async function acessoValido(
 
 /* ── A API do calendário ─────────────────────────────────────────────────── */
 
-async function chamar<T>(
+/**
+ * Toda chamada passa por aqui, e é aqui que `sendUpdates=none` é posto.
+ *
+ * Fica neste ponto, e não em cada chamador, porque a decisão do dono é que
+ * nada sai por e-mail para terceiros — e uma escrita nova que esquecesse o
+ * parâmetro avisaria os convidados de uma reunião que não é minha. Só leitura
+ * fica sem ele: não tem o que avisar.
+ */
+function pedirAoGoogle(
   caminho: string,
   opcoes: { metodo?: string; corpo?: unknown; acesso: string; buscar: typeof fetch },
-): Promise<T | null> {
-  const resposta = await opcoes.buscar(caminho, {
-    method: opcoes.metodo ?? 'GET',
+): Promise<Response> {
+  const metodo = opcoes.metodo ?? 'GET';
+  const alvo = new URL(caminho);
+  if (metodo !== 'GET') alvo.searchParams.set('sendUpdates', 'none');
+
+  return opcoes.buscar(alvo.toString(), {
+    method: metodo,
     headers: {
       Authorization: `Bearer ${opcoes.acesso}`,
       ...(opcoes.corpo ? { 'Content-Type': 'application/json' } : {}),
@@ -298,22 +310,29 @@ async function chamar<T>(
     body: opcoes.corpo ? JSON.stringify(opcoes.corpo) : undefined,
     signal: AbortSignal.timeout(15_000),
   });
+}
+
+const recusaDeAcesso = (estado: number) =>
+  new ErroDoGoogle('o Google recusou o acesso. Reconecte a agenda em Ajustes.', estado);
+
+async function erroInesperado(resposta: Response): Promise<ErroDoGoogle> {
+  const texto = await resposta.text().catch(() => '');
+  return new ErroDoGoogle(`o Google respondeu ${resposta.status}: ${texto.slice(0, 200)}`);
+}
+
+async function chamar<T>(
+  caminho: string,
+  opcoes: { metodo?: string; corpo?: unknown; acesso: string; buscar: typeof fetch },
+): Promise<T | null> {
+  const resposta = await pedirAoGoogle(caminho, opcoes);
 
   // 204 e 404 no apagar: o evento já não estava lá, e isso é sucesso, não erro
   // — apagar duas vezes tem que dar o mesmo que apagar uma.
   if (resposta.status === 204 || resposta.status === 404) return null;
 
-  if (resposta.status === 401 || resposta.status === 403) {
-    throw new ErroDoGoogle(
-      'o Google recusou o acesso. Reconecte a agenda em Ajustes.',
-      resposta.status,
-    );
-  }
+  if (resposta.status === 401 || resposta.status === 403) throw recusaDeAcesso(resposta.status);
 
-  if (!resposta.ok) {
-    const texto = await resposta.text().catch(() => '');
-    throw new ErroDoGoogle(`o Google respondeu ${resposta.status}: ${texto.slice(0, 200)}`);
-  }
+  if (!resposta.ok) throw await erroInesperado(resposta);
 
   return (await resposta.json().catch(() => null)) as T | null;
 }
@@ -377,6 +396,96 @@ export function clienteDoCalendario(acesso: string, buscar: typeof fetch = fetch
         acesso,
         buscar,
       });
+    },
+  };
+}
+
+/* ── Um evento que não é nosso ───────────────────────────────────────────── */
+
+/** As respostas de negócio do Google: acontecem, e quem chamou precisa delas. */
+export type MotivoDeNegocio = 'inexistente' | 'sem-permissao';
+
+export type ResultadoDoEvento<T> = { ok: true; valor: T } | { ok: false; motivo: MotivoDeNegocio };
+
+/** O que dá para trocar num evento alheio: nome e horário, e nada mais. */
+export type MudancaDeEvento = Partial<Pick<CorpoDoEvento, 'summary' | 'start' | 'end'>>;
+
+export interface ClienteDoEvento {
+  /** O evento como está agora. Cancelado conta como inexistente. */
+  ler(eventoId: string): Promise<ResultadoDoEvento<EventoDoGoogle>>;
+  apagar(eventoId: string): Promise<ResultadoDoEvento<null>>;
+  alterar(eventoId: string, mudanca: MudancaDeEvento): Promise<ResultadoDoEvento<null>>;
+}
+
+/**
+ * Os motivos com que o Google usa 403 para dizer "devagar", e não "não pode".
+ * Tratá-los como falta de permissão mandaria o dono desistir de um evento que
+ * ele pode, sim, mexer.
+ */
+const MOTIVOS_DE_LIMITE = [
+  'ratelimitexceeded',
+  'userratelimitexceeded',
+  'quotaexceeded',
+  'dailylimitexceeded',
+  'calendarusagelimitsexceeded',
+];
+
+async function eExcessoDePedidos(resposta: Response): Promise<boolean> {
+  const texto = (await resposta.text().catch(() => '')).toLowerCase();
+  return MOTIVOS_DE_LIMITE.some((m) => texto.includes(m));
+}
+
+/**
+ * Diferente de `chamar`, aqui 404 e 403 não somem nem viram exceção: são o
+ * resultado. O sincronizador trata o 404 como sucesso porque apagar duas vezes
+ * é a mesma coisa; quem mexe num evento a pedido do dono precisa saber que ele
+ * já não estava lá — dizer "apaguei" de um evento que nunca existiu é mentir.
+ */
+async function comoResultado<T>(resposta: Response): Promise<ResultadoDoEvento<T>> {
+  // 410: o Google responde assim a quem apaga de novo o que já foi apagado.
+  if (resposta.status === 404 || resposta.status === 410) {
+    return { ok: false, motivo: 'inexistente' };
+  }
+  if (resposta.status === 403) {
+    if (await eExcessoDePedidos(resposta)) {
+      throw new ErroDoGoogle('o Google pediu para esperar um pouco. Tente de novo em instantes.', 429);
+    }
+    return { ok: false, motivo: 'sem-permissao' };
+  }
+  if (resposta.status === 401) throw recusaDeAcesso(401);
+  if (!resposta.ok) throw await erroInesperado(resposta);
+
+  return { ok: true, valor: (await resposta.json().catch(() => null)) as T };
+}
+
+export function clienteDoEvento(acesso: string, buscar: typeof fetch = fetch): ClienteDoEvento {
+  const caminho = (eventoId: string) => `${CALENDARIO}/${encodeURIComponent(eventoId)}`;
+
+  return {
+    async ler(eventoId) {
+      const resultado = await comoResultado<EventoDoGoogle>(
+        await pedirAoGoogle(caminho(eventoId), { acesso, buscar }),
+      );
+      // O GET devolve o evento apagado, com status "cancelled", em vez de 404.
+      // Escrever em cima dele pode ressuscitá-lo.
+      if (resultado.ok && resultado.valor?.status === 'cancelled') {
+        return { ok: false, motivo: 'inexistente' };
+      }
+      return resultado;
+    },
+
+    async apagar(eventoId) {
+      const resultado = await comoResultado<unknown>(
+        await pedirAoGoogle(caminho(eventoId), { metodo: 'DELETE', acesso, buscar }),
+      );
+      return resultado.ok ? { ok: true, valor: null } : resultado;
+    },
+
+    async alterar(eventoId, mudanca) {
+      const resultado = await comoResultado<unknown>(
+        await pedirAoGoogle(caminho(eventoId), { metodo: 'PATCH', corpo: mudanca, acesso, buscar }),
+      );
+      return resultado.ok ? { ok: true, valor: null } : resultado;
     },
   };
 }

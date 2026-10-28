@@ -4,6 +4,7 @@ import {
   rotaGoogleCallback,
   rotaGoogleSincronizar,
   rotaGoogleDesconectar,
+  rotaGoogleEvento,
   rotaGoogleEstado,
   voltaPara,
   TETO_DE_PASSOS,
@@ -407,5 +408,339 @@ describe('estado e desconectar', () => {
     const resposta = await rotaGoogleDesconectar(pedir('/api/google-desconectar'), armazem);
     expect(resposta.status).toBe(401);
     expect(await armazem.ler(`google:${usuarioId}`)).not.toBeNull();
+  });
+});
+
+/* ── Mexer num evento que não é nosso ────────────────────────────────────── */
+
+/**
+ * Um Google de mentira que fala HTTP: guarda cada chamada e responde o que o
+ * roteiro mandar. Os testes de cima trocam o cliente inteiro; aqui o que está
+ * sob prova é justamente o endereço e o corpo, então o falso é o `fetch`.
+ */
+function googleFalso(roteiro: (chamada: { metodo: string; url: URL }) => { estado: number; corpo?: unknown }) {
+  const chamadas: { metodo: string; url: URL; corpo?: Record<string, unknown> }[] = [];
+  const buscar = (async (url: string, opcoes: RequestInit = {}) => {
+    const chamada = { metodo: opcoes.method ?? 'GET', url: new URL(url) };
+    chamadas.push({
+      ...chamada,
+      corpo: opcoes.body ? (JSON.parse(String(opcoes.body)) as Record<string, unknown>) : undefined,
+    });
+    const { estado, corpo } = roteiro(chamada);
+    return new Response(corpo === undefined ? null : JSON.stringify(corpo), { status: estado });
+  }) as unknown as typeof fetch;
+  return { buscar, chamadas };
+}
+
+const EVENTO_DAS_10: EventoDoGoogle = {
+  id: 'ev1',
+  summary: 'Reunião',
+  // 13:00 UTC é 10:00 em São Paulo; uma hora de duração.
+  start: { dateTime: '2026-09-17T13:00:00Z' },
+  end: { dateTime: '2026-09-17T14:00:00Z' },
+};
+
+/** Responde 200 com o evento no GET e 200 vazio em qualquer escrita. */
+const GOOGLE_BOM = ({ metodo }: { metodo: string }) =>
+  metodo === 'GET' ? { estado: 200, corpo: EVENTO_DAS_10 } : { estado: 200, corpo: {} };
+
+async function mexer(
+  corpo: unknown,
+  buscar: typeof fetch,
+  opcoes: { conectado?: boolean; comSessao?: boolean } = {},
+) {
+  const { armazem, token, usuarioId } = await comSessao();
+  if (opcoes.conectado !== false) await jaConectado(armazem, usuarioId);
+  const resposta = await rotaGoogleEvento(
+    pedir('/api/google-evento', opcoes.comSessao === false ? undefined : token, corpo),
+    armazem,
+    AMBIENTE,
+    buscar,
+  );
+  return { resposta, corpo: (await resposta.json()) as Record<string, unknown> };
+}
+
+describe('mexer num evento do Google', () => {
+  it('sem sessão, recusa antes de falar com o Google', async () => {
+    const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+    const { resposta } = await mexer({ acao: 'apagar', uid: 'ev1' }, buscar, { comSessao: false });
+    expect(resposta.status).toBe(401);
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it('só aceita POST', async () => {
+    const { armazem, token } = await comSessao();
+    const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+    const pedido = new Request(`${BASE}/api/google-evento`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect((await rotaGoogleEvento(pedido, armazem, AMBIENTE, buscar)).status).toBe(405);
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it('sem agenda conectada, diz "desconectado" e não é erro', async () => {
+    const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+    const { resposta, corpo } = await mexer({ acao: 'apagar', uid: 'ev1' }, buscar, {
+      conectado: false,
+    });
+    expect(resposta.status).toBe(200);
+    expect(corpo).toEqual({ feito: false, motivo: 'desconectado' });
+    expect(chamadas).toHaveLength(0);
+  });
+
+  describe('apagar', () => {
+    it('manda DELETE com sendUpdates=none', async () => {
+      const { buscar, chamadas } = googleFalso(() => ({ estado: 204 }));
+      const { corpo } = await mexer({ acao: 'apagar', uid: 'ev1' }, buscar);
+
+      expect(corpo).toEqual({ feito: true });
+      expect(chamadas).toHaveLength(1);
+      expect(chamadas[0].metodo).toBe('DELETE');
+      expect(chamadas[0].url.pathname).toBe('/calendar/v3/calendars/primary/events/ev1');
+      expect(chamadas[0].url.searchParams.get('sendUpdates')).toBe('none');
+    });
+
+    it('404 do Google vira motivo "inexistente", e não erro', async () => {
+      const { buscar } = googleFalso(() => ({ estado: 404, corpo: { error: {} } }));
+      const { resposta, corpo } = await mexer({ acao: 'apagar', uid: 'ev1' }, buscar);
+      expect(resposta.status).toBe(200);
+      expect(corpo).toEqual({ feito: false, motivo: 'inexistente' });
+    });
+
+    it('410 (já apagado) também é "inexistente"', async () => {
+      // O Google responde 410 a quem apaga duas vezes o mesmo evento.
+      const { buscar } = googleFalso(() => ({ estado: 410 }));
+      const { corpo } = await mexer({ acao: 'apagar', uid: 'ev1' }, buscar);
+      expect(corpo).toEqual({ feito: false, motivo: 'inexistente' });
+    });
+
+    it('403 do Google vira motivo "sem-permissao"', async () => {
+      const { buscar } = googleFalso(() => ({
+        estado: 403,
+        corpo: { error: { errors: [{ reason: 'forbiddenForNonOrganizer' }] } },
+      }));
+      const { resposta, corpo } = await mexer({ acao: 'apagar', uid: 'ev1' }, buscar);
+      expect(resposta.status).toBe(200);
+      expect(corpo).toEqual({ feito: false, motivo: 'sem-permissao' });
+    });
+
+    it('403 por excesso de pedidos não é falta de permissão', async () => {
+      // Dizer "você não pode mexer nesse evento" a quem só bateu no limite de
+      // pedidos seria mentira: é para tentar de novo, não para desistir.
+      const { buscar } = googleFalso(() => ({
+        estado: 403,
+        corpo: { error: { errors: [{ reason: 'rateLimitExceeded' }] } },
+      }));
+      const { resposta, corpo } = await mexer({ acao: 'apagar', uid: 'ev1' }, buscar);
+      expect(resposta.status).toBeGreaterThanOrEqual(429);
+      expect(corpo.motivo).toBeUndefined();
+      expect(corpo.erro).toBe('google');
+    });
+
+    it('acesso revogado (401) cai no caminho de "desconectado"', async () => {
+      const { buscar } = googleFalso(() => ({ estado: 401 }));
+      const { corpo } = await mexer({ acao: 'apagar', uid: 'ev1' }, buscar);
+      expect(corpo).toEqual({ feito: false, motivo: 'desconectado' });
+    });
+
+    it('erro do Google que não é de negócio continua sendo erro', async () => {
+      const { buscar } = googleFalso(() => ({ estado: 500 }));
+      const { resposta, corpo } = await mexer({ acao: 'apagar', uid: 'ev1' }, buscar);
+      expect(resposta.status).toBe(502);
+      expect(corpo.erro).toBe('google');
+    });
+  });
+
+  describe('renomear', () => {
+    it('manda PATCH só com summary', async () => {
+      const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+      const { corpo } = await mexer({ acao: 'renomear', uid: 'ev1', novo: 'Reunião de equipe' }, buscar);
+
+      expect(corpo).toEqual({ feito: true });
+      const escrita = chamadas.filter((c) => c.metodo !== 'GET');
+      expect(escrita).toHaveLength(1);
+      expect(escrita[0].metodo).toBe('PATCH');
+      expect(escrita[0].corpo).toEqual({ summary: 'Reunião de equipe' });
+      expect(escrita[0].url.searchParams.get('sendUpdates')).toBe('none');
+    });
+
+    it('não renomeia evento já cancelado: ele ressuscitaria', async () => {
+      // O GET do Google devolve o evento apagado com status "cancelled". Um
+      // PATCH em cima dele pode trazê-lo de volta com o nome novo.
+      const { buscar, chamadas } = googleFalso(() => ({
+        estado: 200,
+        corpo: { ...EVENTO_DAS_10, status: 'cancelled' },
+      }));
+      const { corpo } = await mexer({ acao: 'renomear', uid: 'ev1', novo: 'X' }, buscar);
+      expect(corpo).toEqual({ feito: false, motivo: 'inexistente' });
+      expect(chamadas.every((c) => c.metodo === 'GET')).toBe(true);
+    });
+
+    it('tira os espaços das pontas do nome novo', async () => {
+      const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+      await mexer({ acao: 'renomear', uid: 'ev1', novo: '  Alinhamento  ' }, buscar);
+      expect(chamadas.find((c) => c.metodo === 'PATCH')?.corpo).toEqual({ summary: 'Alinhamento' });
+    });
+  });
+
+  describe('mover', () => {
+    it('busca o evento e manda PATCH só com start e end, mantendo a duração', async () => {
+      const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+      const { corpo } = await mexer(
+        { acao: 'mover', uid: 'ev1', dia: '2026-09-18', hora: '14:00' },
+        buscar,
+      );
+
+      expect(corpo).toEqual({ feito: true });
+      expect(chamadas.map((c) => c.metodo)).toEqual(['GET', 'PATCH']);
+      expect(chamadas[1].corpo).toEqual({
+        start: { dateTime: '2026-09-18T14:00:00', timeZone: 'America/Sao_Paulo' },
+        end: { dateTime: '2026-09-18T15:00:00', timeZone: 'America/Sao_Paulo' },
+      });
+      expect(chamadas[1].url.searchParams.get('sendUpdates')).toBe('none');
+    });
+
+    it('sem hora nova, fica com a hora de parede que o evento já tinha', async () => {
+      // 13:00 UTC é 10:00 em São Paulo; mover "para sexta" não pode ir para as 13.
+      const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+      await mexer({ acao: 'mover', uid: 'ev1', dia: '2026-09-18' }, buscar);
+      expect(chamadas[1].corpo).toMatchObject({
+        start: { dateTime: '2026-09-18T10:00:00', timeZone: 'America/Sao_Paulo' },
+        end: { dateTime: '2026-09-18T11:00:00', timeZone: 'America/Sao_Paulo' },
+      });
+    });
+
+    it('usa o fuso que o cliente mandou', async () => {
+      const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+      await mexer(
+        { acao: 'mover', uid: 'ev1', dia: '2026-09-18', hora: '09:00', fuso: 'America/Manaus' },
+        buscar,
+      );
+      expect(chamadas[1].corpo).toMatchObject({ start: { timeZone: 'America/Manaus' } });
+    });
+
+    it('404 ao buscar o evento é "inexistente", e nada é escrito', async () => {
+      const { buscar, chamadas } = googleFalso(() => ({ estado: 404 }));
+      const { corpo } = await mexer({ acao: 'mover', uid: 'ev1', dia: '2026-09-18' }, buscar);
+      expect(corpo).toEqual({ feito: false, motivo: 'inexistente' });
+      expect(chamadas.map((c) => c.metodo)).toEqual(['GET']);
+    });
+
+    it('evento cancelado conta como inexistente, e nada é escrito', async () => {
+      const { buscar, chamadas } = googleFalso(() => ({
+        estado: 200,
+        corpo: { ...EVENTO_DAS_10, status: 'cancelled' },
+      }));
+      const { corpo } = await mexer({ acao: 'mover', uid: 'ev1', dia: '2026-09-18' }, buscar);
+      expect(corpo).toEqual({ feito: false, motivo: 'inexistente' });
+      expect(chamadas.map((c) => c.metodo)).toEqual(['GET']);
+    });
+
+    it('403 no PATCH vira "sem-permissao"', async () => {
+      const { buscar } = googleFalso(({ metodo }) =>
+        metodo === 'GET' ? { estado: 200, corpo: EVENTO_DAS_10 } : { estado: 403 },
+      );
+      const { corpo } = await mexer({ acao: 'mover', uid: 'ev1', dia: '2026-09-18' }, buscar);
+      expect(corpo).toEqual({ feito: false, motivo: 'sem-permissao' });
+    });
+  });
+
+  describe('a série é intocável', () => {
+    // As ocorrências de uma série têm id próprio, que começa pelo id da série
+    // — então "não contém o id da série" seria um teste que nunca passa. O que
+    // se prova é o caminho inteiro: termina exatamente na ocorrência.
+    const OCORRENCIA = 'serie1_20260917T130000Z';
+    const DA_SERIE: EventoDoGoogle = { ...EVENTO_DAS_10, id: OCORRENCIA, recurringEventId: 'serie1' };
+    const CAMINHO = `/calendar/v3/calendars/primary/events/${OCORRENCIA}`;
+
+    const casos = [
+      { acao: 'apagar', uid: OCORRENCIA },
+      { acao: 'renomear', uid: OCORRENCIA, novo: 'Outro nome' },
+      { acao: 'mover', uid: OCORRENCIA, dia: '2026-09-18', hora: '09:00' },
+    ];
+
+    for (const caso of casos) {
+      it(`${caso.acao} age só na ocorrência, nunca na série`, async () => {
+        const { buscar, chamadas } = googleFalso(({ metodo }) =>
+          metodo === 'GET' ? { estado: 200, corpo: DA_SERIE } : { estado: 200, corpo: {} },
+        );
+        const { corpo } = await mexer(caso, buscar);
+
+        expect(corpo).toEqual({ feito: true });
+        for (const chamada of chamadas) {
+          expect(chamada.url.pathname).toBe(CAMINHO);
+          // nenhuma chamada leva o campo que ligaria a escrita à série
+          expect(chamada.corpo ?? {}).not.toHaveProperty('recurringEventId');
+          expect(chamada.url.searchParams.has('recurringEventId')).toBe(false);
+        }
+      });
+    }
+
+    it('toda escrita leva sendUpdates=none, sem exceção', async () => {
+      for (const caso of casos) {
+        const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+        await mexer(caso, buscar);
+        const escritas = chamadas.filter((c) => c.metodo !== 'GET');
+        expect(escritas.length).toBeGreaterThan(0);
+        for (const e of escritas) expect(e.url.searchParams.get('sendUpdates')).toBe('none');
+      }
+    });
+  });
+
+  describe('a entrada do cliente é conferida na borda', () => {
+    const recusas: [string, unknown][] = [
+      ['ação desconhecida', { acao: 'duplicar', uid: 'ev1' }],
+      ['sem ação', { uid: 'ev1' }],
+      ['sem uid', { acao: 'apagar' }],
+      ['uid vazio', { acao: 'apagar', uid: '' }],
+      ['uid que não é texto', { acao: 'apagar', uid: 42 }],
+      ['uid que sobe de diretório', { acao: 'apagar', uid: '..' }],
+      ['uid com barra', { acao: 'apagar', uid: 'a/b' }],
+      ['uid com interrogação', { acao: 'apagar', uid: 'a?sendUpdates=all' }],
+      ['mover sem dia', { acao: 'mover', uid: 'ev1', hora: '10:00' }],
+      ['dia que não existe', { acao: 'mover', uid: 'ev1', dia: '2026-02-30' }],
+      ['dia fora do formato', { acao: 'mover', uid: 'ev1', dia: '18/09/2026' }],
+      ['hora sem dois-pontos', { acao: 'mover', uid: 'ev1', dia: '2026-09-18', hora: '9' }],
+      ['hora com um dígito', { acao: 'mover', uid: 'ev1', dia: '2026-09-18', hora: '9:00' }],
+      ['hora impossível', { acao: 'mover', uid: 'ev1', dia: '2026-09-18', hora: '25:00' }],
+      ['minuto impossível', { acao: 'mover', uid: 'ev1', dia: '2026-09-18', hora: '10:75' }],
+      ['hora que não é texto', { acao: 'mover', uid: 'ev1', dia: '2026-09-18', hora: 9 }],
+      ['fuso inventado', { acao: 'mover', uid: 'ev1', dia: '2026-09-18', fuso: 'Marte/Olimpo' }],
+      ['renomear sem nome', { acao: 'renomear', uid: 'ev1' }],
+      ['renomear para vazio', { acao: 'renomear', uid: 'ev1', novo: '   ' }],
+      ['nome que não é texto', { acao: 'renomear', uid: 'ev1', novo: 7 }],
+    ];
+
+    for (const [nome, entrada] of recusas) {
+      it(`recusa ${nome} sem tocar no Google`, async () => {
+        const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+        const { resposta } = await mexer(entrada, buscar);
+        expect(resposta.status).toBe(400);
+        expect(chamadas).toHaveLength(0);
+      });
+    }
+
+    it('corpo que nem é JSON é recusado, não explode', async () => {
+      const { armazem, token, usuarioId } = await comSessao();
+      await jaConectado(armazem, usuarioId);
+      const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+      const pedido = new Request(`${BASE}/api/google-evento`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: 'isto não é json',
+      });
+      const resposta = await rotaGoogleEvento(pedido, armazem, AMBIENTE, buscar);
+      expect(resposta.status).toBe(400);
+      expect(chamadas).toHaveLength(0);
+    });
+
+    it('hora vazia quer dizer "sem hora nova", e é aceita', async () => {
+      // É o que um formulário manda quando o campo fica em branco.
+      const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+      const { corpo } = await mexer({ acao: 'mover', uid: 'ev1', dia: '2026-09-18', hora: '' }, buscar);
+      expect(corpo).toEqual({ feito: true });
+      expect(chamadas[1].corpo).toMatchObject({ start: { dateTime: '2026-09-18T10:00:00' } });
+    });
   });
 });
