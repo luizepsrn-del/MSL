@@ -425,19 +425,26 @@ describe('quem organiza o evento', () => {
 });
 
 describe('mover um evento', () => {
+  const AJUDA = {
+    somarDias,
+    distanciaEmDias: (a: string, b: string) =>
+      Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000),
+    paraLocal: OPCOES.paraLocal,
+  };
+
   it('mantém os minutos que o evento tinha', () => {
     const e = evento({
       start: { dateTime: '2026-10-29T14:00:00Z' },
       end: { dateTime: '2026-10-29T15:30:00Z' },
     });
-    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO);
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO, AJUDA);
     expect(c.start.dateTime).toContain('2026-11-02T09:00');
     expect(c.end.dateTime).toContain('2026-11-02T10:30');
   });
 
   it('evento de dia inteiro que ganha hora deixa de ser de dia inteiro', () => {
     const e = evento({ start: { date: '2026-10-29' }, end: { date: '2026-10-30' } });
-    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO);
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO, AJUDA);
     expect(c.start.date).toBeUndefined();
     expect(c.start.dateTime).toContain('2026-11-02T09:00');
     expect(c.end.date).toBeUndefined();
@@ -446,7 +453,7 @@ describe('mover um evento', () => {
 
   it('sem hora, continua de dia inteiro no dia novo', () => {
     const e = evento({ start: { date: '2026-10-29' }, end: { date: '2026-10-30' } });
-    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO);
+    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO, AJUDA);
     expect(c.start.date).toBe('2026-11-02');
     expect(c.start.dateTime).toBeUndefined();
     expect(c.end.date).toBe('2026-11-03');
@@ -455,21 +462,22 @@ describe('mover um evento', () => {
 
   it('viagem de vários dias leva os dias junto', () => {
     const e = evento({ start: { date: '2026-10-17' }, end: { date: '2026-10-20' } });
-    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO);
+    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO, AJUDA);
     expect(c.start.date).toBe('2026-11-02');
     expect(c.end.date).toBe('2026-11-05');
   });
 
-  it('evento com hora que perde a hora vira dia inteiro de um dia', () => {
+  it('sem hora nova, o evento com hora mantém a hora local e a duração', () => {
+    // 15:00 em São Paulo é 18:00Z: a hora que se preserva é a local, não a do ISO.
     const e = evento({
-      start: { dateTime: '2026-10-29T14:00:00Z' },
-      end: { dateTime: '2026-10-29T15:30:00Z' },
+      start: { dateTime: '2026-10-29T18:00:00Z' },
+      end: { dateTime: '2026-10-29T19:00:00Z' },
     });
-    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO);
-    expect(c.start.date).toBe('2026-11-02');
-    expect(c.end.date).toBe('2026-11-03');
-    expect(c.start.dateTime).toBeUndefined();
-    expect(c.end.dateTime).toBeUndefined();
+    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO, AJUDA);
+    expect(c.start.dateTime).toContain('2026-11-02T15:00');
+    expect(c.end.dateTime).toContain('2026-11-02T16:00');
+    expect(c.start.date).toBeUndefined();
+    expect(c.end.date).toBeUndefined();
   });
 
   it('fim antes do começo não vira duração negativa', () => {
@@ -477,7 +485,7 @@ describe('mover um evento', () => {
       start: { dateTime: '2026-10-29T15:00:00Z' },
       end: { dateTime: '2026-10-29T14:00:00Z' },
     });
-    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO);
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO, AJUDA);
     expect(c.end.dateTime).toContain(`2026-11-02T${somarMinutos('09:00', MINUTOS_PADRAO)}`);
   });
 });

@@ -138,21 +138,6 @@ export function corpoDoEvento(
 }
 
 /**
- * Soma dias a um `AAAA-MM-DD`. Local a este arquivo: o domínio do Google não
- * importa nada, e o que muda de fora (`diaSeguinte`) é injetado — mas mover
- * precisa de mais de um dia, e a assinatura pública não tem como receber isso.
- */
-function maisDias(dia: string, dias: number): string {
-  const [a, m, d] = dia.split('-').map(Number);
-  return new Date(Date.UTC(a, m - 1, d + dias)).toISOString().slice(0, 10);
-}
-
-/** Quantos dias separam dois `AAAA-MM-DD`. */
-function diasEntre(de: string, ate: string): number {
-  return Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86_400_000);
-}
-
-/**
  * O novo `start` e `end` de um evento movido para outro dia (e, se vier, hora).
  *
  * A duração é do evento, não do destino: uma reunião de uma hora e meia
@@ -161,36 +146,45 @@ function diasEntre(de: string, ate: string): number {
  * e, se o evento não tem os dois (era de dia inteiro, ou o fim veio estranho),
  * cai no bloco padrão em vez de inventar uma duração.
  *
+ * A hora só é tocada quando veio uma: mover "para sexta" não pode apagar o
+ * horário que o compromisso já tinha, nem virá-lo em dia inteiro. Sem hora
+ * nova, o evento com hora fica com a hora **local** de antes — lida por
+ * `paraLocal`, porque o `dateTime` do Google vem em UTC e a hora que importa é
+ * a da parede. Só o evento que já era de dia inteiro continua de dia inteiro,
+ * levando os dias dele junto (uma viagem de três dias segue com três).
+ *
  * Cada lado leva `date` **ou** `dateTime`, nunca os dois: o Google recusa o
  * evento que tem ambos. Por isso o corpo é montado do zero, e não aproveitando
  * o `start` antigo — que carregaria o campo do tipo anterior para o novo.
- *
- * Evento de dia inteiro movido sem hora continua de dia inteiro e leva os
- * dias dele junto (uma viagem de três dias segue com três). Evento com hora
- * movido sem hora vira dia inteiro de um dia: sem hora não há onde pôr o bloco.
  */
 export function corpoDoMover(
   evento: EventoDoGoogle,
   dia: string,
   hora: string | undefined,
   fuso: string,
+  ajuda: {
+    somarDias: (dia: string, dias: number) => string;
+    distanciaEmDias: (a: string, b: string) => number;
+    paraLocal: (iso: string) => { dia: string; hora: string };
+  },
 ): Pick<CorpoDoEvento, 'start' | 'end'> {
-  if (!hora) {
-    const eraDiaInteiro = !!evento.start?.date && !!evento.end?.date;
-    const dias = eraDiaInteiro
-      ? Math.max(diasEntre(evento.start!.date!, evento.end!.date!), 1)
-      : 1;
-    return { start: { date: dia }, end: { date: maisDias(dia, dias) } };
-  }
-
   const inicio = evento.start?.dateTime;
   const fim = evento.end?.dateTime;
+  const horaFinal = hora ?? (inicio ? ajuda.paraLocal(inicio).hora : undefined);
+
+  if (!horaFinal) {
+    const de = evento.start?.date;
+    const ate = evento.end?.date;
+    const dias = de && ate ? Math.max(ajuda.distanciaEmDias(de, ate), 1) : 1;
+    return { start: { date: dia }, end: { date: ajuda.somarDias(dia, dias) } };
+  }
+
   const medida = inicio && fim ? (Date.parse(fim) - Date.parse(inicio)) / 60_000 : NaN;
   const minutos = Number.isFinite(medida) && medida > 0 ? medida : MINUTOS_PADRAO;
 
   return {
-    start: { dateTime: `${dia}T${hora}:00`, timeZone: fuso },
-    end: { dateTime: `${dia}T${somarMinutos(hora, minutos)}:00`, timeZone: fuso },
+    start: { dateTime: `${dia}T${horaFinal}:00`, timeZone: fuso },
+    end: { dateTime: `${dia}T${somarMinutos(horaFinal, minutos)}:00`, timeZone: fuso },
   };
 }
 
