@@ -651,8 +651,8 @@ export function responder(banco: Banco, intencao: Intencao, hoje: string): Respo
           {
             tipo: 'texto',
             texto:
-              'Eu leio os seus dados e respondo com o que eles dizem. Não invento número, ' +
-              'e nada sai deste aparelho.',
+              'Eu leio os seus dados e respondo com o que eles dizem. Não invento número. ' +
+              'Os dados ficam neste aparelho; só a frase que você ditar sai, para virar texto.',
           },
           {
             tipo: 'lista',
@@ -670,9 +670,21 @@ export function responder(banco: Banco, intencao: Intencao, hoje: string): Respo
             titulo: 'Ou mande fazer',
             itens: [
               { texto: 'Criar tarefa renovar o seguro sexta', detalhe: 'entende a data escrita' },
-              { texto: 'Concluir renovar o seguro', detalhe: 'marca como feita' },
+              {
+                texto: 'Marcar reunião com o contador quinta às 15h',
+                detalhe: 'vira compromisso, e sobe para o Google Agenda',
+              },
+              { texto: 'Adiar o dentista para dia 25', detalhe: 'mantém a hora, pergunta antes' },
+              { texto: 'Concluir renovar o seguro', detalhe: 'pergunta antes de marcar' },
+              { texto: 'Excluir a tarefa comprar cadeira', detalhe: 'pergunta antes de apagar' },
               { texto: 'Gastei 250 no mercado', detalhe: 'lança, e adivinha a categoria' },
             ],
+          },
+          {
+            tipo: 'texto',
+            texto:
+              'O que mexe no que já existe — concluir, adiar, excluir — mostra antes o que vai ' +
+              'fazer e espera o seu toque. O que só soma acontece na hora.',
           },
           {
             tipo: 'texto',
@@ -914,10 +926,18 @@ export function responder(banco: Banco, intencao: Intencao, hoje: string): Respo
       const achado = umaTarefa(banco, intencao.alvo, hoje);
       if (!achado.achou) return achado.resposta;
       const alvo = achado.tarefa;
+      // No passado ("Concluída", "Marcada agora") esta resposta mentia: ela é
+      // desenhada **antes** da confirmação, e o efeito pode nunca acontecer.
+      // Quem anuncia o que foi feito é a tela, depois do toque.
       return {
-        titulo: 'Concluída',
+        titulo: 'Concluir',
         blocos: [
-          { tipo: 'lista', itens: [{ texto: alvo.titulo, detalhe: 'Marcada agora', tom: 'bom' }] },
+          {
+            tipo: 'lista',
+            itens: [
+              { texto: alvo.titulo, detalhe: detalheDe(alvo.prazo, alvo.hora, hoje), tom: 'neutro' },
+            ],
+          },
         ],
         efeito: { tipo: 'concluir-tarefa', id: alvo.id, titulo: alvo.titulo },
       };

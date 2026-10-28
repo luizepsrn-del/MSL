@@ -615,3 +615,32 @@ describe('agendar, adiar e excluir', () => {
     ).toBe(true);
   });
 });
+
+describe('a voz da prévia', () => {
+  const comTarefa = (): Banco => ({
+    ...bancoVazio(),
+    tarefas: [tarefa({ id: 't1', titulo: 'Reunião com o contador', prazo: '2026-09-18', hora: '15:00' })],
+  });
+
+  it('fala no futuro: a resposta é desenhada antes de o efeito acontecer', () => {
+    const r = responder(comTarefa(), { tipo: 'concluir-tarefa', alvo: 'reunião' }, HOJE);
+    expect(r.titulo).toBe('Concluir');
+    // Nada aqui pode afirmar que já aconteceu — a confirmação ainda não veio.
+    const texto = JSON.stringify(r.blocos);
+    expect(texto).not.toMatch(/Concluída|Marcada agora/);
+    expect(r.efeito).toEqual({ tipo: 'concluir-tarefa', id: 't1', titulo: 'Reunião com o contador' });
+  });
+
+  it('todo efeito que exige confirmação tem título no infinitivo', () => {
+    const banco = comTarefa();
+    for (const intencao of [
+      { tipo: 'concluir-tarefa', alvo: 'reunião' },
+      { tipo: 'excluir-tarefa', alvo: 'reunião' },
+      { tipo: 'adiar-tarefa', alvo: 'reunião', prazo: '2026-09-25' },
+    ] as const) {
+      const r = responder(banco, intencao, HOJE);
+      expect(r.efeito && exigeConfirmacao(r.efeito)).toBe(true);
+      expect(['Concluir', 'Adiar', 'Excluir']).toContain(r.titulo);
+    }
+  });
+});
