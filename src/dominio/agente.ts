@@ -165,6 +165,105 @@ export function lerPrazo(texto: string, hoje: string): PrazoLido {
   return { resto: t };
 }
 
+/* ── Horas escritas por extenso ──────────────────────────────────────────── */
+
+export interface HoraLida {
+  /** `HH:MM`, ou ausente quando o texto não falava de hora */
+  hora?: string;
+  /** o texto sem o pedaço que virou hora, com acento e caixa originais */
+  resto: string;
+}
+
+const doisDigitos = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * O período dito em palavra, aplicado ao número.
+ *
+ * "3 da tarde" é 15h, e "9 da noite" é 21h. As duas exceções são meio-dia e
+ * meia-noite, onde o 12 anda para lados opostos: "12 da noite" é 00h.
+ */
+function em24h(hora: number, periodo?: string): number | undefined {
+  if (hora > 23) return undefined;
+  if (!periodo) return hora;
+  const p = normalizar(periodo);
+  if (p.startsWith('madrug')) return hora === 12 ? 0 : hora;
+  if (p.startsWith('manh')) return hora === 12 ? 0 : hora;
+  if (p.startsWith('tarde') || p.startsWith('noite')) {
+    if (hora === 12) return p.startsWith('noite') ? 0 : 12;
+    return hora < 12 ? hora + 12 : hora;
+  }
+  return hora;
+}
+
+/** Tira a hora do texto e limpa a preposição órfã, como `recortar` faz com a data. */
+function recortarHora(texto: string, padrao: RegExp, hora: string): HoraLida {
+  const resto = texto
+    .replace(padrao, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+(para|pro|pra|at[ée]|[àa]s?|no|na|em|de)\s*$/i, '')
+    .trim();
+  return { hora, resto };
+}
+
+/**
+ * Lê a hora escrita na frase e a remove do texto.
+ *
+ * Mesmo contrato de `lerPrazo`, e pelo mesmo motivo: sem remover, "reunião com
+ * o contador às 15h" viraria uma tarefa chamada "reunião com o contador às
+ * 15h", que repete na tela a hora que já está na linha da agenda.
+ *
+ * **Rodar sempre depois de `lerPrazo`, sobre o resto dela.** A data sai
+ * primeiro porque "dia 25" e "25/09" carregam números que, soltos, um padrão
+ * de hora poderia disputar.
+ *
+ * Exige marca explícita — `h`, `:`, "horas", ou o período dito. Um número
+ * solto não vira hora: "comprar 2 cadeiras" não é um compromisso às 02:00.
+ */
+export function lerHora(texto: string): HoraLida {
+  const t = texto.trim();
+
+  const meioDia = /\bmeio[- ]dia(\s+e\s+meia)?\b/i;
+  const meiaNoite = /\bmeia[- ]noite(\s+e\s+meia)?\b/i;
+  if (meioDia.test(t)) {
+    return recortarHora(t, meioDia, meioDia.exec(t)?.[1] ? '12:30' : '12:00');
+  }
+  if (meiaNoite.test(t)) {
+    return recortarHora(t, meiaNoite, meiaNoite.exec(t)?.[1] ? '00:30' : '00:00');
+  }
+
+  const PERIODO = '(?:\\s+d[ae]\\s+(manh[ãa]|tarde|noite|madrugada))?';
+
+  // 15h30, 15:30, 15h30min, com período opcional depois
+  const comMinuto = new RegExp(`\\b([01]?\\d|2[0-3])\\s*[h:]\\s*([0-5]\\d)(?:min)?${PERIODO}`, 'iu');
+  const cm = t.match(comMinuto);
+  if (cm) {
+    const hora = em24h(Number(cm[1]), cm[3]);
+    if (hora !== undefined) {
+      return recortarHora(t, comMinuto, `${doisDigitos(hora)}:${cm[2]}`);
+    }
+  }
+
+  // 15h, 15 horas, 15hs — a marca é obrigatória
+  const soHora = new RegExp(`\\b([01]?\\d|2[0-3])\\s*(?:h|hs|hrs|horas?)\\b${PERIODO}`, 'iu');
+  const sh = t.match(soHora);
+  if (sh) {
+    const hora = em24h(Number(sh[1]), sh[2]);
+    if (hora !== undefined) return recortarHora(t, soHora, `${doisDigitos(hora)}:00`);
+  }
+
+  // "às 3 da tarde" — sem o "h", quem marca é o período
+  // O `\b` final não fecha depois de "ã" — a mesma armadilha de "amanhã", lá em
+  // cima. O fim de palavra aqui é "não vem outra letra".
+  const comPeriodo = /\b([01]?\d|2[0-3])\s+d[ae]\s+(manh[ãa]|tarde|noite|madrugada)(?!\p{L})/iu;
+  const cp = t.match(comPeriodo);
+  if (cp) {
+    const hora = em24h(Number(cp[1]), cp[2]);
+    if (hora !== undefined) return recortarHora(t, comPeriodo, `${doisDigitos(hora)}:00`);
+  }
+
+  return { resto: t };
+}
+
 /* ── Intenção ────────────────────────────────────────────────────────────── */
 
 export type Periodo = 'hoje' | 'semana' | 'mes';

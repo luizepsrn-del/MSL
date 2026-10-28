@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizar, lerPrazo, interpretar, acharTarefas, responder } from './agente';
+import { normalizar, lerPrazo, lerHora, interpretar, acharTarefas, responder } from './agente';
 import { bancoVazio, type Banco, type Tarefa, type Lancamento, type Rotina } from '../dados/esquema';
 
 /** 2026-09-17 é uma quinta-feira. Toda data escrita aqui parte dela. */
@@ -477,5 +477,50 @@ describe('responder — relatórios saem dos dados, e só', () => {
     const t = textoDe(responder(bancoVazio(), { tipo: 'ajuda' }, HOJE));
     expect(t).toContain('Não invento número');
     expect(t).toContain('Claude Code');
+  });
+});
+
+describe('lerHora', () => {
+  it('lê a hora cheia e tira a preposição órfã', () => {
+    expect(lerHora('reunião com o contador às 15h')).toEqual({
+      hora: '15:00',
+      resto: 'reunião com o contador',
+    });
+  });
+
+  it('lê hora com minuto, em h e em dois-pontos', () => {
+    expect(lerHora('consulta 15h30').hora).toBe('15:30');
+    expect(lerHora('consulta 15:30').hora).toBe('15:30');
+    expect(lerHora('consulta às 9h05').hora).toBe('09:05');
+  });
+
+  it('converte o período dito para 24 horas', () => {
+    expect(lerHora('almoço às 3 da tarde').hora).toBe('15:00');
+    expect(lerHora('ligar 8 da manhã').hora).toBe('08:00');
+    expect(lerHora('jantar 9 da noite').hora).toBe('21:00');
+    expect(lerHora('acordar 5 da madrugada').hora).toBe('05:00');
+  });
+
+  it('resolve meio-dia e meia-noite, inclusive com meia', () => {
+    expect(lerHora('almoçar ao meio-dia').hora).toBe('12:00');
+    expect(lerHora('almoçar meio-dia e meia').hora).toBe('12:30');
+    expect(lerHora('virar meia-noite').hora).toBe('00:00');
+    expect(lerHora('12 da noite').hora).toBe('00:00');
+  });
+
+  it('não transforma número solto em hora', () => {
+    expect(lerHora('comprar 2 cadeiras')).toEqual({ resto: 'comprar 2 cadeiras' });
+    expect(lerHora('pagar as 3 parcelas')).toEqual({ resto: 'pagar as 3 parcelas' });
+  });
+
+  it('ignora hora impossível', () => {
+    expect(lerHora('ligar 99h').hora).toBeUndefined();
+  });
+
+  it('trabalha sobre o resto de lerPrazo, sem disputar o número da data', () => {
+    const data = lerPrazo('marcar o dentista dia 25 às 14h', HOJE);
+    expect(data.prazo).toBe('2026-09-25');
+    const hora = lerHora(data.resto);
+    expect(hora).toEqual({ hora: '14:00', resto: 'marcar o dentista' });
   });
 });
