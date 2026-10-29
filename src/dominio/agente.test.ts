@@ -7,6 +7,7 @@ import {
   acharTarefas,
   responder,
   exigeConfirmacao,
+  rotuloDaConfirmacao,
   type CompromissoExterno,
 } from './agente';
 import { bancoVazio, type Banco, type Tarefa, type Lancamento, type Rotina, type Projeto } from '../dados/esquema';
@@ -873,20 +874,13 @@ describe('editar tarefa', () => {
     expect(r.efeito).toBeUndefined();
   });
 
-  it('mexível ou não, o compromisso ainda é recusado nos quatro comandos', () => {
+  it('concluir é recusado mesmo com o compromisso mexível: não existe "feito" no Google', () => {
     const fora: CompromissoExterno[] = [
       { titulo: 'Reunião de equipe', dia: HOJE, hora: '10:00', diaInteiro: false, uid: 'g1', mexivel: true },
     ];
-    for (const frase of [
-      'concluir reunião de equipe',
-      'adiar a reunião de equipe para sexta',
-      'exclui a reunião de equipe',
-      'renomeia a reunião de equipe para Call',
-    ]) {
-      const r = responder(banco({ tarefas: [] }), interpretar(frase, HOJE), HOJE, fora);
-      expect(r.titulo, frase).toBe('Essa é do Google');
-      expect(r.efeito, frase).toBeUndefined();
-    }
+    const r = responder(banco({ tarefas: [] }), interpretar('concluir reunião de equipe', HOJE), HOJE, fora);
+    expect(r.titulo).toBe('Essa é do Google');
+    expect(r.efeito).toBeUndefined();
   });
 
   it('dois compromissos que não dá para mexer seguem na recusa, sem pergunta inútil', () => {
@@ -925,5 +919,287 @@ describe('editar tarefa', () => {
       mudanca: { titulo: 'Call' },
     });
     expect(exigeConfirmacao(r.efeito!)).toBe(true);
+  });
+});
+
+describe('ação sobre evento do Google', () => {
+  const evento = (extras: Partial<CompromissoExterno> = {}): CompromissoExterno => ({
+    titulo: 'Reunião de equipe',
+    dia: HOJE,
+    hora: '10:00',
+    diaInteiro: false,
+    uid: 'g1',
+    mexivel: true,
+    souOrganizador: true,
+    ...extras,
+  });
+  const vazio = () => banco({ tarefas: [] });
+  const apagar = (c: CompromissoExterno) =>
+    responder(vazio(), interpretar('cancela a reunião de equipe', HOJE), HOJE, [c]);
+  const mover = (c: CompromissoExterno, frase = 'adiar a reunião de equipe para sexta') =>
+    responder(vazio(), interpretar(frase, HOJE), HOJE, [c]);
+  const renomear = (c: CompromissoExterno) =>
+    responder(vazio(), interpretar('renomeia a reunião de equipe para Call', HOJE), HOJE, [c]);
+  const editar = (c: CompromissoExterno, mudanca: Record<string, string>) =>
+    responder(vazio(), { tipo: 'editar-tarefa', alvo: 'reunião de equipe', mudanca }, HOJE, [c]);
+  const itemDe = (r: ReturnType<typeof responder>) => {
+    const lista = r.blocos.find((b) => b.tipo === 'lista');
+    return lista && lista.tipo === 'lista' ? lista.itens[0] : undefined;
+  };
+
+  describe('apagar', () => {
+    it('organizador: a prévia diz que atinge todos os convidados, em tom ruim', () => {
+      const r = apagar(evento({ souOrganizador: true }));
+      expect(r.titulo).toBe('Apagar');
+      expect(textoDe(r)).toContain('todos os convidados');
+      expect(textoDe(r)).not.toContain('só da sua agenda');
+      expect(itemDe(r)?.tom).toBe('ruim');
+      expect(r.efeito).toEqual({
+        tipo: 'evento-do-google',
+        uid: 'g1',
+        titulo: 'Reunião de equipe',
+        souOrganizador: true,
+        acao: { tipo: 'apagar' },
+      });
+    });
+
+    it('convidado: a prévia diz que sai só da minha agenda e ninguém é avisado, em tom de atenção', () => {
+      const r = apagar(evento({ souOrganizador: false }));
+      expect(textoDe(r)).toContain('só da sua agenda');
+      expect(textoDe(r)).toContain('ninguém é avisado');
+      expect(textoDe(r)).not.toContain('todos os convidados');
+      expect(itemDe(r)?.tom).toBe('atencao');
+      expect(r.efeito).toMatchObject({ souOrganizador: false, acao: { tipo: 'apagar' } });
+    });
+
+    it('sem souOrganizador (evento do iCal) vale convidado, nunca organizador', () => {
+      const c = evento();
+      delete c.souOrganizador;
+      const r = apagar(c);
+      expect(textoDe(r)).toContain('só da sua agenda');
+      expect(textoDe(r)).not.toContain('todos os convidados');
+      expect(r.efeito).toMatchObject({ souOrganizador: false });
+    });
+
+    it('a prévia diz qual evento e quando', () => {
+      const item = itemDe(apagar(evento()));
+      expect(item?.texto).toBe('Reunião de equipe');
+      expect(item?.detalhe).toContain('10:00');
+    });
+  });
+
+  describe('mover', () => {
+    it('adiar vira mover, com o dia novo e a hora que o evento já tinha', () => {
+      const r = mover(evento());
+      expect(r.titulo).toBe('Adiar');
+      expect(r.efeito).toEqual({
+        tipo: 'evento-do-google',
+        uid: 'g1',
+        titulo: 'Reunião de equipe',
+        souOrganizador: true,
+        acao: { tipo: 'mover', dia: '2026-09-18', hora: '10:00' },
+      });
+    });
+
+    it('a hora dita na frase vence a que o evento tinha', () => {
+      const r = mover(evento({ hora: '10:00' }), 'adiar a reunião de equipe para sexta às 15h');
+      expect(r.efeito).toMatchObject({ acao: { tipo: 'mover', dia: '2026-09-18', hora: '15:00' } });
+    });
+
+    it('evento de dia inteiro continua sem hora, mesmo que o dado traga uma', () => {
+      for (const hora of [undefined, '10:00']) {
+        const r = mover(evento({ diaInteiro: true, hora }));
+        expect(r.efeito).toMatchObject({ acao: { tipo: 'mover', dia: '2026-09-18' } });
+        const acao = r.efeito?.tipo === 'evento-do-google' ? r.efeito.acao : undefined;
+        expect((acao as { hora?: string }).hora).toBeUndefined();
+        expect(itemDe(r)?.detalhe).not.toContain('10:00');
+      }
+    });
+
+    it('a prévia mostra o antes virando o depois', () => {
+      const item = itemDe(mover(evento(), 'adiar a reunião de equipe para sexta às 15h'));
+      expect(item?.detalhe).toContain('10:00');
+      expect(item?.detalhe).toContain('15:00');
+      expect(item?.detalhe).toContain('→');
+    });
+
+    it('organizador: a prévia avisa que todos os convidados veem a mudança', () => {
+      expect(textoDe(mover(evento({ souOrganizador: true })))).toContain('todos os convidados');
+      expect(textoDe(mover(evento({ souOrganizador: false })))).not.toContain('todos os convidados');
+    });
+
+    it('mudar só a hora move para a mesma data', () => {
+      // Num dia que não é hoje: senão "mesma data" e "hoje" seriam indistinguíveis.
+      const r = editar(evento({ dia: '2026-09-22' }), { hora: '15:00' });
+      expect(r.efeito).toMatchObject({ acao: { tipo: 'mover', dia: '2026-09-22', hora: '15:00' } });
+    });
+  });
+
+  describe('renomear', () => {
+    it('leva o título novo, e a prévia mostra o antigo virando o novo', () => {
+      const r = renomear(evento());
+      expect(r.titulo).toBe('Salvar');
+      expect(r.efeito).toEqual({
+        tipo: 'evento-do-google',
+        uid: 'g1',
+        titulo: 'Reunião de equipe',
+        souOrganizador: true,
+        acao: { tipo: 'renomear', novo: 'Call' },
+      });
+      expect(itemDe(r)?.detalhe).toBe('Reunião de equipe → Call');
+    });
+
+    it('organizador: a prévia avisa que todos os convidados veem a mudança', () => {
+      expect(textoDe(renomear(evento({ souOrganizador: true })))).toContain('todos os convidados');
+      expect(textoDe(renomear(evento({ souOrganizador: false })))).not.toContain('todos os convidados');
+    });
+  });
+
+  describe('o que o Google não tem', () => {
+    it('anotação num compromisso recusa, e não emite efeito', () => {
+      const r = editar(evento(), { anotacao: 'levar o contrato' });
+      expect(r.efeito).toBeUndefined();
+      expect(r.titulo).not.toBe('Salvar');
+      expect(textoDe(r)).toContain('anotação');
+    });
+
+    it('projeto num compromisso recusa antes de procurar o projeto', () => {
+      const r = editar(evento(), { projeto: 'Acttus' });
+      expect(r.efeito).toBeUndefined();
+      expect(r.titulo).not.toBe('Não achei esse projeto');
+      expect(textoDe(r)).toContain('projeto');
+    });
+
+    it('anotação junto com um título válido também recusa: nada pela metade', () => {
+      const r = editar(evento(), { titulo: 'Call', anotacao: 'x' });
+      expect(r.efeito).toBeUndefined();
+    });
+
+    it('projeto junto com uma hora válida também recusa', () => {
+      const r = editar(evento(), { hora: '15:00', projeto: 'Acttus' });
+      expect(r.efeito).toBeUndefined();
+    });
+
+    it('anotação num compromisso que não dá para mexer recusa pela razão certa: é do Google', () => {
+      const r = editar(evento({ mexivel: false }), { anotacao: 'x' });
+      expect(r.titulo).toBe('Essa é do Google');
+    });
+
+    it('título e hora na mesma frase recusam: o Google recebe uma mudança por vez', () => {
+      const r = editar(evento(), { titulo: 'Call', hora: '15:00' });
+      expect(r.efeito).toBeUndefined();
+      expect(textoDe(r)).toContain('uma mudança por vez');
+    });
+
+    it('uma mudança vazia não vira efeito', () => {
+      expect(editar(evento(), {}).efeito).toBeUndefined();
+    });
+
+    it('concluir não atravessa, seja organizador ou convidado, e a recusa não promete o que não faz', () => {
+      for (const souOrganizador of [true, false]) {
+        const r = responder(
+          vazio(),
+          interpretar('concluir reunião de equipe', HOJE),
+          HOJE,
+          [evento({ souOrganizador })],
+        );
+        expect(r.titulo).toBe('Essa é do Google');
+        expect(r.efeito).toBeUndefined();
+        expect(textoDe(r)).toContain('feito');
+        expect(textoDe(r)).not.toContain('eu só mexo no que foi criado aqui');
+      }
+    });
+  });
+
+  describe('sem uid ou sem mexivel não há efeito, há recusa', () => {
+    const quemMexe = [
+      ['apagar', apagar],
+      ['mover', (c: CompromissoExterno) => mover(c)],
+      ['renomear', renomear],
+      ['mudar a hora', (c: CompromissoExterno) => editar(c, { hora: '15:00' })],
+    ] as const;
+
+    for (const [nome, mexer] of quemMexe) {
+      it(`${nome}: mexível sem uid`, () => {
+        const c = evento();
+        delete c.uid;
+        const r = mexer(c);
+        expect(r.titulo).toBe('Essa é do Google');
+        expect(r.efeito).toBeUndefined();
+      });
+
+      it(`${nome}: uid vazio`, () => {
+        const r = mexer(evento({ uid: '' }));
+        expect(r.titulo).toBe('Essa é do Google');
+        expect(r.efeito).toBeUndefined();
+      });
+
+      it(`${nome}: uid sem mexivel`, () => {
+        const c = evento();
+        delete c.mexivel;
+        const r = mexer(c);
+        expect(r.titulo).toBe('Essa é do Google');
+        expect(r.efeito).toBeUndefined();
+      });
+
+      it(`${nome}: mexivel falso`, () => {
+        const r = mexer(evento({ mexivel: false }));
+        expect(r.titulo).toBe('Essa é do Google');
+        expect(r.efeito).toBeUndefined();
+      });
+    }
+
+    it('um mexível sem uid e um não mexível recusam direto, sem pergunta inútil', () => {
+      const semUid = evento({ titulo: 'Reunião A' });
+      delete semUid.uid;
+      const r = responder(vazio(), interpretar('cancela a reunião', HOJE), HOJE, [
+        semUid,
+        evento({ titulo: 'Reunião B', mexivel: false }),
+      ]);
+      expect(r.titulo).toBe('Essa é do Google');
+    });
+
+    it('dois eventos de verdade, mexíveis e com uid, ainda perguntam qual', () => {
+      const r = responder(vazio(), interpretar('cancela a reunião', HOJE), HOJE, [
+        evento({ titulo: 'Reunião A', uid: 'a' }),
+        evento({ titulo: 'Reunião B', uid: 'b' }),
+      ]);
+      expect(r.titulo).toBe('Qual delas?');
+      expect(r.efeito).toBeUndefined();
+    });
+  });
+
+  describe('a confirmação', () => {
+    const efeitoDe = (r: ReturnType<typeof responder>) => {
+      if (!r.efeito) throw new Error('esperava um efeito');
+      return r.efeito;
+    };
+
+    it('toda ação sobre evento do Google pede confirmação', () => {
+      for (const r of [apagar(evento()), mover(evento()), renomear(evento())]) {
+        expect(exigeConfirmacao(efeitoDe(r))).toBe(true);
+      }
+    });
+
+    it('apagar confirma com "Apagar no Google"; mover e renomear com "Salvar no Google"', () => {
+      expect(rotuloDaConfirmacao(efeitoDe(apagar(evento())))).toBe('Apagar no Google');
+      expect(rotuloDaConfirmacao(efeitoDe(mover(evento())))).toBe('Salvar no Google');
+      expect(rotuloDaConfirmacao(efeitoDe(renomear(evento())))).toBe('Salvar no Google');
+    });
+
+    it('o rótulo nunca é "Cancelar": é o botão de desistir', () => {
+      for (const r of [apagar(evento()), mover(evento()), renomear(evento())]) {
+        expect(rotuloDaConfirmacao(efeitoDe(r))).not.toMatch(/cancelar/i);
+      }
+    });
+  });
+
+  describe('a voz da prévia', () => {
+    it('fala no infinitivo: o efeito pode nunca acontecer', () => {
+      for (const r of [apagar(evento()), apagar(evento({ souOrganizador: false })), mover(evento()), renomear(evento())]) {
+        expect(['Apagar', 'Adiar', 'Salvar']).toContain(r.titulo);
+        expect(JSON.stringify(r.blocos)).not.toMatch(/apagad|cancelad|movid|renomead|salv[oa]d|adiad|foi |foram /i);
+      }
+    });
   });
 });

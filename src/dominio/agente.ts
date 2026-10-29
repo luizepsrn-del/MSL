@@ -660,6 +660,10 @@ function quandoDoCompromisso(c: CompromissoExterno): string {
   return c.diaInteiro ? c.dia : `${c.dia}${c.hora ? `, ${c.hora}` : ''}`;
 }
 
+const SEM_COMO_MEXER =
+  'Esse compromisso é do Google, e eu não consigo mexer nele daqui. ' +
+  'Por ora, altere direto no Google Agenda.';
+
 /**
  * A recusa honesta para compromisso que nasceu fora.
  *
@@ -668,8 +672,14 @@ function quandoDoCompromisso(c: CompromissoExterno): string {
  * tecnicismo. Recebe uma lista porque, sem poder mexer em nenhum, listar todos
  * os que casam é mais útil do que perguntar qual — e perguntar para depois
  * recusar seria uma pergunta inútil.
+ *
+ * O `motivo` troca o texto quando a razão da recusa não é "não consigo": hoje
+ * só concluir, que não é questão de permissão — do lado de lá não existe "feito".
  */
-function recusaDoGoogle(deFora: readonly CompromissoExterno[]): Resposta {
+function recusaDoGoogle(
+  deFora: readonly CompromissoExterno[],
+  motivo: string = SEM_COMO_MEXER,
+): Resposta {
   return {
     titulo: 'Essa é do Google',
     blocos: [
@@ -681,15 +691,29 @@ function recusaDoGoogle(deFora: readonly CompromissoExterno[]): Resposta {
           tom: 'neutro' as const,
         })),
       },
-      {
-        tipo: 'texto',
-        texto:
-          'Esse compromisso nasceu no Google, e eu só mexo no que foi criado aqui. ' +
-          'Por ora, altere direto no Google Agenda.',
-      },
+      { tipo: 'texto', texto: motivo },
       { tipo: 'atalho', rotulo: 'Abrir calendário', destino: '/app/calendario' },
     ],
   };
+}
+
+/** A hora de início, que um evento de dia inteiro não tem, ainda que o dado traga uma. */
+function horaDoCompromisso(c: CompromissoExterno): string | undefined {
+  return c.diaInteiro ? undefined : c.hora;
+}
+
+/**
+ * O id do evento, se dá mesmo para agir nele; senão, nada.
+ *
+ * Os dois campos são opcionais no tipo, então nada impede montar um efeito com
+ * `uid` indefinido — quem impede é esta função. Os eventos da assinatura iCal
+ * chegam sem `uid` e sem `mexivel`, e ausente tem de valer "não dá": um efeito
+ * sem id apontaria para lugar nenhum, e um id sem permissão seria um pedido
+ * que o Google ia recusar depois de eu já ter mostrado o botão. O id vazio
+ * também não serve, por isso a checagem é de verdade e não de `undefined`.
+ */
+function idParaMexer(c: CompromissoExterno): string | undefined {
+  return c.mexivel === true && c.uid ? c.uid : undefined;
 }
 
 function umAlvo(
@@ -721,8 +745,8 @@ function umAlvo(
   if (deFora.length === 1) return { tipo: 'compromisso', compromisso: deFora[0] };
 
   if (deFora.length > 1) {
-    // Se nenhum é mexível, o resultado seria a recusa de qualquer jeito.
-    if (deFora.every((c) => !c.mexivel)) {
+    // Se nenhum dá para mexer, o resultado seria a recusa de qualquer jeito.
+    if (deFora.every((c) => idParaMexer(c) === undefined)) {
       return { tipo: 'nada', resposta: recusaDoGoogle(deFora) };
     }
     // Do mais próximo ao mais distante, e dentro do dia pela hora; o dia
@@ -777,6 +801,15 @@ export type Bloco =
   | { tipo: 'barras'; itens: { rotulo: string; fracao: number; valor: string }[] }
   | { tipo: 'atalho'; rotulo: string; destino: string };
 
+/**
+ * As três coisas que dá para fazer num evento do Google. Concluir não está
+ * aqui de propósito: não existe "feito" do lado de lá.
+ */
+export type AcaoNoGoogle =
+  | { tipo: 'apagar' }
+  | { tipo: 'mover'; dia: string; hora?: string }
+  | { tipo: 'renomear'; novo: string };
+
 /** O que a resposta pede que o banco faça. A tela executa; o domínio não. */
 export type Efeito =
   | { tipo: 'criar-tarefa'; titulo: string; prazo?: string; hora?: string; contexto: Contexto }
@@ -791,6 +824,19 @@ export type Efeito =
       valor: number;
       entrada: boolean;
       categoria: Categoria;
+    }
+  /**
+   * Uma ação num compromisso que vive no Google. `uid` aponta o evento certo e
+   * `titulo` é o nome de **agora**, para a tela dizer o que mexeu. `souOrganizador`
+   * viaja junto porque decide o tamanho do estrago, e a tela não deve ter de
+   * adivinhá-lo de novo.
+   */
+  | {
+      tipo: 'evento-do-google';
+      uid: string;
+      titulo: string;
+      souOrganizador: boolean;
+      acao: AcaoNoGoogle;
     }
   /** o texto vai para o compositor de pedido, que já existia */
   | { tipo: 'montar-pedido'; descricao: string };
@@ -819,6 +865,7 @@ export function exigeConfirmacao(efeito: Efeito): boolean {
     case 'adiar-tarefa':
     case 'excluir-tarefa':
     case 'editar-tarefa':
+    case 'evento-do-google':
       return true;
     case 'criar-tarefa':
     case 'criar-lancamento':
@@ -827,7 +874,13 @@ export function exigeConfirmacao(efeito: Efeito): boolean {
   }
 }
 
-/** A frase do botão que confirma. Curta, e dizendo o que vai acontecer. */
+/**
+ * A frase do botão que confirma. Curta, e dizendo o que vai acontecer.
+ *
+ * Nunca "Cancelar": o botão que desiste já diz isso, e dois botões iguais lado
+ * a lado com efeitos opostos cobram caro no dia errado. Por isso apagar um
+ * evento é "Apagar no Google", que também diz **onde** o estrago acontece.
+ */
 export function rotuloDaConfirmacao(efeito: Efeito): string {
   switch (efeito.tipo) {
     case 'concluir-tarefa':
@@ -838,9 +891,127 @@ export function rotuloDaConfirmacao(efeito: Efeito): string {
       return 'Excluir';
     case 'editar-tarefa':
       return 'Salvar';
+    case 'evento-do-google':
+      return efeito.acao.tipo === 'apagar' ? 'Apagar no Google' : 'Salvar no Google';
     default:
       return 'Confirmar';
   }
+}
+
+/**
+ * A prévia de uma ação num evento do Google, e o efeito que a acompanha.
+ *
+ * É a última coisa entre uma frase e uma reunião real desaparecendo, então ela
+ * diz o tamanho do estrago, que depende de quem eu sou no evento:
+ * - organizador: apagar **cancela para todos os convidados**;
+ * - convidado (ou ausente, como nos eventos do iCal): sai só da minha agenda,
+ *   e ninguém é avisado.
+ * Mover e renomear mudam o evento em si, e quem o vê junto é o convidado.
+ *
+ * No infinitivo, como as outras prévias: isto é desenhado antes da confirmação,
+ * e o efeito pode nunca acontecer.
+ */
+function acaoNoGoogle(
+  c: CompromissoExterno,
+  hoje: string,
+  titulo: string,
+  acao: AcaoNoGoogle,
+): Resposta {
+  const uid = idParaMexer(c);
+  if (uid === undefined) return recusaDoGoogle([c]);
+
+  // Só `true` vale organizador: ausente é convidado, que decide por menos gente.
+  const souOrganizador = c.souOrganizador === true;
+  const antes = detalheDe(c.dia, horaDoCompromisso(c), hoje);
+
+  let detalhe: string;
+  let tom: Tom;
+  let aviso: string;
+  switch (acao.tipo) {
+    case 'apagar':
+      detalhe = quandoDoCompromisso(c);
+      tom = souOrganizador ? 'ruim' : 'atencao';
+      aviso = souOrganizador
+        ? 'Apagar cancela a reunião para todos os convidados.'
+        : 'Apagar tira o evento só da sua agenda, e ninguém é avisado.';
+      break;
+    case 'mover':
+      detalhe = `${antes} → ${detalheDe(acao.dia, acao.hora, hoje)}`;
+      tom = 'atencao';
+      aviso = avisoDeMudanca(souOrganizador);
+      break;
+    case 'renomear':
+      detalhe = `${c.titulo} → ${acao.novo}`;
+      tom = 'atencao';
+      aviso = avisoDeMudanca(souOrganizador);
+      break;
+  }
+
+  return {
+    titulo,
+    blocos: [
+      { tipo: 'lista', itens: [{ texto: c.titulo, detalhe, tom }] },
+      { tipo: 'texto', texto: aviso },
+    ],
+    efeito: { tipo: 'evento-do-google', uid, titulo: c.titulo, souOrganizador, acao },
+  };
+}
+
+function avisoDeMudanca(souOrganizador: boolean): string {
+  return souOrganizador
+    ? 'Como você organiza, a mudança vale para todos os convidados.'
+    : 'Você não organiza este evento, mas pode alterá-lo: a mudança vale para o evento todo.';
+}
+
+/**
+ * Editar um compromisso do Google: só título e horário existem do lado de lá.
+ *
+ * Anotação e projeto são conceitos do MSL, e aceitar a frase em silêncio
+ * faria a prévia prometer algo que nunca será gravado. O Google também recebe
+ * uma mudança por vez, e escolher uma das duas por conta própria seria
+ * descartar metade do pedido sem avisar.
+ */
+function editarCompromisso(c: CompromissoExterno, pedida: MudancaPedida, hoje: string): Resposta {
+  if (idParaMexer(c) === undefined) return recusaDoGoogle([c]);
+
+  if (pedida.anotacao !== undefined || pedida.projeto !== undefined) {
+    return {
+      titulo: 'Isso não existe no Google',
+      blocos: [
+        {
+          tipo: 'texto',
+          texto:
+            'Um compromisso do Google não tem anotação nem projeto. ' +
+            'Dele eu só consigo mudar o título e o horário.',
+        },
+      ],
+    };
+  }
+
+  const querTitulo = pedida.titulo !== undefined;
+  const querHora = pedida.hora !== undefined;
+  if (querTitulo && querHora) {
+    return {
+      titulo: 'Uma coisa de cada vez',
+      blocos: [
+        {
+          tipo: 'texto',
+          texto: 'Num evento do Google eu faço uma mudança por vez: peça o título, depois o horário.',
+        },
+      ],
+    };
+  }
+  if (pedida.titulo !== undefined) {
+    return acaoNoGoogle(c, hoje, 'Salvar', { tipo: 'renomear', novo: pedida.titulo });
+  }
+  if (pedida.hora !== undefined) {
+    // Mudar só a hora é mover para o mesmo dia.
+    return acaoNoGoogle(c, hoje, 'Salvar', { tipo: 'mover', dia: c.dia, hora: pedida.hora });
+  }
+  return {
+    titulo: 'O que mudar?',
+    blocos: [{ tipo: 'texto', texto: 'Diga o novo título ou o novo horário do evento.' }],
+  };
 }
 
 /**
@@ -1240,9 +1411,15 @@ export function responder(
 
     case 'concluir-tarefa': {
       const achado = umAlvo(banco, intencao.alvo, hoje, compromissos);
-      // Compromisso do Google ainda é recusado aqui; as ações vêm depois.
       if (achado.tipo === 'nada') return achado.resposta;
-      if (achado.tipo === 'compromisso') return recusaDoGoogle([achado.compromisso]);
+      // Evento não se conclui: do lado do Google não existe "feito". Apagar,
+      // mover e renomear atravessam; concluir fica com a recusa.
+      if (achado.tipo === 'compromisso') {
+        return recusaDoGoogle(
+          [achado.compromisso],
+          'Compromisso do Google não se conclui: do lado de lá não existe "feito".',
+        );
+      }
       const alvo = achado.tarefa;
       // No passado ("Concluída", "Marcada agora") esta resposta mentia: ela é
       // desenhada **antes** da confirmação, e o efeito pode nunca acontecer.
@@ -1264,7 +1441,14 @@ export function responder(
     case 'adiar-tarefa': {
       const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos);
       if (alvo.tipo === 'nada') return alvo.resposta;
-      if (alvo.tipo === 'compromisso') return recusaDoGoogle([alvo.compromisso]);
+      if (alvo.tipo === 'compromisso') {
+        const c = alvo.compromisso;
+        return acaoNoGoogle(c, hoje, 'Adiar', {
+          tipo: 'mover',
+          dia: intencao.prazo,
+          hora: intencao.hora ?? horaDoCompromisso(c),
+        });
+      }
 
       const antes = detalheDe(alvo.tarefa.prazo, alvo.tarefa.hora, hoje);
       const depois = detalheDe(intencao.prazo, intencao.hora ?? alvo.tarefa.hora, hoje);
@@ -1289,7 +1473,9 @@ export function responder(
     case 'excluir-tarefa': {
       const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos);
       if (alvo.tipo === 'nada') return alvo.resposta;
-      if (alvo.tipo === 'compromisso') return recusaDoGoogle([alvo.compromisso]);
+      if (alvo.tipo === 'compromisso') {
+        return acaoNoGoogle(alvo.compromisso, hoje, 'Apagar', { tipo: 'apagar' });
+      }
 
       return {
         titulo: 'Excluir',
@@ -1313,9 +1499,9 @@ export function responder(
     case 'editar-tarefa': {
       const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos);
       if (alvo.tipo === 'nada') return alvo.resposta;
-      if (alvo.tipo === 'compromisso') return recusaDoGoogle([alvo.compromisso]);
-
       const pedida = intencao.mudanca;
+      if (alvo.tipo === 'compromisso') return editarCompromisso(alvo.compromisso, pedida, hoje);
+
       const mudanca: MudancaDeTarefa = {};
       // Um por um, e não um espalhamento: `{ hora: undefined }` chegaria no
       // banco como ordem de apagar a hora, e a frase não pediu isso.
