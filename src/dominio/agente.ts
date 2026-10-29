@@ -842,8 +842,8 @@ const REGRA_PADRAO: RegraDoAlvo = { daParaAgir: DA_PARA_APAGAR, recusa: recusaPa
 const REGRA_DE_ALTERAR: RegraDoAlvo = { ...REGRA_PADRAO, daParaAgir: DA_PARA_ALTERAR };
 
 const MOTIVO_DE_VARIOS_DIAS =
-  'Esse evento ocupa mais de um dia, e eu não sei movê-lo sem encurtar ou esticar. ' +
-  'Mexa direto no Google Agenda.';
+  'Esse evento ocupa mais de um dia, e por ora eu não mexo no horário dele. ' +
+  'Mova pelo Google Agenda.';
 
 /**
  * Mover pede organizar **e** um dia só: `AcaoNoGoogle.mover` leva um dia e não
@@ -876,7 +876,7 @@ const RECUSA_SEM_ANOTACAO: Resposta = {
       tipo: 'texto',
       texto:
         'Um compromisso do Google não tem anotação nem projeto. ' +
-        'Dele eu só consigo mudar o título e o horário.',
+        'Dele eu só mexo no título e, quando cabe num dia só, no horário.',
     },
   ],
 };
@@ -965,11 +965,25 @@ function umAlvo(
     };
   }
 
+  // A recusa fala dos dois mundos, porque o dono pode estar olhando um
+  // compromisso no calendário e dizendo "tarefa" por hábito. E diz o limite: a
+  // tela só passa os compromissos da semana corrente (`Agente.tsx` abre a
+  // janela em `semanaDe(hoje)`), então um da semana que vem não existe para
+  // cá. Sem isso, o dono acharia que o sistema está quebrado. Se a janela
+  // mudar lá, esta frase tem de mudar junto.
   return {
     tipo: 'nada',
     resposta: {
-      titulo: 'Não achei essa tarefa',
-      blocos: [{ tipo: 'texto', texto: `Nenhuma tarefa pendente com "${alvo}" no nome.` }],
+      titulo: 'Não achei isso',
+      blocos: [
+        {
+          tipo: 'texto',
+          texto:
+            `Nenhuma tarefa pendente nem compromisso desta semana com "${alvo}" no nome. ` +
+            'Eu procuro pelo nome e só enxergo os compromissos da semana corrente: ' +
+            'um de outra semana não aparece para mim.',
+        },
+      ],
     },
   };
 }
@@ -1083,8 +1097,18 @@ export function rotuloDaConfirmacao(efeito: Efeito): string {
       return 'Salvar';
     case 'evento-do-google':
       return efeito.acao.tipo === 'apagar' ? 'Apagar no Google' : 'Salvar no Google';
-    default:
+    case 'criar-tarefa':
+    case 'criar-lancamento':
+    case 'montar-pedido':
+      // Não pedem confirmação (`exigeConfirmacao`), então o botão nunca é
+      // desenhado para eles; o rótulo existe só para a função ser total.
       return 'Confirmar';
+    default: {
+      // Um efeito novo caía aqui e ganhava "Confirmar" em silêncio, o rótulo
+      // que não diz o que vai acontecer. Agora o compilador o cobra.
+      const naoTratado: never = efeito;
+      throw new Error(`efeito sem rótulo: ${JSON.stringify(naoTratado)}`);
+    }
   }
 }
 
@@ -1108,10 +1132,12 @@ const NADA_MUDOU = 'Nada mudou.';
  * mostrada no lugar do "Feito", e uma frase de recusa que soasse como sucesso
  * seria a pior mentira que a tela poderia contar.
  *
- * O último caso não é uma recusa, é falta de resposta (rede, erro do servidor,
- * resposta torta, ou uma gravação local que lançou). Nele eu não sei se a
- * mudança chegou lá, e dizer "nada mudou" seria afirmar o que não sei. Por
- * isso também não cita o Google: serve a qualquer efeito.
+ * `esperar`, `sessao-vencida` e `recusado` vêm do servidor dizendo que nem
+ * chegou a escrever, e por isso podem afirmar que nada mudou. O último caso
+ * não é uma recusa, é falta de resposta (rede, tempo esgotado, erro do
+ * servidor, resposta torta, ou uma gravação local que lançou). Nele eu não sei
+ * se a mudança chegou lá, e dizer "nada mudou" seria afirmar o que não sei.
+ * Por isso também não cita o Google: serve a qualquer efeito.
  */
 export function frasePorMotivo(motivo: string): string {
   switch (motivo) {
@@ -1123,6 +1149,12 @@ export function frasePorMotivo(motivo: string): string {
       return `A conexão com o Google caiu. Reconecte o Google Agenda e peça de novo. ${NADA_MUDOU}`;
     case 'mudou-enquanto-isso':
       return `Outra pessoa alterou esse evento enquanto eu preparava a mudança, e por segurança não mexi. Confira como ele está e peça de novo. ${NADA_MUDOU}`;
+    case 'esperar':
+      return `O Google pediu para esperar um pouco antes de novos pedidos. Tente de novo em instantes. ${NADA_MUDOU}`;
+    case 'sessao-vencida':
+      return `A sua sessão no MSL venceu, e o pedido nem chegou ao Google. Entre de novo e peça outra vez. ${NADA_MUDOU}`;
+    case 'recusado':
+      return `O servidor não aceitou o pedido, então nada foi enviado ao Google. Tente de novo; se repetir, é defeito daqui. ${NADA_MUDOU}`;
     case 'e-nosso':
       return `Esse compromisso é do próprio MSL: nasceu de uma tarefa daqui, e mexer nele por fora seria desfeito na próxima sincronia. Mude pela tarefa. ${NADA_MUDOU}`;
     default:
@@ -1259,7 +1291,7 @@ const AVISO_DE_MUDANCA = 'Como você organiza, a mudança vale para todos os con
 function editarCompromisso(c: CompromissoExterno, pedida: MudancaPedida, hoje: string): Resposta {
   if (idParaMexer(c) === undefined) return recusaDoGoogle([c]);
   // Antes de qualquer outra checagem: quem não pode alterar não deve ouvir
-  // "peça o título, depois o horário" nem "só consigo mudar o título", porque
+  // "peça o título, depois o horário" nem "só mexo no título", porque
   // os pedidos seguintes seriam todos recusados.
   if (c.souOrganizador !== true) return recusaDeConvidado(c);
 

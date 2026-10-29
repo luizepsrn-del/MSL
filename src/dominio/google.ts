@@ -54,8 +54,11 @@
  *   Agenda (os demais podem seguir com o convite). Mover e renomear exigem organizar, porque
  *   o Google costuma recusar a alteração de convidado sem `guestsCanModify`,
  *   campo que não buscamos. A rota não sabe quem organiza;
- * - **evento de vários dias não se move**, só se apaga e renomeia. A rota não
- *   sabe a duração;
+ * - **evento de vários dias não se move por aqui**, só se apaga e renomeia. É
+ *   uma escolha do agente, não uma incapacidade: `corpoDoMover` sabe a duração
+ *   e trata o caso (tem teste), mas `AcaoNoGoogle.mover` leva um dia só e não
+ *   diz se o evento anda inteiro, encolhe ou estica, então o domínio fecha a
+ *   porta (`DA_PARA_MOVER`). O ramo da rota segue vivo e sem consumidor;
  * - **a assinatura iCal nunca é mexível:** o agente só põe `mexivel` nos
  *   eventos do Google, e lá não existe caminho de escrita;
  * - **anotação e projeto não existem no Google**, então esses pedidos são

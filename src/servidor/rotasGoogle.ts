@@ -15,6 +15,7 @@ import {
   type ClienteDoCalendario,
   type ClienteDoEvento,
   type MudancaDeEvento,
+  type ResultadoDoEvento,
 } from './google.ts';
 import {
   planejar,
@@ -419,7 +420,11 @@ export async function rotaGoogleEvento(
     const acesso = await acessoValido(armazem, usuarioId, ambiente, buscar);
     const cliente = montarCliente(acesso);
 
-    let resultado;
+    // Anotado de propósito: o tipo do motivo é o que o compilador confere contra
+    // `MotivoDaRecusa` na saída. Sem ele o `let` tomava a forma do que lhe
+    // fosse atribuído, e um motivo novo escapava para o cliente, que o trataria
+    // como "sem resposta".
+    let resultado: ResultadoDoEvento<unknown>;
     if (ordem.acao === 'apagar') {
       // Apagar não lê o evento antes, de propósito: seria uma ida a mais ao
       // Google em toda exclusão só para checar se é um espelho, e o domínio já
@@ -429,6 +434,11 @@ export async function rotaGoogleEvento(
     } else {
       const atual = await cliente.ler(ordem.uid);
       if (!atual.ok) return recusa(atual.motivo);
+
+      // O 200 sem corpo legível chega como `valor: null` (`comoResultado`).
+      // Não é um evento, e seguir adiante lançaria um TypeError, que o dono
+      // veria como um 500 sem explicação. Nada foi escrito até aqui.
+      if (!atual.valor) throw new ErroDoGoogle('o Google não devolveu o evento.');
 
       // Responder "feito" a uma mudança que a próxima sincronia desfaz é a
       // mentira mais cara que esta rota poderia contar.

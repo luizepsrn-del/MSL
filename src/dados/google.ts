@@ -189,10 +189,24 @@ export const METODO: Record<string, 'GET' | 'POST'> = {
   '/api/google-evento': 'POST',
 };
 
+/**
+ * Quanto o navegador espera o servidor antes de desistir.
+ *
+ * Maior que o pior caso do servidor de propósito: para mexer num evento ele
+ * renova o acesso (10 s), lê (15 s) e escreve (15 s), cada um com seu próprio
+ * limite. Com 45 s, quem responde é o servidor, que sabe dizer o que houve; o
+ * navegador só desiste quando o servidor também deixou de responder (sinal
+ * perdido no meio do envio, por exemplo). Sem limite nenhum, `fetch` espera
+ * para sempre, e o turno do agente ficava em "Aplicando…" sem saída: o botão
+ * de confirmar já sumiu e não há nova tentativa.
+ */
+export const LIMITE_DE_ESPERA_MS = 45_000;
+
 export async function falar<T>(
   caminho: string,
   corpo?: unknown,
   buscar: typeof fetch = fetch,
+  limiteMs: number = LIMITE_DE_ESPERA_MS,
 ): Promise<T> {
   const acesso = token();
   const metodo = METODO[caminho] ?? 'POST';
@@ -207,6 +221,9 @@ export async function falar<T>(
       ...(acesso ? { Authorization: `Bearer ${acesso}` } : {}),
     },
     body: temCorpo ? JSON.stringify(corpo ?? {}) : undefined,
+    // O sinal também cobre a leitura do corpo: a resposta pode chegar pela
+    // metade e travar ali.
+    signal: AbortSignal.timeout(limiteMs),
   });
 
   const dados = (await resposta.json().catch(() => ({}))) as T & { mensagem?: string; erro?: string };
@@ -303,22 +320,54 @@ function lerResultado(dados: unknown): ResultadoDoEfeito {
 const SEM_RESPOSTA = 'indisponivel';
 
 /**
+ * O que um erro de `falar` diz sobre o evento: mexeram nele ou não?
+ *
+ * Antes tudo virava `SEM_RESPOSTA` ("não sei se valeu"), e isso jogava fora o
+ * que o servidor sabia. Aqui o `estado` separa três casos:
+ *
+ * - **429**: o Google pediu para esperar. A rota só o fabrica a partir de uma
+ *   recusa do Google a uma chamada, então nada foi escrito, e o que ajuda o
+ *   dono é saber que basta esperar;
+ * - **outro 4xx**: o servidor recusou o pedido antes de falar com o Google
+ *   (pedido torto, sessão vencida), então também nada foi escrito;
+ * - **o resto** (5xx, rede, tempo esgotado): a escrita pode ter chegado ao
+ *   Google e a resposta se perdido, ou o próprio Google ter falhado depois de
+ *   aplicar. Aqui a única frase honesta é "não sei".
+ *
+ * O 4xx **não** quer dizer "o servidor entendeu e nada fez" para qualquer erro
+ * com `estado`: o 500 e o 502 também têm, e são justamente os incertos.
+ */
+export function motivoDoErro(erro: unknown): string {
+  if (!(erro instanceof ErroDoGoogle) || erro.estado === undefined) return SEM_RESPOSTA;
+  if (erro.estado === 429) return 'esperar';
+  if (erro.codigo === 'sessao-invalida') return 'sessao-vencida';
+  if (erro.estado >= 400 && erro.estado < 500) return 'recusado';
+  return SEM_RESPOSTA;
+}
+
+/**
  * Apaga, move ou renomeia um evento do Google e diz o que aconteceu.
  *
- * Nunca lança: rede caída, erro do servidor e sessão vencida viram "sem
- * resposta", e a tela decide o que dizer. Lançar aqui deixaria o turno preso
- * em "enviando" ou, pior, o faria cair no "Feito" de quem não espera falha.
+ * Nunca lança: todo erro vira um motivo (`motivoDoErro`), e a tela decide o
+ * que dizer. Rede caída, tempo esgotado e erro do servidor ficam "sem
+ * resposta"; o que o servidor garantiu que não escreveu ganha motivo próprio.
+ * Lançar aqui deixaria o turno preso em "enviando" ou, pior, o faria cair no
+ * "Feito" de quem não espera falha.
  */
 export async function mexerNoEventoDoGoogle(
   efeito: EfeitoNoGoogle,
   guarda: Storage,
   buscar: typeof fetch = fetch,
+  limiteMs: number = LIMITE_DE_ESPERA_MS,
 ): Promise<ResultadoDoEfeito> {
   let resultado: ResultadoDoEfeito;
   try {
-    resultado = lerResultado(await falar<unknown>('/api/google-evento', corpoDoEvento(efeito), buscar));
-  } catch {
-    resultado = { feito: false, motivo: SEM_RESPOSTA };
+    resultado = lerResultado(
+      await falar<unknown>('/api/google-evento', corpoDoEvento(efeito), buscar, limiteMs),
+    );
+  } catch (erro) {
+    // O que o servidor soube não se joga fora: ver `motivoDoErro`.
+    resultado = { feito: false, motivo: motivoDoErro(erro) };
   }
   if (cacheFicouVelho(resultado)) limparCache(guarda);
   return resultado;

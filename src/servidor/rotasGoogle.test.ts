@@ -550,7 +550,7 @@ describe('mexer num evento do Google', () => {
         corpo: { error: { errors: [{ reason: 'rateLimitExceeded' }] } },
       }));
       const { resposta, corpo } = await mexer({ acao: 'apagar', uid: 'ev1' }, buscar);
-      expect(resposta.status).toBeGreaterThanOrEqual(429);
+      expect(resposta.status).toBe(429);
       expect(corpo.motivo).toBeUndefined();
       expect(corpo.erro).toBe('google');
     });
@@ -800,6 +800,23 @@ describe('mexer num evento do Google', () => {
       const { resposta } = await mexer({ acao: 'mover', uid: 'ev1', dia: '2026-09-18' }, buscar);
       expect(resposta.status).toBe(502);
       expect(chamadas.every((c) => c.metodo === 'GET')).toBe(true);
+    });
+
+    it('leitura sem corpo (200 vazio) não vira TypeError: é erro do Google, e nada é escrito', async () => {
+      // `comoResultado` devolve `valor: null` quando o corpo não é JSON. Sem
+      // guarda, `marcaDe(null)` lançava e o dono via um 500 sem explicação.
+      for (const acao of [
+        { acao: 'mover', uid: 'ev1', dia: '2026-09-18' },
+        { acao: 'renomear', uid: 'ev1', novo: 'X' },
+      ]) {
+        const { buscar, chamadas } = googleFalso(({ metodo }) =>
+          metodo === 'GET' ? { estado: 200 } : { estado: 200, corpo: {} },
+        );
+        const { resposta, corpo } = await mexer(acao, buscar);
+        expect(resposta.status, acao.acao).toBe(502);
+        expect(corpo.erro, acao.acao).toBe('google');
+        expect(chamadas.every((c) => c.metodo === 'GET'), acao.acao).toBe(true);
+      }
     });
   });
 

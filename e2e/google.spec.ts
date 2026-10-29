@@ -360,6 +360,23 @@ test('o Google fora do ar: a tela não diz "Feito" nem que nada mudou', async ({
   await expect(page.getByText('Nada mudou.')).toHaveCount(0);
 });
 
+test('o Google pede para esperar (429): a tela diz isso, e que nada mudou', async ({ page }) => {
+  const { botao } = await pedirParaApagarAReuniao(page);
+  await page.route('**/api/google-evento', (rota) =>
+    rota.fulfill({
+      status: 429,
+      json: { erro: 'google', mensagem: 'o Google pediu para esperar um pouco. Tente de novo em instantes.' },
+    }),
+  );
+
+  await botao.click();
+
+  await expect(page.getByText('pediu para esperar um pouco antes de novos pedidos')).toBeVisible();
+  await expect(page.getByText('Nada mudou.')).toBeVisible();
+  await expect(page.getByText('não sei se a mudança chegou a valer')).toHaveCount(0);
+  await expect(page.getByText('Feito', { exact: true })).toHaveCount(0);
+});
+
 test('o Google aceita: manda o id certo e só então diz "Feito"', async ({ page }) => {
   const { botao } = await pedirParaApagarAReuniao(page);
   const corpos: unknown[] = [];
@@ -424,7 +441,7 @@ test('depois de apagar, se a rebusca falha, o agente não oferece apagar de novo
   await expect.poll(() => rebuscas).toBe(1);
 
   await perguntarDeNovo(page);
-  await expect(page.getByText('Não achei essa tarefa')).toBeVisible();
+  await expect(page.getByText('Não achei isso')).toBeVisible();
   await expect(botao).toHaveCount(0);
 });
 
@@ -513,7 +530,7 @@ test('apagar com uma busca no ar: a resposta antiga é descartada e outra busca 
   await expect.poll(() => buscas.length).toBe(2);
 
   await perguntarDeNovo(page);
-  await expect(page.getByText('Não achei essa tarefa')).toBeVisible();
+  await expect(page.getByText('Não achei isso')).toBeVisible();
   await expect(botao).toHaveCount(0);
 });
 
@@ -531,6 +548,6 @@ test('perder o acesso com uma busca no ar: a resposta antiga não reconecta nem 
   await expect.poll(() => buscas.length).toBe(1);
 
   await perguntarDeNovo(page);
-  await expect(page.getByText('Não achei essa tarefa')).toBeVisible();
+  await expect(page.getByText('Não achei isso')).toBeVisible();
   await expect(botao).toHaveCount(0);
 });

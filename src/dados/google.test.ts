@@ -13,6 +13,8 @@ import {
   cacheFicouVelho,
   depoisDeMexer,
   mexerNoEventoDoGoogle,
+  motivoDoErro,
+  ErroDoGoogle,
   perdeuOAcesso,
 } from './google';
 import { bancoVazio, type Banco, type Tarefa, type Peca } from './esquema';
@@ -461,11 +463,11 @@ describe('mexer num evento do Google', () => {
     const CACHE = { eventos: [], em: '2026-09-17T12:00:00.000Z' };
     const responde = (corpo: unknown, status = 200) =>
       (async () => new Response(JSON.stringify(corpo), { status })) as unknown as typeof fetch;
-    const tenta = async (buscar: typeof fetch, guarda: Storage = guardaFalsa()) => {
+    const tenta = async (buscar: typeof fetch, guarda: Storage = guardaFalsa(), limiteMs?: number) => {
       gravarCache(guarda, CACHE);
       let resultado;
       await comJanela(async () => {
-        resultado = await mexerNoEventoDoGoogle(efeito({ tipo: 'apagar' }), guarda, buscar);
+        resultado = await mexerNoEventoDoGoogle(efeito({ tipo: 'apagar' }), guarda, buscar, limiteMs);
       });
       return { resultado, guarda };
     };
@@ -524,9 +526,57 @@ describe('mexer num evento do Google', () => {
       expect(resultado).toEqual({ feito: false, motivo: 'indisponivel' });
     });
 
-    it('sessão vencida (401) fica sem resposta, e não vira "feito"', async () => {
-      const { resultado } = await tenta(responde({ erro: 'sessao-invalida', mensagem: 'Entre de novo.' }, 401));
+    it('sessão vencida (401 do MSL) diz que nada foi enviado, em vez de "não sei se valeu"', async () => {
+      const { resultado, guarda } = await tenta(
+        responde({ erro: 'sessao-invalida', mensagem: 'Entre de novo.' }, 401),
+      );
+      expect(resultado).toEqual({ feito: false, motivo: 'sessao-vencida' });
+      expect(lerCache(guarda)).toEqual(CACHE);
+    });
+
+    it('429 chega como "esperar", e não se perde no "sem resposta"', async () => {
+      // O servidor transforma o 403 de limite de pedidos em 429 justamente para
+      // o dono saber que basta esperar. Nada foi escrito.
+      const { resultado, guarda } = await tenta(
+        responde({ erro: 'google', mensagem: 'o Google pediu para esperar um pouco.' }, 429),
+      );
+      expect(resultado).toEqual({ feito: false, motivo: 'esperar' });
+      expect(lerCache(guarda)).toEqual(CACHE);
+    });
+
+    it('pedido recusado pelo servidor (400) também garante que nada foi escrito', async () => {
+      const { resultado } = await tenta(responde({ erro: 'pedido', mensagem: 'uid inválido' }, 400));
+      expect(resultado).toEqual({ feito: false, motivo: 'recusado' });
+    });
+
+    it('502 e 503 continuam sem resposta: o Google pode ter aplicado antes de falhar', async () => {
+      for (const estado of [502, 503]) {
+        const { resultado } = await tenta(responde({ erro: 'google', mensagem: 'x' }, estado));
+        expect(resultado, String(estado)).toEqual({ feito: false, motivo: 'indisponivel' });
+      }
+    });
+
+    it('sem resposta dentro do limite, desiste em vez de ficar esperando para sempre', async () => {
+      // Um `fetch` que só termina quando abortam. Sem o sinal de tempo limite
+      // este teste nunca acabaria, como o turno do agente em "Aplicando…".
+      const pendura = ((_url: string, init: RequestInit) =>
+        new Promise((_, rejeita) => {
+          init.signal?.addEventListener('abort', () => rejeita(init.signal?.reason));
+        })) as unknown as typeof fetch;
+      const { resultado, guarda } = await tenta(pendura, guardaFalsa(), 20);
       expect(resultado).toEqual({ feito: false, motivo: 'indisponivel' });
+      expect(lerCache(guarda)).toEqual(CACHE);
+    });
+
+    it('o pedido sempre leva um sinal de tempo limite, ainda não estourado', async () => {
+      let sinal: AbortSignal | null | undefined;
+      const buscar = (async (_url: string, init: RequestInit) => {
+        sinal = init.signal;
+        return new Response(JSON.stringify({ feito: true }));
+      }) as unknown as typeof fetch;
+      await tenta(buscar);
+      expect(sinal).toBeInstanceOf(AbortSignal);
+      expect(sinal?.aborted).toBe(false);
     });
 
     it('resposta que não é nenhuma das duas formas não confirma nada', async () => {
@@ -540,6 +590,47 @@ describe('mexer num evento do Google', () => {
     it('janela privada, em que limpar o cache falha, não derruba um sucesso', async () => {
       const { resultado } = await tenta(responde({ feito: true }), guardaQuebrada());
       expect(resultado).toEqual({ feito: true });
+    });
+  });
+
+  describe('o que um erro diz sobre o evento', () => {
+    const erro = (estado?: number, codigo?: string) => new ErroDoGoogle('x', estado, codigo);
+
+    it('429 é "esperar"', () => {
+      expect(motivoDoErro(erro(429, 'google'))).toBe('esperar');
+    });
+
+    it('4xx é o servidor recusando antes de escrever; os limites da faixa valem', () => {
+      expect(motivoDoErro(erro(400))).toBe('recusado');
+      expect(motivoDoErro(erro(404))).toBe('recusado');
+      expect(motivoDoErro(erro(499))).toBe('recusado');
+    });
+
+    it('fora do 4xx, não se sabe', () => {
+      for (const estado of [399, 500, 502, 504]) {
+        expect(motivoDoErro(erro(estado)), String(estado)).toBe('indisponivel');
+      }
+    });
+
+    it('a sessão vencida tem motivo próprio, e o 401 sem o código dela não', () => {
+      expect(motivoDoErro(erro(401, 'sessao-invalida'))).toBe('sessao-vencida');
+      expect(motivoDoErro(erro(401, 'google'))).toBe('recusado');
+      expect(motivoDoErro(erro(401))).toBe('recusado');
+    });
+
+    it('erro que não veio do servidor, ou veio sem estado, não afirma nada', () => {
+      expect(motivoDoErro(new TypeError('Failed to fetch'))).toBe('indisponivel');
+      expect(motivoDoErro(new DOMException('demorou', 'TimeoutError'))).toBe('indisponivel');
+      expect(motivoDoErro(erro(undefined))).toBe('indisponivel');
+      expect(motivoDoErro('texto')).toBe('indisponivel');
+      expect(motivoDoErro(null)).toBe('indisponivel');
+    });
+
+    it('nenhum desses motivos deixa a cópia local velha: nada mudou lá', () => {
+      for (const motivo of ['esperar', 'recusado', 'sessao-vencida']) {
+        expect(cacheFicouVelho({ feito: false, motivo }), motivo).toBe(false);
+        expect(depoisDeMexer({ feito: false, motivo }), motivo).toBe('nada');
+      }
     });
   });
 

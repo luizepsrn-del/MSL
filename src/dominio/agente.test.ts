@@ -923,7 +923,7 @@ describe('editar tarefa', () => {
     ];
     const r = responder(b, interpretar('cancela a reunião de equipe', HOJE), HOJE, fora);
 
-    expect(r.titulo).not.toBe('Não achei essa tarefa');
+    expect(r.titulo).not.toBe('Não achei isso');
     const texto = JSON.stringify(r.blocos);
     expect(texto).toContain('Google');
     expect(r.efeito).toBeUndefined();
@@ -995,7 +995,21 @@ describe('editar tarefa', () => {
 
   it('sem nada parecido na agenda de fora, continua sendo "não achei"', () => {
     const r = responder(banco({ tarefas: [] }), interpretar('cancela o dentista', HOJE), HOJE, []);
-    expect(r.titulo).toBe('Não achei essa tarefa');
+    expect(r.titulo).toBe('Não achei isso');
+  });
+
+  it('a recusa não finge que só procurou tarefas: diz que procura por nome e que só vê esta semana', () => {
+    // O dono olha um compromisso no calendário, pede para apagá-lo e ouvia
+    // "nenhuma tarefa". Um compromisso da semana que vem não existe para o
+    // agente, e sem esta frase o dono concluiria que o sistema está quebrado.
+    const r = responder(banco({ tarefas: [] }), interpretar('cancela o dentista', HOJE), HOJE, []);
+    const texto = textoDe(r);
+    expect(texto).toContain('"dentista"');
+    expect(texto).toMatch(/nem compromisso desta semana/);
+    expect(texto).toMatch(/pelo nome/);
+    expect(texto).toMatch(/semana corrente/);
+    expect(r.titulo).not.toMatch(/tarefa/);
+    expect(r.efeito).toBeUndefined();
   });
 
   it('a prévia mostra o título antigo virando o novo, e espera confirmação', () => {
@@ -1247,7 +1261,7 @@ describe('ação sobre evento do Google', () => {
           const r = editar(convidado, mudanca);
           expect(r.efeito, JSON.stringify(mudanca)).toBeUndefined();
           expect(textoDe(r), JSON.stringify(mudanca)).toContain('de outra pessoa');
-          expect(textoDe(r), JSON.stringify(mudanca)).not.toMatch(/uma mudança por vez|só consigo mudar/);
+          expect(textoDe(r), JSON.stringify(mudanca)).not.toMatch(/uma mudança por vez|só mexo no título/);
         }
       }
     });
@@ -1655,6 +1669,15 @@ describe('ação sobre evento do Google', () => {
       expect(textoDe(r)).toContain('mais de um dia');
     });
 
+    it('a recusa de mover vários dias é uma escolha, e não confessa uma incapacidade', () => {
+      // `corpoDoMover` sabe mover evento de vários dias (tem teste); quem fecha
+      // a porta é o domínio. Dizer "não sei" ao dono seria mentira.
+      const r = mover(faixa({ dia: '2026-09-21', desde: '2026-09-19' }), 'adiar a viagem para sexta');
+      expect(textoDe(r)).not.toMatch(/não sei/i);
+      expect(textoDe(r)).toMatch(/por ora eu não mexo/);
+      expect(textoDe(r)).toContain('Google Agenda');
+    });
+
     it('mudar a hora de um evento de dia único não herda o começo antigo na prévia', () => {
       // Dia e começo iguais a hoje; movido para amanhã, o "depois" não pode
       // virar a faixa "Hoje a Amanhã".
@@ -1761,6 +1784,14 @@ describe('ação sobre evento do Google', () => {
       });
     });
 
+    it('a recusa de anotar não promete o horário: o de vários dias também não muda', () => {
+      for (const dizer of [anotar, projeto]) {
+        const texto = textoDe(dizer([viagem('a')]));
+        expect(texto).not.toMatch(/título e o horário/);
+        expect(texto).toMatch(/num dia só/);
+      }
+    });
+
     it('dois eventos de organizador: recusa de primeira, com o mesmo texto de um só', () => {
       for (const dizer of [anotar, projeto]) {
         const um = dizer([viagem('a')]);
@@ -1822,6 +1853,14 @@ describe('ação sobre evento do Google', () => {
       expect(rotuloDaConfirmacao(efeitoDe(apagar(evento())))).toBe('Apagar no Google');
       expect(rotuloDaConfirmacao(efeitoDe(mover(evento())))).toBe('Salvar no Google');
       expect(rotuloDaConfirmacao(efeitoDe(renomear(evento())))).toBe('Salvar no Google');
+    });
+
+    it('os efeitos que não pedem confirmação têm rótulo neutro, e um efeito que o código não conhece é recusado', () => {
+      for (const tipo of ['criar-tarefa', 'criar-lancamento', 'montar-pedido']) {
+        expect(rotuloDaConfirmacao({ tipo } as never), tipo).toBe('Confirmar');
+      }
+      // Um efeito novo sem rótulo não pode ganhar "Confirmar" em silêncio.
+      expect(() => rotuloDaConfirmacao({ tipo: 'inventado' } as never)).toThrow(/sem rótulo/);
     });
 
     it('o rótulo nunca é "Cancelar": é o botão de desistir', () => {
@@ -1889,6 +1928,34 @@ describe('o que dizer quando o Google não fez', () => {
     const f = frasePorMotivo('e-nosso');
     expect(f).toContain('próprio MSL');
     expect(f).toMatch(/tarefa/i);
+  });
+
+  describe('os motivos em que o servidor garantiu que nada foi escrito', () => {
+    // Não vêm no corpo da resposta: o cliente os deduz do erro (`motivoDoErro`).
+    const DO_CAMINHO = ['esperar', 'sessao-vencida', 'recusado'];
+
+    it('cada um tem frase própria, que não cai na dos outros motivos', () => {
+      const todas = [...motivos, ...DO_CAMINHO].map(frasePorMotivo);
+      expect(new Set(todas).size).toBe(8);
+    });
+
+    it('dizem que nada mudou, não prometem feito e não fingem não saber', () => {
+      for (const m of DO_CAMINHO) {
+        expect(frasePorMotivo(m), m).toMatch(/nada mudou/i);
+        expect(frasePorMotivo(m), m).not.toMatch(DIZ_QUE_FEZ);
+        expect(frasePorMotivo(m), m).not.toContain('não sei se');
+      }
+    });
+
+    it('"esperar" manda esperar e tentar de novo', () => {
+      expect(frasePorMotivo('esperar')).toMatch(/esperar/i);
+      expect(frasePorMotivo('esperar')).toMatch(/tente de novo/i);
+    });
+
+    it('"sessao-vencida" manda entrar de novo, e não reconectar o Google', () => {
+      expect(frasePorMotivo('sessao-vencida')).toMatch(/entre de novo/i);
+      expect(frasePorMotivo('sessao-vencida')).not.toMatch(/reconect/i);
+    });
   });
 
   it('um motivo que não conheço não vira sucesso nem culpa uma causa que não sei', () => {
