@@ -399,6 +399,11 @@ export function useGoogle(de: string, ate: string): Google {
           itens: paraEspelhar(bancoAgora.current, janelaDe, janelaAte),
         });
 
+        // Mexeram num evento ou perderam o acesso enquanto esta busca estava
+        // no ar: ela trouxe a lista e o "conectado" de antes, e valer qualquer
+        // dos dois reconectaria ou traria de volta o que acabou de sumir.
+        if (geracao !== geracaoDaLista.current) return;
+
         setConectado(resultado.conectado);
         setErro(null);
         setEscritos(resultado.escritos);
@@ -523,11 +528,12 @@ export function useGoogle(de: string, ate: string): Google {
       // O disco já foi limpo; a memória também, ou o agente seguiria listando
       // o evento até a rebusca chegar, e para sempre se ela falhar.
       setGuardado(null);
+      // Uma sincronização em voo trouxe a lista (e o "conectado") de antes de
+      // mexer: a resposta dela é descartada, nos dois casos.
+      geracaoDaLista.current += 1;
       if (depois === 'desconectar') setConectado(false);
       else {
-        // Uma sincronização em voo trouxe a lista de antes de mexer: a
-        // resposta dela é descartada e outra roda quando ela terminar.
-        geracaoDaLista.current += 1;
+        // Outra roda quando a que estava no ar terminar.
         if (emVoo.current) refazer.current = true;
         else void sincronizar(true);
       }

@@ -304,3 +304,148 @@ test('toque duplo em "Apagar no Google" manda um pedido só', async ({ page }) =
   await expect(page.getByText('Feito', { exact: true })).toBeVisible();
   expect(corpos).toHaveLength(1);
 });
+
+/* ── A lista em memória acompanha o que o Google disse ───────────────────── */
+
+const REUNIAO = (dia: string, proximo: string) => ({
+  id: 'g1',
+  summary: 'Reunião de equipe',
+  start: { date: dia },
+  end: { date: proximo },
+  organizer: { self: true },
+});
+
+async function perguntarDeNovo(page: Page) {
+  const campo = page.getByPlaceholder('Pergunte, ou mande fazer');
+  await campo.fill('cancela a reunião de equipe');
+  await campo.press('Enter');
+}
+
+test('depois de apagar, se a rebusca falha, o agente não oferece apagar de novo', async ({ page }) => {
+  // Limpar o cache do disco não basta: quem responde é a lista em memória. Sem
+  // esvaziá-la, uma rebusca que falha deixa o agente listando o que acabou de
+  // apagar.
+  const { botao } = await pedirParaApagarAReuniao(page);
+  let rebuscas = 0;
+  await page.unroute('**/api/google-sincronizar');
+  await page.route('**/api/google-sincronizar', (rota) => {
+    rebuscas += 1;
+    return rota.abort();
+  });
+  await page.route('**/api/google-evento', (rota) => rota.fulfill({ json: { feito: true } }));
+
+  await botao.click();
+  await expect(page.getByText('Feito', { exact: true })).toBeVisible();
+  await expect.poll(() => rebuscas).toBe(1);
+
+  await perguntarDeNovo(page);
+  await expect(page.getByText('Não achei essa tarefa')).toBeVisible();
+  await expect(botao).toHaveCount(0);
+});
+
+/**
+ * Uma busca já no ar quando se apaga: o cache de antes está velho no disco, a
+ * busca vai voltar com o evento ainda vivo, e a resposta dela não pode valer.
+ */
+async function comBuscaNoAr(page: Page) {
+  await comecarLimpo(page);
+  const dia = diaLocal(0);
+  await page.addInitScript(
+    ([d, p]) => {
+      try {
+        // Velho o bastante para a tela rebuscar ao abrir.
+        localStorage.setItem(
+          'msl-google-eventos',
+          JSON.stringify({
+            eventos: [
+              {
+                id: 'g1',
+                summary: 'Reunião de equipe',
+                start: { date: d },
+                end: { date: p },
+                organizer: { self: true },
+              },
+            ],
+            em: '2000-01-01T00:00:00.000Z',
+          }),
+        );
+      } catch {
+        /* janela privada */
+      }
+    },
+    [dia, diaLocal(1)],
+  );
+  const estado = await servidorFalso(page);
+  await page.unroute('**/api/google-sincronizar');
+
+  const buscas: { liberar: (corpo: unknown) => void; abortar: boolean }[] = [];
+  await page.route('**/api/google-sincronizar', (rota) => {
+    if (buscas.length === 0) {
+      // A primeira fica segurada até o teste soltá-la.
+      return new Promise<void>((resolver) => {
+        buscas.push({
+          abortar: false,
+          liberar: (corpo) => {
+            void rota.fulfill({ json: corpo }).then(resolver);
+          },
+        });
+      });
+    }
+    buscas.push({ abortar: true, liberar: () => {} });
+    return rota.abort();
+  });
+
+  await page.goto('/app/pedir');
+  await expect.poll(() => buscas.length).toBe(1);
+
+  const botao = page.getByRole('button', { name: 'Apagar no Google' });
+  await expect(async () => {
+    await perguntarDeNovo(page);
+    await expect(botao).toBeVisible({ timeout: 500 });
+  }).toPass();
+
+  const corpoAntigo = {
+    conectado: true,
+    deles: [REUNIAO(dia, diaLocal(1))],
+    puxar: [],
+    escritos: { criados: 0, atualizados: 0, apagados: 0 },
+    faltou: 0,
+  };
+  return { botao, buscas, estado, corpoAntigo };
+}
+
+test('apagar com uma busca no ar: a resposta antiga é descartada e outra busca roda', async ({ page }) => {
+  const { botao, buscas, corpoAntigo } = await comBuscaNoAr(page);
+  await page.route('**/api/google-evento', (rota) => rota.fulfill({ json: { feito: true } }));
+
+  await botao.click();
+  await expect(page.getByText('Feito', { exact: true })).toBeVisible();
+
+  // A busca de antes volta com o evento ainda vivo.
+  buscas[0].liberar(corpoAntigo);
+
+  // Uma segunda busca roda quando a primeira termina (a que falha, aqui).
+  await expect.poll(() => buscas.length).toBe(2);
+
+  await perguntarDeNovo(page);
+  await expect(page.getByText('Não achei essa tarefa')).toBeVisible();
+  await expect(botao).toHaveCount(0);
+});
+
+test('perder o acesso com uma busca no ar: a resposta antiga não reconecta nem traz a lista de volta', async ({ page }) => {
+  const { botao, buscas, corpoAntigo } = await comBuscaNoAr(page);
+  await page.route('**/api/google-evento', (rota) =>
+    rota.fulfill({ json: { feito: false, motivo: 'desconectado' } }),
+  );
+
+  await botao.click();
+  await expect(page.getByText('A conexão com o Google caiu')).toBeVisible();
+
+  buscas[0].liberar(corpoAntigo);
+  // Sem credencial não há por que buscar de novo.
+  await expect.poll(() => buscas.length).toBe(1);
+
+  await perguntarDeNovo(page);
+  await expect(page.getByText('Não achei essa tarefa')).toBeVisible();
+  await expect(botao).toHaveCount(0);
+});
