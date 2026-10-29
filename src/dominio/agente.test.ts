@@ -1042,6 +1042,11 @@ describe('ação sobre evento do Google', () => {
       expect(itemDe(r)?.detalhe).toBe('Hoje, dia inteiro → Hoje, 15:00');
     });
 
+    it('um evento sem hora no dado, mas que não é de dia inteiro, não vira "dia inteiro" no depois', () => {
+      const r = mover(evento({ hora: undefined, diaInteiro: false }));
+      expect(itemDe(r)?.detalhe).toBe('Hoje → Amanhã');
+    });
+
     it('sem hora na frase, o evento de dia inteiro segue de dia inteiro no depois', () => {
       const r = mover(evento({ diaInteiro: true, hora: undefined }));
       expect(itemDe(r)?.detalhe).toBe('Hoje, dia inteiro → Amanhã, dia inteiro');
@@ -1276,6 +1281,67 @@ describe('ação sobre evento do Google', () => {
       ]);
       expect(r.titulo).toBe('Qual delas?');
       expect(r.efeito).toBeUndefined();
+    });
+  });
+
+  describe('a pergunta "Qual delas?" só vem quando alguma escolha leva a uma ação', () => {
+    const reuniao = (uid: string, extras: Partial<CompromissoExterno> = {}) =>
+      evento({ titulo: 'Reunião', uid, ...extras });
+    const dizer = (frase: string, fora: CompromissoExterno[]) =>
+      responder(vazio(), interpretar(frase, HOJE), HOJE, fora);
+    const quemAltera = ['adiar a reunião para sexta', 'renomeia a reunião para Call', 'muda a reunião para 15h'];
+
+    it('dois eventos de convidado: alterar recusa de primeira, sem perguntar qual', () => {
+      const dois = [reuniao('a', { souOrganizador: false }), reuniao('b', { souOrganizador: false })];
+      for (const frase of quemAltera) {
+        const r = dizer(frase, dois);
+        expect(r.titulo, frase).toBe('Essa é do Google');
+        expect(r.efeito, frase).toBeUndefined();
+        expect(textoDe(r), frase).toContain('de outra pessoa');
+      }
+    });
+
+    it('dois eventos com souOrganizador ausente valem convidado', () => {
+      const a = reuniao('a');
+      const b = reuniao('b');
+      delete a.souOrganizador;
+      delete b.souOrganizador;
+      for (const frase of quemAltera) expect(dizer(frase, [a, b]).titulo, frase).toBe('Essa é do Google');
+    });
+
+    it('apagar continua perguntando: convidado pode apagar', () => {
+      const dois = [reuniao('a', { souOrganizador: false }), reuniao('b', { souOrganizador: false })];
+      const r = dizer('cancela a reunião', dois);
+      expect(r.titulo).toBe('Qual delas?');
+      expect(r.efeito).toBeUndefined();
+    });
+
+    it('um organizador entre os dois basta para a pergunta valer, em qualquer ação', () => {
+      const mistos = [reuniao('a', { souOrganizador: false }), reuniao('b', { souOrganizador: true })];
+      for (const frase of [...quemAltera, 'cancela a reunião']) {
+        expect(dizer(frase, mistos).titulo, frase).toBe('Qual delas?');
+      }
+    });
+
+    it('dois organizadores perguntam qual, em qualquer ação', () => {
+      const dois = [reuniao('a'), reuniao('b')];
+      for (const frase of [...quemAltera, 'cancela a reunião']) {
+        expect(dizer(frase, dois).titulo, frase).toBe('Qual delas?');
+      }
+    });
+
+    it('um não mexível e um convidado: nenhum leva a ação, e a recusa não finge saber o motivo', () => {
+      const dois = [reuniao('a', { mexivel: false }), reuniao('b', { souOrganizador: false })];
+      const r = dizer('adiar a reunião para sexta', dois);
+      expect(r.titulo).toBe('Essa é do Google');
+      expect(textoDe(r)).not.toContain('de outra pessoa');
+    });
+
+    it('um não mexível e um organizador: a pergunta vale, para apagar e para alterar', () => {
+      const dois = [reuniao('a', { mexivel: false }), reuniao('b')];
+      for (const frase of [...quemAltera, 'cancela a reunião']) {
+        expect(dizer(frase, dois).titulo, frase).toBe('Qual delas?');
+      }
     });
   });
 

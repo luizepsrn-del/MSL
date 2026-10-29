@@ -781,11 +781,28 @@ function idParaMexer(c: CompromissoExterno): string | undefined {
   return c.mexivel === true && c.uid ? c.uid : undefined;
 }
 
+/** Dá para apagar: tem id e o Google deixa mexer. Convidado também apaga, só da própria agenda. */
+const DA_PARA_APAGAR = (c: CompromissoExterno): boolean => idParaMexer(c) !== undefined;
+
+/**
+ * Dá para mover ou renomear: além de apagar, é preciso organizar o evento. O
+ * Google só aceita a mudança de um convidado quando o organizador habilitou
+ * `guestsCanModify`, e isso não buscamos. Só `true` vale organizador.
+ */
+const DA_PARA_ALTERAR = (c: CompromissoExterno): boolean => DA_PARA_APAGAR(c) && c.souOrganizador === true;
+
+/**
+ * `daParaAgir` é de quem chama, porque a mesma lista de candidatos pode ser
+ * boa para uma ação e inútil para outra: perguntar "qual delas?" para depois
+ * recusar todas é mandar o dono decidir sobre o que não vai acontecer. O padrão
+ * é a régua de apagar, que é a mais larga das ações do Google.
+ */
 function umAlvo(
   banco: Banco,
   alvo: string,
   hoje: string,
   compromissos: readonly CompromissoExterno[] = [],
+  daParaAgir: (c: CompromissoExterno) => boolean = DA_PARA_APAGAR,
 ): Alvo {
   const candidatas = acharTarefas(banco, alvo);
 
@@ -810,9 +827,15 @@ function umAlvo(
   if (deFora.length === 1) return { tipo: 'compromisso', compromisso: deFora[0] };
 
   if (deFora.length > 1) {
-    // Se nenhum dá para mexer, o resultado seria a recusa de qualquer jeito.
-    if (deFora.every((c) => idParaMexer(c) === undefined)) {
-      return { tipo: 'nada', resposta: recusaDoGoogle(deFora) };
+    // Se nenhum leva à ação, o resultado seria a recusa de qualquer jeito. O
+    // motivo é de convidado só quando todos são mexíveis e o que falta é
+    // organizar; com um não mexível no meio, não finjo saber qual foi.
+    if (deFora.every((c) => !daParaAgir(c))) {
+      const soFaltaOrganizar = deFora.every((c) => DA_PARA_APAGAR(c));
+      return {
+        tipo: 'nada',
+        resposta: recusaDoGoogle(deFora, soFaltaOrganizar ? MOTIVO_DE_CONVIDADO : undefined),
+      };
     }
     // Do mais próximo ao mais distante, e dentro do dia pela hora; o dia
     // inteiro vem antes, como na agenda.
@@ -965,12 +988,12 @@ export function rotuloDaConfirmacao(efeito: Efeito): string {
 
 /** Para quem não organiza: mover e renomear não são dele, e o texto diz a quem recorrer. */
 function recusaDeConvidado(c: CompromissoExterno): Resposta {
-  return recusaDoGoogle(
-    [c],
-    'Esse evento é de outra pessoa, e alterá-lo não é algo que eu consiga fazer daqui. ' +
-      'Fale com quem organiza, ou mexa direto no Google Agenda.',
-  );
+  return recusaDoGoogle([c], MOTIVO_DE_CONVIDADO);
 }
+
+const MOTIVO_DE_CONVIDADO =
+  'Esse evento é de outra pessoa, e alterá-lo não é algo que eu consiga fazer daqui. ' +
+  'Fale com quem organiza, ou mexa direto no Google Agenda.';
 
 /**
  * A prévia de uma ação num evento do Google, e o efeito que a acompanha.
@@ -1553,7 +1576,7 @@ export function responder(
     }
 
     case 'adiar-tarefa': {
-      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos);
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, DA_PARA_ALTERAR);
       if (alvo.tipo === 'nada') return alvo.resposta;
       if (alvo.tipo === 'compromisso') {
         const c = alvo.compromisso;
@@ -1611,7 +1634,7 @@ export function responder(
     }
 
     case 'editar-tarefa': {
-      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos);
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, DA_PARA_ALTERAR);
       if (alvo.tipo === 'nada') return alvo.resposta;
       const pedida = intencao.mudanca;
       if (alvo.tipo === 'compromisso') return editarCompromisso(alvo.compromisso, pedida, hoje);
