@@ -19,6 +19,7 @@ import {
 import {
   planejar,
   corpoDoMover,
+  marcaDe,
   type ItemParaEspelhar,
   type EventoDoGoogle,
 } from '../dominio/google.ts';
@@ -304,7 +305,14 @@ const vazio = () => ({ criados: 0, atualizados: 0, apagados: 0 });
 
 /* ── Um evento que não é nosso ───────────────────────────────────────────── */
 
-export type MotivoDaRecusa = 'inexistente' | 'sem-permissao' | 'desconectado';
+export type MotivoDaRecusa =
+  | 'inexistente'
+  | 'sem-permissao'
+  | 'desconectado'
+  /** alguém mexeu no evento entre a leitura e a escrita; nada foi feito */
+  | 'mudou-enquanto-isso'
+  /** é um espelho de tarefa do MSL: a próxima sincronia desfaria a mudança */
+  | 'e-nosso';
 
 export type RespostaDoEvento = { feito: true } | { feito: false; motivo: MotivoDaRecusa };
 
@@ -413,10 +421,23 @@ export async function rotaGoogleEvento(
 
     let resultado;
     if (ordem.acao === 'apagar') {
+      // Apagar não lê o evento antes, de propósito: seria uma ida a mais ao
+      // Google em toda exclusão só para checar se é um espelho, e o domínio já
+      // impede o agente de mirar um (o espelho nem aparece na lista de
+      // compromissos). Não é esquecimento.
       resultado = await cliente.apagar(ordem.uid);
     } else {
       const atual = await cliente.ler(ordem.uid);
       if (!atual.ok) return recusa(atual.motivo);
+
+      // Responder "feito" a uma mudança que a próxima sincronia desfaz é a
+      // mentira mais cara que esta rota poderia contar.
+      if (marcaDe(atual.valor) !== null) return recusa('e-nosso');
+
+      // Sem etag não há como provar que o evento é o que foi lido, e a janela
+      // entre o GET e o PATCH desfaria em silêncio a remarcação de outra pessoa.
+      const etag = atual.valor.etag;
+      if (!etag) throw new ErroDoGoogle('o Google não informou a versão do evento.');
 
       const mudanca: MudancaDeEvento =
         ordem.acao === 'renomear'
@@ -426,7 +447,7 @@ export async function rotaGoogleEvento(
               distanciaEmDias,
               paraLocal: paraLocalEm(ordem.fuso),
             });
-      resultado = await cliente.alterar(ordem.uid, mudanca);
+      resultado = await cliente.alterar(ordem.uid, mudanca, etag);
     }
 
     return resultado.ok ? json({ feito: true } satisfies RespostaDoEvento) : recusa(resultado.motivo);

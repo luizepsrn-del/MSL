@@ -418,13 +418,29 @@ describe('estado e desconectar', () => {
  * roteiro mandar. Os testes de cima trocam o cliente inteiro; aqui o que está
  * sob prova é justamente o endereço e o corpo, então o falso é o `fetch`.
  */
+function corpoEmJson(corpo: BodyInit | null | undefined): Record<string, unknown> | undefined {
+  if (!corpo) return undefined;
+  try {
+    return JSON.parse(String(corpo)) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
 function googleFalso(roteiro: (chamada: { metodo: string; url: URL }) => { estado: number; corpo?: unknown }) {
-  const chamadas: { metodo: string; url: URL; corpo?: Record<string, unknown> }[] = [];
+  const chamadas: {
+    metodo: string;
+    url: URL;
+    corpo?: Record<string, unknown>;
+    cabecalhos: Record<string, string>;
+  }[] = [];
   const buscar = (async (url: string, opcoes: RequestInit = {}) => {
     const chamada = { metodo: opcoes.method ?? 'GET', url: new URL(url) };
     chamadas.push({
       ...chamada,
-      corpo: opcoes.body ? (JSON.parse(String(opcoes.body)) as Record<string, unknown>) : undefined,
+      cabecalhos: (opcoes.headers ?? {}) as Record<string, string>,
+      // o endpoint de token recebe formulário, e não JSON
+      corpo: corpoEmJson(opcoes.body),
     });
     const { estado, corpo } = roteiro(chamada);
     return new Response(corpo === undefined ? null : JSON.stringify(corpo), { status: estado });
@@ -434,6 +450,7 @@ function googleFalso(roteiro: (chamada: { metodo: string; url: URL }) => { estad
 
 const EVENTO_DAS_10: EventoDoGoogle = {
   id: 'ev1',
+  etag: '"3500000000000000"',
   summary: 'Reunião',
   // 13:00 UTC é 10:00 em São Paulo; uma hora de duração.
   start: { dateTime: '2026-09-17T13:00:00Z' },
@@ -741,6 +758,136 @@ describe('mexer num evento do Google', () => {
       const { corpo } = await mexer({ acao: 'mover', uid: 'ev1', dia: '2026-09-18', hora: '' }, buscar);
       expect(corpo).toEqual({ feito: true });
       expect(chamadas[1].corpo).toMatchObject({ start: { dateTime: '2026-09-18T10:00:00' } });
+    });
+  });
+  describe('o evento mudou entre a leitura e a escrita', () => {
+    it('mover manda If-Match com o etag do evento lido', async () => {
+      const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+      await mexer({ acao: 'mover', uid: 'ev1', dia: '2026-09-18' }, buscar);
+      expect(chamadas[1].cabecalhos['If-Match']).toBe(EVENTO_DAS_10.etag);
+    });
+
+    it('renomear manda If-Match com o etag do evento lido', async () => {
+      const { buscar, chamadas } = googleFalso(GOOGLE_BOM);
+      await mexer({ acao: 'renomear', uid: 'ev1', novo: 'Outro' }, buscar);
+      expect(chamadas[1].cabecalhos['If-Match']).toBe(EVENTO_DAS_10.etag);
+    });
+
+    it('412 vira "mudou-enquanto-isso": o organizador remarcou no meio', async () => {
+      // Gravar a hora lida desfaria, em silêncio, a remarcação de outra pessoa.
+      const { buscar } = googleFalso(({ metodo }) =>
+        metodo === 'GET' ? { estado: 200, corpo: EVENTO_DAS_10 } : { estado: 412 },
+      );
+      const { resposta, corpo } = await mexer({ acao: 'mover', uid: 'ev1', dia: '2026-09-18' }, buscar);
+      expect(resposta.status).toBe(200);
+      expect(corpo).toEqual({ feito: false, motivo: 'mudou-enquanto-isso' });
+    });
+
+    it('412 também vale para renomear', async () => {
+      const { buscar } = googleFalso(({ metodo }) =>
+        metodo === 'GET' ? { estado: 200, corpo: EVENTO_DAS_10 } : { estado: 412 },
+      );
+      const { corpo } = await mexer({ acao: 'renomear', uid: 'ev1', novo: 'X' }, buscar);
+      expect(corpo).toEqual({ feito: false, motivo: 'mudou-enquanto-isso' });
+    });
+
+    it('sem etag no evento lido, não escreve às cegas', async () => {
+      const { buscar, chamadas } = googleFalso(({ metodo }) =>
+        metodo === 'GET'
+          ? { estado: 200, corpo: { ...EVENTO_DAS_10, etag: undefined } }
+          : { estado: 200, corpo: {} },
+      );
+      const { resposta } = await mexer({ acao: 'mover', uid: 'ev1', dia: '2026-09-18' }, buscar);
+      expect(resposta.status).toBe(502);
+      expect(chamadas.every((c) => c.metodo === 'GET')).toBe(true);
+    });
+  });
+
+  describe('o espelho do MSL não é mexido por aqui', () => {
+    const ESPELHO = { ...EVENTO_DAS_10, extendedProperties: { private: { [MARCA]: 'tarefa:t1' } } };
+    const doEspelho = ({ metodo }: { metodo: string }) =>
+      metodo === 'GET' ? { estado: 200, corpo: ESPELHO } : { estado: 200, corpo: {} };
+
+    it('mover recusa com "e-nosso", e nada é escrito', async () => {
+      // Dizer "feito" a uma ação que a próxima sincronia desfaz seria mentir.
+      const { buscar, chamadas } = googleFalso(doEspelho);
+      const { corpo } = await mexer({ acao: 'mover', uid: 'ev1', dia: '2026-09-18' }, buscar);
+      expect(corpo).toEqual({ feito: false, motivo: 'e-nosso' });
+      expect(chamadas.map((c) => c.metodo)).toEqual(['GET']);
+    });
+
+    it('renomear recusa com "e-nosso", e nada é escrito', async () => {
+      const { buscar, chamadas } = googleFalso(doEspelho);
+      const { corpo } = await mexer({ acao: 'renomear', uid: 'ev1', novo: 'X' }, buscar);
+      expect(corpo).toEqual({ feito: false, motivo: 'e-nosso' });
+      expect(chamadas.map((c) => c.metodo)).toEqual(['GET']);
+    });
+
+    it('apagar não lê o evento antes: o domínio já impede mirar um espelho', async () => {
+      const { buscar, chamadas } = googleFalso(() => ({ estado: 204 }));
+      await mexer({ acao: 'apagar', uid: 'ev1' }, buscar);
+      expect(chamadas.map((c) => c.metodo)).toEqual(['DELETE']);
+    });
+  });
+
+  describe('o acesso renovado que o Google não aceita mais', () => {
+    /** Credencial vencida, para a rota ter que renovar. */
+    async function vencida() {
+      const { armazem, token, usuarioId } = await comSessao();
+      await armazem.gravar(
+        `google:${usuarioId}`,
+        JSON.stringify({
+          refreshToken: 'revogado',
+          accessToken: 'velho',
+          expiraEm: '2020-01-01T00:00:00.000Z',
+          conectadoEm: '2020-01-01T00:00:00.000Z',
+        }),
+      );
+      return { armazem, token };
+    }
+    const REVOGADO = { estado: 400, corpo: { error: 'invalid_grant', error_description: 'Token has been expired or revoked.' } };
+
+    it('invalid_grant na renovação vira "desconectado", e não 502', async () => {
+      // É o caminho comum de perder o acesso: o dono revoga o consentimento, ou
+      // o app em modo de testes deixa o token expirar a cada sete dias.
+      const { armazem, token } = await vencida();
+      const { buscar, chamadas } = googleFalso(() => REVOGADO);
+      const resposta = await rotaGoogleEvento(
+        pedir('/api/google-evento', token, { acao: 'apagar', uid: 'ev1' }),
+        armazem,
+        AMBIENTE,
+        buscar,
+      );
+      expect(resposta.status).toBe(200);
+      expect(await resposta.json()).toEqual({ feito: false, motivo: 'desconectado' });
+      expect(chamadas).toHaveLength(1);
+    });
+
+    it('a sincronização trata o mesmo caso como pedido de reconexão', async () => {
+      const { armazem, token } = await vencida();
+      const { buscar } = googleFalso(() => REVOGADO);
+      const resposta = await rotaGoogleSincronizar(
+        pedir('/api/google-sincronizar', token, JANELA),
+        armazem,
+        AMBIENTE,
+        buscar,
+      );
+      expect(resposta.status).toBe(401);
+      expect((await resposta.json()) as { mensagem: string }).toMatchObject({
+        mensagem: expect.stringContaining('Reconecte'),
+      });
+    });
+
+    it('outro erro da renovação continua sendo erro', async () => {
+      const { armazem, token } = await vencida();
+      const { buscar } = googleFalso(() => ({ estado: 500, corpo: {} }));
+      const resposta = await rotaGoogleEvento(
+        pedir('/api/google-evento', token, { acao: 'apagar', uid: 'ev1' }),
+        armazem,
+        AMBIENTE,
+        buscar,
+      );
+      expect(resposta.status).toBe(502);
     });
   });
 });

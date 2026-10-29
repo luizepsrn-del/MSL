@@ -453,6 +453,14 @@ describe('mover um evento', () => {
     expect(c.end.dateTime).toContain(`2026-11-02T${somarMinutos('09:00', MINUTOS_PADRAO)}`);
   });
 
+  it('viagem de vários dias que ganha hora segue com os mesmos dias', () => {
+    // Cinco dias de férias movidos "para sexta às 9h" não podem virar meia hora.
+    const e = evento({ start: { date: '2026-10-17' }, end: { date: '2026-10-22' } });
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO, AJUDA);
+    expect(c.start.dateTime).toBe('2026-11-02T09:00:00');
+    expect(c.end.dateTime).toBe('2026-11-07T09:00:00');
+  });
+
   it('sem hora, continua de dia inteiro no dia novo', () => {
     const e = evento({ start: { date: '2026-10-29' }, end: { date: '2026-10-30' } });
     const c = corpoDoMover(e, '2026-11-02', undefined, FUSO, AJUDA);

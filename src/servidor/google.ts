@@ -146,10 +146,13 @@ interface RespostaDeToken {
 
 export class ErroDoGoogle extends Error {
   readonly estado: number;
-  constructor(mensagem: string, estado = 502) {
+  /** o `error` que o Google devolveu, quando é ele que decide o que fazer */
+  readonly codigo?: string;
+  constructor(mensagem: string, estado = 502, codigo?: string) {
     super(mensagem);
     this.name = 'ErroDoGoogle';
     this.estado = estado;
+    this.codigo = codigo;
   }
 }
 
@@ -168,6 +171,8 @@ async function pedirToken(
   if (!resposta.ok || dados.error) {
     throw new ErroDoGoogle(
       dados.error_description ?? dados.error ?? `o Google respondeu ${resposta.status}`,
+      502,
+      dados.error,
     );
   }
   return dados;
@@ -258,15 +263,27 @@ export async function acessoValido(
   if (aindaVale) return credencial.accessToken!;
 
   const { id, segredo: chave } = credenciaisDo(ambiente);
-  const dados = await pedirToken(
-    {
-      refresh_token: credencial.refreshToken,
-      client_id: id,
-      client_secret: chave,
-      grant_type: 'refresh_token',
-    },
-    buscar,
-  );
+  let dados: RespostaDeToken;
+  try {
+    dados = await pedirToken(
+      {
+        refresh_token: credencial.refreshToken,
+        client_id: id,
+        client_secret: chave,
+        grant_type: 'refresh_token',
+      },
+      buscar,
+    );
+  } catch (erro) {
+    // `invalid_grant` é o caminho comum de perder o acesso: o dono revogou o
+    // consentimento, ou o app em modo de testes deixou o token expirar (sete
+    // dias). Um 502 genérico não leva ninguém a reconectar; o 401 leva, porque
+    // é o código que a tela já entende como "reconecte".
+    if (erro instanceof ErroDoGoogle && erro.codigo === 'invalid_grant') {
+      throw recusaDeAcesso(401);
+    }
+    throw erro;
+  }
 
   if (!dados.access_token) throw new ErroDoGoogle('o Google não renovou o acesso.');
 
@@ -295,7 +312,14 @@ export async function acessoValido(
  */
 function pedirAoGoogle(
   caminho: string,
-  opcoes: { metodo?: string; corpo?: unknown; acesso: string; buscar: typeof fetch },
+  opcoes: {
+    metodo?: string;
+    corpo?: unknown;
+    acesso: string;
+    buscar: typeof fetch;
+    /** cabeçalhos a mais, como o `If-Match` de uma escrita condicional */
+    cabecalhos?: Record<string, string>;
+  },
 ): Promise<Response> {
   const metodo = opcoes.metodo ?? 'GET';
   const alvo = new URL(caminho);
@@ -306,10 +330,27 @@ function pedirAoGoogle(
     headers: {
       Authorization: `Bearer ${opcoes.acesso}`,
       ...(opcoes.corpo ? { 'Content-Type': 'application/json' } : {}),
+      ...opcoes.cabecalhos,
     },
     body: opcoes.corpo ? JSON.stringify(opcoes.corpo) : undefined,
     signal: AbortSignal.timeout(15_000),
   });
+}
+
+/**
+ * O endereço de um evento.
+ *
+ * `encodeURIComponent` escapa a barra e o interrogação, mas **não o ponto**:
+ * `/events/..` vira `/calendars/primary` quando a URL é normalizada, e
+ * `/events/.` vira a coleção de eventos. Um DELETE ou PATCH ali não é num
+ * evento. Quem chama não deveria precisar saber disso, então a recusa mora
+ * aqui, no único lugar que monta o caminho.
+ */
+function caminhoDoEvento(eventoId: string): string {
+  if (eventoId === '' || eventoId === '.' || eventoId === '..') {
+    throw new ErroDoGoogle('o identificador do evento não é válido.', 400);
+  }
+  return `${CALENDARIO}/${encodeURIComponent(eventoId)}`;
 }
 
 const recusaDeAcesso = (estado: number) =>
@@ -383,7 +424,7 @@ export function clienteDoCalendario(acesso: string, buscar: typeof fetch = fetch
       chamar<EventoDoGoogle>(CALENDARIO, { metodo: 'POST', corpo, acesso, buscar }),
 
     atualizar: (eventoId, corpo) =>
-      chamar<EventoDoGoogle>(`${CALENDARIO}/${encodeURIComponent(eventoId)}`, {
+      chamar<EventoDoGoogle>(caminhoDoEvento(eventoId), {
         metodo: 'PATCH',
         corpo,
         acesso,
@@ -391,7 +432,7 @@ export function clienteDoCalendario(acesso: string, buscar: typeof fetch = fetch
       }),
 
     async apagar(eventoId) {
-      await chamar(`${CALENDARIO}/${encodeURIComponent(eventoId)}`, {
+      await chamar(caminhoDoEvento(eventoId), {
         metodo: 'DELETE',
         acesso,
         buscar,
@@ -403,7 +444,7 @@ export function clienteDoCalendario(acesso: string, buscar: typeof fetch = fetch
 /* ── Um evento que não é nosso ───────────────────────────────────────────── */
 
 /** As respostas de negócio do Google: acontecem, e quem chamou precisa delas. */
-export type MotivoDeNegocio = 'inexistente' | 'sem-permissao';
+export type MotivoDeNegocio = 'inexistente' | 'sem-permissao' | 'mudou-enquanto-isso';
 
 export type ResultadoDoEvento<T> = { ok: true; valor: T } | { ok: false; motivo: MotivoDeNegocio };
 
@@ -414,7 +455,16 @@ export interface ClienteDoEvento {
   /** O evento como está agora. Cancelado conta como inexistente. */
   ler(eventoId: string): Promise<ResultadoDoEvento<EventoDoGoogle>>;
   apagar(eventoId: string): Promise<ResultadoDoEvento<null>>;
-  alterar(eventoId: string, mudanca: MudancaDeEvento): Promise<ResultadoDoEvento<null>>;
+  /**
+   * Escrita condicional: só vale se o evento ainda tem o `etag` que foi lido.
+   * Se outra pessoa mexeu no meio, o Google recusa e o resultado é
+   * `mudou-enquanto-isso` — a alternativa seria gravar por cima, em silêncio.
+   */
+  alterar(
+    eventoId: string,
+    mudanca: MudancaDeEvento,
+    etag: string,
+  ): Promise<ResultadoDoEvento<null>>;
 }
 
 /**
@@ -446,6 +496,9 @@ async function comoResultado<T>(resposta: Response): Promise<ResultadoDoEvento<T
   if (resposta.status === 404 || resposta.status === 410) {
     return { ok: false, motivo: 'inexistente' };
   }
+  // 412: o `If-Match` não bateu, ou seja, o evento mudou (ou foi apagado)
+  // depois da leitura. Nada foi escrito.
+  if (resposta.status === 412) return { ok: false, motivo: 'mudou-enquanto-isso' };
   if (resposta.status === 403) {
     if (await eExcessoDePedidos(resposta)) {
       throw new ErroDoGoogle('o Google pediu para esperar um pouco. Tente de novo em instantes.', 429);
@@ -459,7 +512,7 @@ async function comoResultado<T>(resposta: Response): Promise<ResultadoDoEvento<T
 }
 
 export function clienteDoEvento(acesso: string, buscar: typeof fetch = fetch): ClienteDoEvento {
-  const caminho = (eventoId: string) => `${CALENDARIO}/${encodeURIComponent(eventoId)}`;
+  const caminho = caminhoDoEvento;
 
   return {
     async ler(eventoId) {
@@ -481,9 +534,15 @@ export function clienteDoEvento(acesso: string, buscar: typeof fetch = fetch): C
       return resultado.ok ? { ok: true, valor: null } : resultado;
     },
 
-    async alterar(eventoId, mudanca) {
+    async alterar(eventoId, mudanca, etag) {
       const resultado = await comoResultado<unknown>(
-        await pedirAoGoogle(caminho(eventoId), { metodo: 'PATCH', corpo: mudanca, acesso, buscar }),
+        await pedirAoGoogle(caminho(eventoId), {
+          metodo: 'PATCH',
+          corpo: mudanca,
+          cabecalhos: { 'If-Match': etag },
+          acesso,
+          buscar,
+        }),
       );
       return resultado.ok ? { ok: true, valor: null } : resultado;
     },

@@ -62,6 +62,11 @@ export interface EventoDoGoogle {
    * marcar terça a terça seria trabalho sem fim.
    */
   recurringEventId?: string;
+  /**
+   * A versão do evento. Mandada em `If-Match`, faz o Google recusar a escrita
+   * se alguém mexeu no evento depois que ele foi lido.
+   */
+  etag?: string;
   summary?: string;
   status?: string;
   /** ISO UTC da última alteração do lado do Google */
@@ -182,7 +187,18 @@ export function corpoDoMover(
   }
 
   const medida = inicio && fim ? (Date.parse(fim) - Date.parse(inicio)) / 60_000 : NaN;
-  const minutos = Number.isFinite(medida) && medida > 0 ? medida : MINUTOS_PADRAO;
+  // Um bloco de vários dias que ganha hora segue com os mesmos dias — "mover as
+  // férias para sexta às 9h" não pode virar meia hora. De um dia só (ou sem
+  // medida nenhuma) vale o bloco padrão.
+  const de = evento.start?.date;
+  const ate = evento.end?.date;
+  const diasInteiros = de && ate ? ajuda.distanciaEmDias(de, ate) : 0;
+  const minutos =
+    Number.isFinite(medida) && medida > 0
+      ? medida
+      : diasInteiros > 1
+        ? diasInteiros * 1440
+        : MINUTOS_PADRAO;
 
   // O fim sai do total de minutos e cai no dia que tiver que cair. Não é
   // `somarMinutos`: o teto de 23:59 dela serve ao bloco padrão de um item do
