@@ -563,7 +563,34 @@ function acharCompromissos(
 ): CompromissoExterno[] {
   const procurado = normalizar(alvo);
   if (procurado === '') return [];
-  return compromissos.filter((c) => normalizar(c.titulo).includes(procurado));
+  return umPorEvento(compromissos.filter((c) => normalizar(c.titulo).includes(procurado)));
+}
+
+/**
+ * Um evento de vários dias chega em uma cópia por dia, todas com o mesmo
+ * `uid`. Para o alvo de um comando elas são **um** evento: perguntar "qual
+ * delas?" entre três linhas iguais não leva a efeito nenhum, e mostrar só uma
+ * data enquanto apagar leva o evento inteiro esconde o estrago.
+ *
+ * A cópia que sobra vai do primeiro ao último dia que se conhece. Sem `uid`
+ * não há como saber que são o mesmo evento, então nada se une.
+ */
+function umPorEvento(achados: readonly CompromissoExterno[]): CompromissoExterno[] {
+  const porUid = new Map<string, CompromissoExterno>();
+  const saida: CompromissoExterno[] = [];
+  for (const c of achados) {
+    const unido = c.uid ? porUid.get(c.uid) : undefined;
+    if (unido) {
+      const dias = [unido.dia, unido.ate ?? unido.dia, c.dia, c.ate ?? c.dia].sort();
+      unido.dia = dias[0];
+      unido.ate = dias[3];
+      continue;
+    }
+    const copia = { ...c };
+    if (c.uid) porUid.set(c.uid, copia);
+    saida.push(copia);
+  }
+  return saida;
 }
 
 /** Projetos ativos cujo nome contém o procurado. Mesma régua de `acharTarefas`. */
@@ -610,6 +637,12 @@ export interface CompromissoExterno {
   mexivel?: boolean;
   /** Se a agenda é minha como organizador; convidado não decide pelos outros. */
   souOrganizador?: boolean;
+  /**
+   * O último dia de um evento de vários dias. Quem entrega os dados já o
+   * repete em uma cópia por dia, todas com o mesmo `uid`; este campo serve
+   * para quando a janela só deixa passar uma delas. Ausente vale um dia só.
+   */
+  ate?: string;
 }
 
 /** Os compromissos de um dia, em ordem de hora. Dia inteiro vem primeiro. */
@@ -664,6 +697,35 @@ const SEM_COMO_MEXER =
   'Esse compromisso é do Google, e eu não consigo mexer nele daqui. ' +
   'Por ora, altere direto no Google Agenda.';
 
+/** `Hoje`, `Amanhã`, `Ontem`; ou `Sexta, 25/09`, que se confere de relance. */
+function diaFalado(dia: string, hoje: string): string {
+  if (dia === hoje) return 'Hoje';
+  if (dia === somarDias(hoje, 1)) return 'Amanhã';
+  if (dia === somarDias(hoje, -1)) return 'Ontem';
+  return `${maiuscula(DIAS_CHEIOS[diaDaSemana(dia)])}, ${dia.slice(8)}/${dia.slice(5, 7)}`;
+}
+
+/** O evento ocupa mais de um dia? Uma cópia cujo último dia é o próprio dia, não. */
+function emVariosDias(c: CompromissoExterno): boolean {
+  return (c.ate ?? c.dia) > c.dia;
+}
+
+/**
+ * Quando o compromisso acontece, para a prévia.
+ *
+ * Em dia falado, e não em `2026-09-18`: a prévia existe para o dono pegar o
+ * alvo errado depois de um ditado mal entendido, e "Amanhã" se confere num
+ * relance. E "Vence", que a tarefa usa, é a palavra errada para uma reunião.
+ * Evento de vários dias diz a faixa, porque apagar leva todos.
+ */
+function quandoFalado(c: CompromissoExterno, hoje: string): string {
+  if (emVariosDias(c)) return `${diaFalado(c.dia, hoje)} a ${diaFalado(c.ate!, hoje)}`;
+  const hora = horaDoCompromisso(c);
+  const dia = diaFalado(c.dia, hoje);
+  if (hora) return `${dia}, ${hora}`;
+  return c.diaInteiro ? `${dia}, dia inteiro` : dia;
+}
+
 /**
  * A recusa honesta para compromisso que nasceu fora.
  *
@@ -706,11 +768,14 @@ function horaDoCompromisso(c: CompromissoExterno): string | undefined {
  * O id do evento, se dá mesmo para agir nele; senão, nada.
  *
  * Os dois campos são opcionais no tipo, então nada impede montar um efeito com
- * `uid` indefinido — quem impede é esta função. Os eventos da assinatura iCal
- * chegam sem `uid` e sem `mexivel`, e ausente tem de valer "não dá": um efeito
- * sem id apontaria para lugar nenhum, e um id sem permissão seria um pedido
- * que o Google ia recusar depois de eu já ter mostrado o botão. O id vazio
- * também não serve, por isso a checagem é de verdade e não de `undefined`.
+ * `uid` indefinido — quem impede é esta função, e as duas checagens fazem
+ * trabalhos diferentes. O que barra a assinatura iCal é só `mexivel`: ela
+ * **chega com `uid`**, e quando o `UID` falta o leitor usa o próprio título no
+ * lugar (`ical.ts`). Ou seja, ter `uid` não prova que é um id do Google, e se a
+ * checagem de `mexivel` cair um efeito sairia com o título de uma reunião no
+ * lugar de um id. A checagem de `uid` cobre o outro lado: o tipo o deixa
+ * ausente, e o id vazio também não aponta para evento nenhum, por isso o teste
+ * é de verdade e não de `undefined`. Ausente vale "não dá".
  */
 function idParaMexer(c: CompromissoExterno): string | undefined {
   return c.mexivel === true && c.uid ? c.uid : undefined;
@@ -904,9 +969,15 @@ export function rotuloDaConfirmacao(efeito: Efeito): string {
  * É a última coisa entre uma frase e uma reunião real desaparecendo, então ela
  * diz o tamanho do estrago, que depende de quem eu sou no evento:
  * - organizador: apagar **cancela para todos os convidados**;
- * - convidado (ou ausente, como nos eventos do iCal): sai só da minha agenda,
- *   e ninguém é avisado.
- * Mover e renomear mudam o evento em si, e quem o vê junto é o convidado.
+ * - convidado (ou ausente): apagar tira o evento só da minha agenda, e
+ *   ninguém é avisado. É por isso que apagar vale para os dois.
+ *
+ * Mover e renomear só valem para o organizador. O Google só aceita a mudança de
+ * um convidado quando o organizador habilitou `guestsCanModify`, campo que não
+ * buscamos; e a régua da casa (`EventoParaTela.souOrganizador`, em `google.ts`)
+ * é a mesma: na dúvida, não mexe, porque perder uma edição permitida custa menos
+ * que tentar uma proibida. Convidado recebe recusa, e não um aviso que
+ * afirmaria uma permissão que ninguém verificou.
  *
  * No infinitivo, como as outras prévias: isto é desenhado antes da confirmação,
  * e o efeito pode nunca acontecer.
@@ -922,28 +993,44 @@ function acaoNoGoogle(
 
   // Só `true` vale organizador: ausente é convidado, que decide por menos gente.
   const souOrganizador = c.souOrganizador === true;
-  const antes = detalheDe(c.dia, horaDoCompromisso(c), hoje);
+
+  if (acao.tipo !== 'apagar' && !souOrganizador) {
+    return recusaDoGoogle(
+      [c],
+      'Esse evento é de outra pessoa, e alterá-lo não é algo que eu consiga fazer daqui. ' +
+        'Fale com quem organiza, ou mexa direto no Google Agenda.',
+    );
+  }
+  // As cópias de um evento de vários dias foram unidas em uma: `mover` leva um
+  // dia só, e não diz se o evento encolhe, estica ou anda inteiro.
+  if (acao.tipo === 'mover' && emVariosDias(c)) {
+    return recusaDoGoogle(
+      [c],
+      'Esse evento ocupa mais de um dia, e eu não sei movê-lo sem encurtar ou esticar. ' +
+        'Mexa direto no Google Agenda.',
+    );
+  }
 
   let detalhe: string;
   let tom: Tom;
   let aviso: string;
   switch (acao.tipo) {
     case 'apagar':
-      detalhe = quandoDoCompromisso(c);
+      detalhe = quandoFalado(c, hoje);
       tom = souOrganizador ? 'ruim' : 'atencao';
       aviso = souOrganizador
         ? 'Apagar cancela a reunião para todos os convidados.'
         : 'Apagar tira o evento só da sua agenda, e ninguém é avisado.';
       break;
     case 'mover':
-      detalhe = `${antes} → ${detalheDe(acao.dia, acao.hora, hoje)}`;
+      detalhe = `${quandoFalado(c, hoje)} → ${quandoFalado({ ...c, dia: acao.dia, hora: acao.hora }, hoje)}`;
       tom = 'atencao';
-      aviso = avisoDeMudanca(souOrganizador);
+      aviso = AVISO_DE_MUDANCA;
       break;
     case 'renomear':
       detalhe = `${c.titulo} → ${acao.novo}`;
       tom = 'atencao';
-      aviso = avisoDeMudanca(souOrganizador);
+      aviso = AVISO_DE_MUDANCA;
       break;
   }
 
@@ -957,19 +1044,17 @@ function acaoNoGoogle(
   };
 }
 
-function avisoDeMudanca(souOrganizador: boolean): string {
-  return souOrganizador
-    ? 'Como você organiza, a mudança vale para todos os convidados.'
-    : 'Você não organiza este evento, mas pode alterá-lo: a mudança vale para o evento todo.';
-}
+/** Só o organizador chega aqui: ele altera o evento de todos os convidados. */
+const AVISO_DE_MUDANCA = 'Como você organiza, a mudança vale para todos os convidados.';
 
 /**
  * Editar um compromisso do Google: só título e horário existem do lado de lá.
  *
  * Anotação e projeto são conceitos do MSL, e aceitar a frase em silêncio
- * faria a prévia prometer algo que nunca será gravado. O Google também recebe
- * uma mudança por vez, e escolher uma das duas por conta própria seria
- * descartar metade do pedido sem avisar.
+ * faria a prévia prometer algo que nunca será gravado. Título e horário juntos
+ * também recusam, mas por limite **meu**: `AcaoNoGoogle` carrega uma ação por
+ * efeito. Escolher uma das duas por conta própria seria descartar metade do
+ * pedido sem avisar.
  */
 function editarCompromisso(c: CompromissoExterno, pedida: MudancaPedida, hoje: string): Resposta {
   if (idParaMexer(c) === undefined) return recusaDoGoogle([c]);
@@ -996,7 +1081,7 @@ function editarCompromisso(c: CompromissoExterno, pedida: MudancaPedida, hoje: s
       blocos: [
         {
           tipo: 'texto',
-          texto: 'Num evento do Google eu faço uma mudança por vez: peça o título, depois o horário.',
+          texto: 'Por enquanto eu faço uma mudança por vez neste evento: peça o título, depois o horário.',
         },
       ],
     };
