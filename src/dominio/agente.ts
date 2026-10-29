@@ -963,6 +963,15 @@ export function rotuloDaConfirmacao(efeito: Efeito): string {
   }
 }
 
+/** Para quem não organiza: mover e renomear não são dele, e o texto diz a quem recorrer. */
+function recusaDeConvidado(c: CompromissoExterno): Resposta {
+  return recusaDoGoogle(
+    [c],
+    'Esse evento é de outra pessoa, e alterá-lo não é algo que eu consiga fazer daqui. ' +
+      'Fale com quem organiza, ou mexa direto no Google Agenda.',
+  );
+}
+
 /**
  * A prévia de uma ação num evento do Google, e o efeito que a acompanha.
  *
@@ -994,13 +1003,7 @@ function acaoNoGoogle(
   // Só `true` vale organizador: ausente é convidado, que decide por menos gente.
   const souOrganizador = c.souOrganizador === true;
 
-  if (acao.tipo !== 'apagar' && !souOrganizador) {
-    return recusaDoGoogle(
-      [c],
-      'Esse evento é de outra pessoa, e alterá-lo não é algo que eu consiga fazer daqui. ' +
-        'Fale com quem organiza, ou mexa direto no Google Agenda.',
-    );
-  }
+  if (acao.tipo !== 'apagar' && !souOrganizador) return recusaDeConvidado(c);
   // As cópias de um evento de vários dias foram unidas em uma: `mover` leva um
   // dia só, e não diz se o evento encolhe, estica ou anda inteiro.
   if (acao.tipo === 'mover' && emVariosDias(c)) {
@@ -1023,7 +1026,7 @@ function acaoNoGoogle(
         : 'Apagar tira o evento só da sua agenda, e ninguém é avisado.';
       break;
     case 'mover':
-      detalhe = `${quandoFalado(c, hoje)} → ${quandoFalado({ ...c, dia: acao.dia, hora: acao.hora }, hoje)}`;
+      detalhe = `${quandoFalado(c, hoje)} → ${quandoFalado(comoFicaDepoisDeMover(c, acao), hoje)}`;
       tom = 'atencao';
       aviso = AVISO_DE_MUDANCA;
       break;
@@ -1044,6 +1047,28 @@ function acaoNoGoogle(
   };
 }
 
+/**
+ * O evento como ele fica depois de mover, para a prévia dizer o que vai
+ * acontecer e não o que o dado de antes sugere.
+ *
+ * Duas heranças são perigosas e por isso cortadas: o `diaInteiro` (um evento
+ * de dia inteiro que ganha hora deixa de ser de dia inteiro, e herdá-lo faria
+ * a prévia esconder justamente a hora pedida) e o `ate` (que, atrás do dia
+ * novo, viraria uma faixa que o evento não terá).
+ */
+function comoFicaDepoisDeMover(
+  c: CompromissoExterno,
+  acao: Extract<AcaoNoGoogle, { tipo: 'mover' }>,
+): CompromissoExterno {
+  return {
+    ...c,
+    dia: acao.dia,
+    ate: undefined,
+    hora: acao.hora,
+    diaInteiro: c.diaInteiro && acao.hora === undefined,
+  };
+}
+
 /** Só o organizador chega aqui: ele altera o evento de todos os convidados. */
 const AVISO_DE_MUDANCA = 'Como você organiza, a mudança vale para todos os convidados.';
 
@@ -1058,6 +1083,10 @@ const AVISO_DE_MUDANCA = 'Como você organiza, a mudança vale para todos os con
  */
 function editarCompromisso(c: CompromissoExterno, pedida: MudancaPedida, hoje: string): Resposta {
   if (idParaMexer(c) === undefined) return recusaDoGoogle([c]);
+  // Antes de qualquer outra checagem: quem não pode alterar não deve ouvir
+  // "peça o título, depois o horário" nem "só consigo mudar o título", porque
+  // os pedidos seguintes seriam todos recusados.
+  if (c.souOrganizador !== true) return recusaDeConvidado(c);
 
   if (pedida.anotacao !== undefined || pedida.projeto !== undefined) {
     return {

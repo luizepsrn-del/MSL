@@ -1029,6 +1029,35 @@ describe('ação sobre evento do Google', () => {
       expect(textoDe(r)).not.toMatch(/Vence|Venceu/);
     });
 
+    it('hora pedida na frase aparece na prévia de um evento de dia inteiro, que deixa de sê-lo', () => {
+      const diaInteiro = evento({ diaInteiro: true, hora: undefined });
+      const r = mover(diaInteiro, 'adiar a reunião de equipe para sexta às 15h');
+      expect(r.efeito).toMatchObject({ acao: { tipo: 'mover', dia: '2026-09-18', hora: '15:00' } });
+      expect(itemDe(r)?.detalhe).toBe('Hoje, dia inteiro → Amanhã, 15:00');
+    });
+
+    it('mudar só a hora de um evento de dia inteiro não parece mudança nenhuma', () => {
+      const r = editar(evento({ diaInteiro: true, hora: undefined }), { hora: '15:00' });
+      expect(r.efeito).toMatchObject({ acao: { tipo: 'mover', dia: HOJE, hora: '15:00' } });
+      expect(itemDe(r)?.detalhe).toBe('Hoje, dia inteiro → Hoje, 15:00');
+    });
+
+    it('sem hora na frase, o evento de dia inteiro segue de dia inteiro no depois', () => {
+      const r = mover(evento({ diaInteiro: true, hora: undefined }));
+      expect(itemDe(r)?.detalhe).toBe('Hoje, dia inteiro → Amanhã, dia inteiro');
+    });
+
+    it('o depois nunca vira faixa, nem com o último dia do dado depois do dia novo', () => {
+      const c = evento({ dia: '2026-09-18', ate: '2026-09-18' });
+      const r = responder(
+        vazio(),
+        { tipo: 'adiar-tarefa', alvo: 'reunião de equipe', prazo: '2026-09-16' },
+        HOJE,
+        [c],
+      );
+      expect(itemDe(r)?.detalhe).toBe('Amanhã, 10:00 → Ontem, 10:00');
+    });
+
     it('a prévia pesa a mudança em tom de atenção', () => {
       expect(itemDe(mover(evento()))?.tom).toBe('atencao');
     });
@@ -1108,6 +1137,25 @@ describe('ação sobre evento do Google', () => {
         expect(textoDe(r)).toContain('de outra pessoa');
       });
     }
+
+    it('quem não pode alterar ouve isso primeiro, e não instruções que não levam a lugar nenhum', () => {
+      const ausente = evento();
+      delete ausente.souOrganizador;
+      for (const convidado of [evento({ souOrganizador: false }), ausente]) {
+        const mudancas: Record<string, string>[] = [
+          { titulo: 'Call', hora: '15:00' },
+          { anotacao: 'levar o contrato' },
+          { projeto: 'Acttus' },
+          {},
+        ];
+        for (const mudanca of mudancas) {
+          const r = editar(convidado, mudanca);
+          expect(r.efeito, JSON.stringify(mudanca)).toBeUndefined();
+          expect(textoDe(r), JSON.stringify(mudanca)).toContain('de outra pessoa');
+          expect(textoDe(r), JSON.stringify(mudanca)).not.toMatch(/uma mudança por vez|só consigo mudar/);
+        }
+      }
+    });
 
     it('o organizador, na mesma frase, segue para a prévia', () => {
       expect(mover(evento({ souOrganizador: true })).efeito).toBeDefined();
