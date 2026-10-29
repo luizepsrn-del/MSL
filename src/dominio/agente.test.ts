@@ -898,6 +898,17 @@ describe('editar tarefa', () => {
     expect(r.titulo).toBe('Essa é do Google');
   });
 
+  it('um mexível e um não mexível com o mesmo nome perguntam qual, e não recusam os dois', () => {
+    const fora: CompromissoExterno[] = [
+      { titulo: 'Reunião A', dia: HOJE, hora: '10:00', diaInteiro: false, uid: 'g1', mexivel: true },
+      { titulo: 'Reunião B', dia: HOJE, hora: '11:00', diaInteiro: false, uid: 'g2' },
+    ];
+    const r = responder(banco({ tarefas: [] }), interpretar('exclui a reunião', HOJE), HOJE, fora);
+
+    expect(r.titulo).toBe('Qual delas?');
+    expect(r.efeito).toBeUndefined();
+  });
+
   it('sem nada parecido na agenda de fora, continua sendo "não achei"', () => {
     const r = responder(banco({ tarefas: [] }), interpretar('cancela o dentista', HOJE), HOJE, []);
     expect(r.titulo).toBe('Não achei essa tarefa');
