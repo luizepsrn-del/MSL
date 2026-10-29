@@ -1157,7 +1157,7 @@ const MOTIVO_DE_CONVIDADO =
  *
  * É a última coisa entre uma frase e uma reunião real desaparecendo, então ela
  * diz o tamanho do estrago, que depende de quem eu sou no evento:
- * - organizador: apagar **cancela para todos os convidados**;
+ * - organizador: apagar **cancela para os convidados que usam Google Agenda**;
  * - convidado (ou ausente): apagar tira o evento só da minha agenda, e
  *   ninguém é avisado. É por isso que apagar vale para os dois.
  *
@@ -1244,7 +1244,7 @@ function comoFicaDepoisDeMover(
   };
 }
 
-/** Só o organizador chega aqui: ele altera o evento de todos os convidados. */
+/** Só o organizador chega aqui: ele altera o evento dos convidados que usam Google Agenda. */
 const AVISO_DE_MUDANCA = 'Como você organiza, a mudança vale para todos os convidados que usam Google Agenda, e ninguém é avisado.';
 
 /**

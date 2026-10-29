@@ -49,8 +49,9 @@
  *
  * - **a série é intocável.** O agente aponta sempre o id da **ocorrência**.
  *   Apagar a reunião semanal de quinta tira a de quinta, não as próximas;
- * - **convidado só apaga.** Apagar tira o evento da agenda de quem apaga (de
- *   todos, se quem apaga organiza). Mover e renomear exigem organizar, porque
+ * - **convidado só apaga.** Apagar tira o evento da agenda de quem apaga; se
+ *   quem apaga organiza, tira também da agenda dos convidados que usam Google
+ *   Agenda (os demais podem seguir com o convite). Mover e renomear exigem organizar, porque
  *   o Google costuma recusar a alteração de convidado sem `guestsCanModify`,
  *   campo que não buscamos. A rota não sabe quem organiza;
  * - **evento de vários dias não se move**, só se apaga e renomeia. A rota não

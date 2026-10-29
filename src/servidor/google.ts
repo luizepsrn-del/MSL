@@ -356,6 +356,13 @@ function caminhoDoEvento(eventoId: string): string {
 const recusaDeAcesso = (estado: number) =>
   new ErroDoGoogle('o Google recusou o acesso. Reconecte a agenda em Ajustes.', estado);
 
+const recusaDeLimiteOuDeApi = () =>
+  new ErroDoGoogle(
+    'o Google recusou o pedido. Costuma ser limite de pedidos (espere uns minutos) ou a ' +
+      'Calendar API desligada no projeto do Google Cloud. Reconectar não resolve.',
+    403,
+  );
+
 async function erroInesperado(resposta: Response): Promise<ErroDoGoogle> {
   const texto = await resposta.text().catch(() => '');
   return new ErroDoGoogle(`o Google respondeu ${resposta.status}: ${texto.slice(0, 200)}`);
@@ -371,7 +378,11 @@ async function chamar<T>(
   // — apagar duas vezes tem que dar o mesmo que apagar uma.
   if (resposta.status === 204 || resposta.status === 404) return null;
 
-  if (resposta.status === 401 || resposta.status === 403) throw recusaDeAcesso(resposta.status);
+  if (resposta.status === 401) throw recusaDeAcesso(401);
+  // 403 não é "reconecte": é limite de pedidos ou a Calendar API desligada no
+  // projeto (passo 2 da doc). Reconectar não resolve nenhum dos dois, e mandar
+  // o dono fazê-lo o deixaria rodando em falso.
+  if (resposta.status === 403) throw recusaDeLimiteOuDeApi();
 
   if (!resposta.ok) throw await erroInesperado(resposta);
 

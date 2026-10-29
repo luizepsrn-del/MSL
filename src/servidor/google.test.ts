@@ -306,6 +306,14 @@ describe('a API do calendário', () => {
     await expect(clienteDoCalendario('acesso', buscar).apagar('ev1')).resolves.toBeUndefined();
   });
 
+  it('403 não manda reconectar: é limite ou API desligada, e reconectar não resolve', async () => {
+    const { buscar } = falso({ error: { message: 'Calendar API has not been used' } }, 403);
+    const pedido = clienteDoCalendario('acesso', buscar).listar('2026-09-01', '2026-09-02');
+    await expect(pedido).rejects.toMatchObject({ estado: 403 });
+    await expect(pedido).rejects.not.toThrow(/Reconecte/);
+    await expect(pedido).rejects.toThrow(/Calendar API|limite/);
+  });
+
   it('acesso recusado pede reconexão, em vez de uma mensagem de biblioteca', async () => {
     const { buscar } = falso({ error: 'invalid' }, 401);
     await expect(clienteDoCalendario('acesso', buscar).listar('2026-09-01', '2026-09-02'))

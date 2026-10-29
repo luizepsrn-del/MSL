@@ -371,6 +371,10 @@ export interface Google {
    * O Google deixou de aceitar uma conexão que já existiu. Diferente de nunca
    * ter conectado: aqui a configuração no Google Cloud está pronta e só falta
    * autorizar de novo, e a tela não deve mandar recomeçar do zero.
+   *
+   * Só a **sincronização** o liga. Cada tela tem a sua cópia deste estado, e o
+   * cartão de Ajustes não vê a do agente: quando o agente descobre a perda, o
+   * cache sai do disco e o cartão percebe na próxima vez que sincronizar.
    */
   acessoPerdido: boolean;
   /** quantos eventos o servidor escreveu na última vez */
@@ -591,10 +595,7 @@ export function useGoogle(de: string, ate: string): Google {
       // Uma sincronização em voo trouxe a lista (e o "conectado") de antes de
       // mexer: a resposta dela é descartada, nos dois casos.
       geracaoDaLista.current += 1;
-      if (depois === 'desconectar') {
-        setConectado(false);
-        setAcessoPerdido(true);
-      }
+      if (depois === 'desconectar') setConectado(false);
       else {
         // Outra roda quando a que estava no ar terminar.
         if (emVoo.current) refazer.current = true;

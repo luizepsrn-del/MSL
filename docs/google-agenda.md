@@ -82,10 +82,10 @@ Funciona na hora. **O preço:** neste modo o Google expira o acesso a cada
 
 **Atenção:** quando o acesso expira, o cartão em Ajustes ainda diz
 **"Conectada"** até o MSL tentar falar com o Google. Na primeira tentativa que
-falhar — a sincronização, o botão *Sincronizar agora* ou um pedido ao agente —,
-o cartão passa a dizer **"Não conectada"** e volta a oferecer o botão
-**Conectar**. Quando quem falha é a sincronização, ele mostra também o aviso
-*"Reconecte a agenda em Ajustes"*. Clique em Conectar e autorize de novo. Se o cartão ainda estiver em "Conectada", clique em **Sincronizar agora**
+falhar o cartão passa a dizer **"Não conectada"**, mostra o aviso *"Reconecte a
+agenda em Ajustes"* e volta a oferecer o botão **Conectar**. Se quem descobriu
+foi um pedido ao agente, o cartão só percebe na próxima vez que você abrir
+Ajustes. Clique em Conectar e autorize de novo. Se o cartão ainda estiver em "Conectada", clique em **Sincronizar agora**
 para ele perceber.
 
 ## 5. Criar as credenciais

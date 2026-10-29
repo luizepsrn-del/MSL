@@ -217,7 +217,7 @@ test('sem conexão nenhuma, nada disso aparece', async ({ page }) => {
   await expect(page.getByText('Google Agenda, nos dois sentidos')).toHaveCount(0);
 
   await page.goto('/app/ajustes');
-  await expect(page.getByRole('button', { name: 'Conectar' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Conectar', exact: true })).toBeVisible();
 });
 
 test('acesso expirado: o cartão deixa de dizer Conectada e oferece Conectar', async ({ page }) => {
@@ -273,12 +273,21 @@ test('o 403 do Google (limite, API desligada) não derruba a conexão', async ({
   await comecarLimpo(page);
   await servidorFalso(page);
   await page.route('**/api/google-sincronizar', (rota) =>
-    rota.fulfill({ status: 403, json: { erro: 'google', mensagem: 'o Google recusou o acesso. Reconecte a agenda em Ajustes.' } }),
+    rota.fulfill({
+      status: 403,
+      json: {
+        erro: 'google',
+        mensagem:
+          'o Google recusou o pedido. Costuma ser limite de pedidos (espere uns minutos) ou a ' +
+          'Calendar API desligada no projeto do Google Cloud. Reconectar não resolve.',
+      },
+    }),
   );
 
   await page.goto('/app/ajustes');
-  await expect(page.getByText('Reconecte a agenda em Ajustes')).toBeVisible();
-  // Reconectar não resolveria: o cartão segue conectado, com o erro à vista.
+  await expect(page.getByText('Reconectar não resolve')).toBeVisible();
+  // Mandar reconectar seria falso: o cartão segue conectado, com o erro à vista.
+  await expect(page.getByText('Reconecte a agenda em Ajustes')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Desconectar' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Conectar', exact: true })).toHaveCount(0);
 });
