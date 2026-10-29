@@ -16,7 +16,7 @@ import { Link } from 'react-router-dom';
 import { useBanco } from '../dados/BancoContexto';
 import { useDitado, DITADO_DISPONIVEL } from '../dados/ditado';
 import { useAgendaExterna } from '../dados/agendaExterna';
-import { useGoogle } from '../dados/google';
+import { useGoogle, compromissosDaAgenda } from '../dados/google';
 import { semanaDe } from '../dominio/calendario';
 import { COLECOES } from '../dados/esquema';
 import {
@@ -27,8 +27,10 @@ import {
   type Tom,
   type Efeito,
   type CompromissoExterno,
+  type ResultadoDoEfeito,
   exigeConfirmacao,
   rotuloDaConfirmacao,
+  desfechoDoTurno,
 } from '../dominio/agente';
 import {
   montarPrompt,
@@ -77,8 +79,19 @@ const ATALHOS = [
  *
  * `aguardando` é o estado que faz a prévia existir: o domínio já decidiu o que
  * fazer e mostrou na tela, e nada foi gravado. Só sai dele por um toque meu.
+ *
+ * `aplicando` e `falhou` existem porque o efeito do Google depende de rede: a
+ * tela deixou de poder assumir que deu certo. `confirmado` só é alcançado
+ * quando o efeito **respondeu** que foi feito.
  */
-type EstadoDoTurno = 'sem-efeito' | 'aplicado' | 'aguardando' | 'confirmado' | 'cancelado';
+type EstadoDoTurno =
+  | 'sem-efeito'
+  | 'aplicado'
+  | 'aguardando'
+  | 'aplicando'
+  | 'confirmado'
+  | 'falhou'
+  | 'cancelado';
 
 interface Turno {
   id: string;
@@ -87,7 +100,12 @@ interface Turno {
   hora: string;
   resposta: Resposta;
   estado: EstadoDoTurno;
+  /** o que dizer quando o estado é `falhou` */
+  falha?: string;
 }
+
+/** Os efeitos locais não têm o que recusar: gravar no banco daqui não é pedir licença a ninguém. */
+const FEITO: ResultadoDoEfeito = { feito: true };
 
 export function Agente() {
   const {
@@ -125,11 +143,9 @@ export function Agente() {
   const google = useGoogle(semana[0], semana[6]);
   const assinatura = useAgendaExterna(semana[0], semana[6]);
 
-  // A mesma regra do calendário: conectado ao Google, ele manda; senão vale a
-  // agenda assinada. Duas fontes ao mesmo tempo mostrariam tudo em dobro.
-  const compromissos: readonly CompromissoExterno[] = google.conectado
-    ? google.eventos
-    : (assinatura.agenda?.eventos ?? []);
+  // A escolha da fonte, e do que dá para mexer em cada uma, mora em
+  // `compromissosDaAgenda`, que se prova sem navegador.
+  const compromissos: readonly CompromissoExterno[] = compromissosDaAgenda(google, assinatura);
 
   const contexto: ContextoDoPedido = {
     modulos: [...PILARES, EXTENSAO, AJUSTES].map((p) => p.rotulo),
@@ -141,7 +157,7 @@ export function Agente() {
     0,
   );
 
-  const aplicar = async (efeito: Efeito) => {
+  const aplicar = async (efeito: Efeito): Promise<ResultadoDoEfeito> => {
     switch (efeito.tipo) {
       case 'criar-tarefa':
         await criarTarefa({
@@ -150,10 +166,10 @@ export function Agente() {
           prazo: efeito.prazo,
           hora: efeito.hora,
         });
-        return;
+        return FEITO;
       case 'concluir-tarefa':
         await alternarTarefa(efeito.id);
-        return;
+        return FEITO;
       case 'adiar-tarefa':
         // A hora só é tocada quando a frase trouxe uma: adiar "para sexta" não
         // pode apagar o horário que o compromisso já tinha.
@@ -161,15 +177,15 @@ export function Agente() {
           prazo: efeito.prazo,
           ...(efeito.hora ? { hora: efeito.hora } : {}),
         });
-        return;
+        return FEITO;
       case 'excluir-tarefa':
         await removerTarefa(efeito.id);
-        return;
+        return FEITO;
       case 'editar-tarefa':
         // A mudança já vem só com o que a frase pediu — campo ausente é campo
         // que não se mexe, e mandá-lo como `undefined` apagaria o que havia.
         await editarTarefa(efeito.id, efeito.mudanca);
-        return;
+        return FEITO;
       case 'criar-lancamento':
         await criarLancamento({
           descricao: efeito.descricao,
@@ -179,11 +195,33 @@ export function Agente() {
           contexto: 'pessoal',
           data: hoje,
         });
-        return;
+        return FEITO;
+      case 'evento-do-google':
+        // O único efeito que pode ser recusado: devolve o que o Google disse,
+        // e quem chama decide o que mostrar. Nunca assume sucesso.
+        return google.mexerNoEvento(efeito);
       case 'montar-pedido':
         // O pedido é montado na hora de desenhar, a partir do nível escolhido:
         // mudar o nível regera o texto sem precisar perguntar de novo.
-        return;
+        return FEITO;
+      default: {
+        // Esquecer um efeito novo aqui virava um botão que confirma e não faz
+        // nada, porque a função devolvia `void` e o compilador não reclamava.
+        const naoTratado: never = efeito;
+        throw new Error(`efeito sem tratamento: ${JSON.stringify(naoTratado)}`);
+      }
+    }
+  };
+
+  /**
+   * Aplica sem nunca lançar: um efeito que estoura vira "não sei se valeu", e
+   * não um turno preso em "aplicando" nem um "Feito" que ninguém conferiu.
+   */
+  const tentar = async (efeito: Efeito): Promise<ResultadoDoEfeito> => {
+    try {
+      return await aplicar(efeito);
+    } catch {
+      return { feito: false, motivo: 'indisponivel' };
     }
   };
 
@@ -206,10 +244,11 @@ export function Agente() {
         ? 'aguardando'
         : 'aplicado';
 
+    const id = `${Date.now()}-${turnos.length}`;
     setTurnos((anteriores) => [
       ...anteriores,
       {
-        id: `${Date.now()}-${anteriores.length}`,
+        id,
         eu: limpo,
         hora: formatarHora(new Date()),
         resposta,
@@ -218,18 +257,25 @@ export function Agente() {
     ]);
     setTexto('');
 
-    if (resposta.efeito && !espera) await aplicar(resposta.efeito);
+    if (resposta.efeito && !espera) {
+      // Sem prévia, o sucesso já estava na tela; só a falha muda o turno.
+      const desfecho = desfechoDoTurno(await tentar(resposta.efeito));
+      if (desfecho.estado === 'falhou') marcar(id, 'falhou', desfecho.frase);
+    }
   };
 
-  const marcar = (id: string, estado: EstadoDoTurno) =>
-    setTurnos((anteriores) => anteriores.map((t) => (t.id === id ? { ...t, estado } : t)));
+  const marcar = (id: string, estado: EstadoDoTurno, falha?: string) =>
+    setTurnos((anteriores) => anteriores.map((t) => (t.id === id ? { ...t, estado, falha } : t)));
 
   const confirmar = async (turno: Turno) => {
     if (!turno.resposta.efeito) return;
     // O estado muda antes de aplicar: gravar é assíncrono, e sem isto um toque
-    // duplo no botão executa o efeito duas vezes.
-    marcar(turno.id, 'confirmado');
-    await aplicar(turno.resposta.efeito);
+    // duplo no botão executa o efeito duas vezes. E não muda para `confirmado`:
+    // o efeito pode ser recusado, e "Feito" só aparece depois da resposta.
+    marcar(turno.id, 'aplicando');
+    const desfecho = desfechoDoTurno(await tentar(turno.resposta.efeito));
+    if (desfecho.estado === 'falhou') marcar(turno.id, 'falhou', desfecho.frase);
+    else marcar(turno.id, 'confirmado');
   };
 
   React.useEffect(() => {
@@ -319,10 +365,39 @@ export function Agente() {
                       </div>
                     )}
 
+                    {t.estado === 'aplicando' && (
+                      <Badge tone="neutral" dot={false}>
+                        Aplicando…
+                      </Badge>
+                    )}
                     {t.estado === 'confirmado' && (
                       <Badge tone="ontime" dot={false}>
                         Feito
                       </Badge>
+                    )}
+                    {t.estado === 'falhou' && (
+                      <div
+                        role="alert"
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 'var(--sp-5)',
+                          alignItems: 'flex-start',
+                        }}
+                      >
+                        <Badge tone="danger" dot={false}>
+                          Não deu certo
+                        </Badge>
+                        <span
+                          style={{
+                            font: 'var(--type-body)',
+                            color: 'var(--text-body)',
+                            lineHeight: 'var(--lh-normal)',
+                          }}
+                        >
+                          {t.falha}
+                        </span>
+                      </div>
                     )}
                     {t.estado === 'cancelado' && (
                       <Badge tone="neutral" dot={false}>

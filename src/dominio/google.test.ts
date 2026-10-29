@@ -323,6 +323,49 @@ describe('traduzir para o calendário', () => {
     ]);
   });
 
+  describe('o primeiro e o último dia do evento de vários dias', () => {
+    // A janela corta o evento pelos dois lados, e quem decide apagar precisa
+    // dizer o evento inteiro, não o pedaço que a janela deixou passar.
+    const viagem = evento({
+      extendedProperties: undefined,
+      summary: 'Viagem',
+      start: { date: '2026-09-17' },
+      end: { date: '2026-09-20' },
+    });
+
+    it('cada cópia leva o primeiro dia e o último, e o último é o fim exclusivo menos um', () => {
+      for (const copia of naTela([viagem])) {
+        expect(copia.desde).toBe('2026-09-17');
+        expect(copia.ate).toBe('2026-09-19');
+      }
+    });
+
+    it('a janela que só deixa passar um dia não muda o que o evento é', () => {
+      const [so] = naTela([viagem], '2026-09-18', '2026-09-18');
+      expect(so.dia).toBe('2026-09-18');
+      expect(so.desde).toBe('2026-09-17');
+      expect(so.ate).toBe('2026-09-19');
+    });
+
+    it('evento de um dia só não leva nem um nem outro', () => {
+      const [um] = naTela([evento({ extendedProperties: undefined })]);
+      expect(um.desde).toBeUndefined();
+      expect(um.ate).toBeUndefined();
+    });
+
+    it('evento com hora não leva: ele aparece uma vez só', () => {
+      const [com] = naTela([
+        evento({
+          extendedProperties: undefined,
+          start: { dateTime: '2026-09-17T17:00:00Z' },
+          end: { dateTime: '2026-09-17T18:00:00Z' },
+        }),
+      ]);
+      expect(com.desde).toBeUndefined();
+      expect(com.ate).toBeUndefined();
+    });
+  });
+
   it('com hora traz o fim do mesmo dia', () => {
     const consulta = evento({
       extendedProperties: undefined,

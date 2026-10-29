@@ -219,3 +219,72 @@ test('sem conexão nenhuma, nada disso aparece', async ({ page }) => {
   await page.goto('/app/ajustes');
   await expect(page.getByRole('button', { name: 'Conectar' })).toBeVisible();
 });
+
+/* ── O agente mexe no evento, e diz a verdade quando o Google não deixa ──── */
+
+async function pedirParaApagarAReuniao(page: Page) {
+  await comecarLimpo(page);
+  const estado = await servidorFalso(page, {
+    deles: [
+      {
+        id: 'g1',
+        summary: 'Reunião de equipe',
+        start: { date: diaLocal(0) },
+        end: { date: diaLocal(1) },
+        organizer: { self: true },
+      },
+    ],
+  });
+  await page.goto('/app/pedir');
+  await expect.poll(() => estado.chamadas).toBeGreaterThan(0);
+
+  // O cache de eventos chega logo depois da resposta: repete a pergunta até o
+  // agente enxergar o evento, em vez de dormir um tempo que alguém chutou.
+  const botao = page.getByRole('button', { name: 'Apagar no Google' });
+  await expect(async () => {
+    const campo = page.getByPlaceholder('Pergunte, ou mande fazer');
+    await campo.fill('cancela a reunião de equipe');
+    await campo.press('Enter');
+    await expect(botao).toBeVisible({ timeout: 500 });
+  }).toPass();
+
+  return { botao };
+}
+
+test('o Google recusa: a tela não diz "Feito" e diz que nada mudou', async ({ page }) => {
+  const { botao } = await pedirParaApagarAReuniao(page);
+  await page.route('**/api/google-evento', (rota) =>
+    rota.fulfill({ json: { feito: false, motivo: 'sem-permissao' } }),
+  );
+
+  await botao.click();
+
+  await expect(page.getByText('Não deu certo')).toBeVisible();
+  await expect(page.getByText('Nada mudou.')).toBeVisible();
+  await expect(page.getByText('Feito', { exact: true })).toHaveCount(0);
+});
+
+test('o Google fora do ar: a tela não diz "Feito" nem que nada mudou', async ({ page }) => {
+  const { botao } = await pedirParaApagarAReuniao(page);
+  await page.route('**/api/google-evento', (rota) => rota.abort());
+
+  await botao.click();
+
+  await expect(page.getByText('não sei se a mudança chegou a valer')).toBeVisible();
+  await expect(page.getByText('Feito', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Nada mudou.')).toHaveCount(0);
+});
+
+test('o Google aceita: manda o id certo e só então diz "Feito"', async ({ page }) => {
+  const { botao } = await pedirParaApagarAReuniao(page);
+  const corpos: unknown[] = [];
+  await page.route('**/api/google-evento', (rota) => {
+    corpos.push(JSON.parse(rota.request().postData() ?? '{}'));
+    return rota.fulfill({ json: { feito: true } });
+  });
+
+  await botao.click();
+
+  await expect(page.getByText('Feito', { exact: true })).toBeVisible();
+  expect(corpos).toEqual([{ acao: 'apagar', uid: 'g1' }]);
+});

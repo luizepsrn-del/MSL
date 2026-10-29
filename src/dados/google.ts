@@ -9,6 +9,7 @@ import {
 } from '../dominio/google';
 import { somarDias, distanciaEmDias } from '../dominio/rotina';
 import { relogioEm, FUSO_PADRAO } from '../dominio/ical';
+import type { CompromissoExterno, Efeito, ResultadoDoEfeito } from '../dominio/agente';
 import { useBanco } from './BancoContexto';
 
 /**
@@ -151,6 +152,7 @@ export const METODO: Record<string, 'GET' | 'POST'> = {
   '/api/google-conectar': 'POST',
   '/api/google-sincronizar': 'POST',
   '/api/google-desconectar': 'POST',
+  '/api/google-evento': 'POST',
 };
 
 export async function falar<T>(
@@ -186,6 +188,117 @@ export interface ResultadoDaSincronia {
   faltou: number;
 }
 
+/* ── Mexer num evento que não é nosso ────────────────────────────────────── */
+
+type EfeitoNoGoogle = Extract<Efeito, { tipo: 'evento-do-google' }>;
+
+/**
+ * O corpo do pedido para `/api/google-evento`.
+ *
+ * O fuso vai sempre: o servidor entende "sexta, 15:00" no relógio de quem
+ * pediu, e o dele não é o meu.
+ */
+export function corpoDoEvento(efeito: EfeitoNoGoogle): Record<string, unknown> {
+  const { acao, uid } = efeito;
+  switch (acao.tipo) {
+    case 'apagar':
+      return { acao: 'apagar', uid };
+    case 'renomear':
+      return { acao: 'renomear', uid, novo: acao.novo };
+    case 'mover':
+      return { acao: 'mover', uid, dia: acao.dia, hora: acao.hora, fuso: FUSO_PADRAO };
+    default: {
+      // Ação nova sem corpo viraria um pedido vazio, e o servidor o recusaria
+      // com um erro que não diz de quem é a culpa.
+      const naoTratada: never = acao;
+      throw new Error(`ação sem corpo: ${JSON.stringify(naoTratada)}`);
+    }
+  }
+}
+
+/**
+ * A cópia local de eventos deixou de valer?
+ *
+ * Depois de mexer, claro. Mas também depois das recusas que dizem que o Google
+ * está diferente do que eu tinha: o evento sumiu, alguém o alterou, ou perdi o
+ * acesso. Mostrar a lista antiga depois de ouvir isso é repetir o engano que
+ * acabou de ser corrigido. Nas outras recusas nada mudou lá, e o cache serve.
+ */
+export function cacheFicouVelho(resultado: ResultadoDoEfeito): boolean {
+  if (resultado.feito) return true;
+  return ['inexistente', 'mudou-enquanto-isso', 'desconectado'].includes(resultado.motivo);
+}
+
+/**
+ * Lê o que o servidor respondeu. Só `feito: true` é sucesso, e uma recusa só
+ * vale com motivo; qualquer outra forma é "sem resposta", porque dizer que
+ * deu certo com base numa resposta que não entendo seria inventar.
+ */
+function lerResultado(dados: unknown): ResultadoDoEfeito {
+  const d = dados as { feito?: unknown; motivo?: unknown } | null;
+  if (d?.feito === true) return { feito: true };
+  if (d?.feito === false && typeof d.motivo === 'string') return { feito: false, motivo: d.motivo };
+  return { feito: false, motivo: SEM_RESPOSTA };
+}
+
+/** O motivo de quando o servidor não respondeu o que se esperava. */
+const SEM_RESPOSTA = 'indisponivel';
+
+/**
+ * Apaga, move ou renomeia um evento do Google e diz o que aconteceu.
+ *
+ * Nunca lança: rede caída, erro do servidor e sessão vencida viram "sem
+ * resposta", e a tela decide o que dizer. Lançar aqui deixaria o turno preso
+ * em "enviando" ou, pior, o faria cair no "Feito" de quem não espera falha.
+ */
+export async function mexerNoEventoDoGoogle(
+  efeito: EfeitoNoGoogle,
+  guarda: Storage,
+  buscar: typeof fetch = fetch,
+): Promise<ResultadoDoEfeito> {
+  let resultado: ResultadoDoEfeito;
+  try {
+    resultado = lerResultado(await falar<unknown>('/api/google-evento', corpoDoEvento(efeito), buscar));
+  } catch {
+    resultado = { feito: false, motivo: SEM_RESPOSTA };
+  }
+  if (cacheFicouVelho(resultado)) limparCache(guarda);
+  return resultado;
+}
+
+/* ── De onde vêm os compromissos do agente ───────────────────────────────── */
+
+/**
+ * Os compromissos que o agente enxerga: a mesma regra do calendário. Conectado
+ * ao Google, ele manda; senão vale a agenda assinada. Duas fontes ao mesmo
+ * tempo mostrariam tudo em dobro.
+ *
+ * Só o Google tem caminho de escrita, e por isso só os dele são `mexivel`. O
+ * campo diz "dá para apontar este evento": ter id. A diferença entre apagar e
+ * alterar **não** mora aqui: convidado também apaga (o DELETE tira só a cópia
+ * dele), e mover e renomear pedem `souOrganizador`, que o domínio confere por
+ * conta própria. Fazer `mexivel` valer `souOrganizador` tiraria do convidado o
+ * apagar, que o dono decidiu manter. A assinatura iCal passa sem o campo, e
+ * ausente vale não.
+ */
+export function compromissosDaAgenda(
+  google: Pick<Google, 'conectado' | 'eventos'>,
+  assinatura: { agenda: { eventos: readonly CompromissoExterno[] } | null },
+): readonly CompromissoExterno[] {
+  if (!google.conectado) return assinatura.agenda?.eventos ?? [];
+  return google.eventos.map((e) => ({
+    titulo: e.titulo,
+    dia: e.dia,
+    hora: e.hora,
+    diaInteiro: e.diaInteiro,
+    uid: e.uid,
+    mexivel: e.uid !== '',
+    souOrganizador: e.souOrganizador,
+    desde: e.desde,
+    ate: e.ate,
+  }));
+}
+
 /* ── O gancho ────────────────────────────────────────────────────────────── */
 
 export interface Google {
@@ -201,6 +314,8 @@ export interface Google {
   conectar: () => void;
   desconectar: () => void;
   sincronizarAgora: () => void;
+  /** apaga, move ou renomeia um evento, e diz se o Google fez */
+  mexerNoEvento: (efeito: EfeitoNoGoogle) => Promise<ResultadoDoEfeito>;
 }
 
 /**
@@ -365,5 +480,21 @@ export function useGoogle(de: string, ate: string): Google {
     },
 
     sincronizarAgora: () => void sincronizar(true),
+
+    mexerNoEvento: async (efeito) => {
+      const resultado = await mexerNoEventoDoGoogle(efeito, window.localStorage);
+      if (!cacheFicouVelho(resultado)) return resultado;
+
+      if (!resultado.feito && resultado.motivo === 'desconectado') {
+        // Sem acesso, a lista que eu tinha é de uma conta que já não vale.
+        setGuardado(null);
+        setConectado(false);
+      } else {
+        // Rebusca já: o agente responde pelo que está em memória, e depois de
+        // apagar ele ainda listaria o evento até o próximo ciclo.
+        void sincronizar(true);
+      }
+      return resultado;
+    },
   };
 }

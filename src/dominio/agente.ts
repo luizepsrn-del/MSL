@@ -581,9 +581,17 @@ function umPorEvento(achados: readonly CompromissoExterno[]): CompromissoExterno
   for (const c of achados) {
     const unido = c.uid ? porUid.get(c.uid) : undefined;
     if (unido) {
-      const dias = [unido.dia, unido.ate ?? unido.dia, c.dia, c.ate ?? c.dia].sort();
-      unido.dia = dias[0];
-      unido.ate = dias[3];
+      const dias = [
+        unido.desde ?? unido.dia,
+        unido.dia,
+        unido.ate ?? unido.dia,
+        c.desde ?? c.dia,
+        c.dia,
+        c.ate ?? c.dia,
+      ].sort();
+      unido.desde = dias[0];
+      unido.dia = unido.dia < c.dia ? unido.dia : c.dia;
+      unido.ate = dias[5];
       continue;
     }
     const copia = { ...c };
@@ -638,10 +646,12 @@ export interface CompromissoExterno {
   /** Se a agenda é minha como organizador; convidado não decide pelos outros. */
   souOrganizador?: boolean;
   /**
-   * O último dia de um evento de vários dias. Quem entrega os dados já o
-   * repete em uma cópia por dia, todas com o mesmo `uid`; este campo serve
-   * para quando a janela só deixa passar uma delas. Ausente vale um dia só.
+   * O primeiro e o último dia de um evento de vários dias. Quem entrega os
+   * dados já o repete em uma cópia por dia, todas com o mesmo `uid`; estes
+   * campos servem para quando a janela só deixa passar uma delas, e cortou o
+   * evento pelo começo, pelo fim ou pelos dois. Ausentes valem o próprio `dia`.
    */
+  desde?: string;
   ate?: string;
 }
 
@@ -705,9 +715,14 @@ function diaFalado(dia: string, hoje: string): string {
   return `${maiuscula(DIAS_CHEIOS[diaDaSemana(dia)])}, ${dia.slice(8)}/${dia.slice(5, 7)}`;
 }
 
-/** O evento ocupa mais de um dia? Uma cópia cujo último dia é o próprio dia, não. */
+/**
+ * O evento ocupa mais de um dia?
+ *
+ * Os dois lados contam: a janela corta o começo do evento do mesmo jeito que
+ * corta o fim, e uma cópia do último dia, vista sozinha, parece de um dia só.
+ */
 function emVariosDias(c: CompromissoExterno): boolean {
-  return (c.ate ?? c.dia) > c.dia;
+  return (c.ate ?? c.dia) > (c.desde ?? c.dia);
 }
 
 /**
@@ -719,7 +734,9 @@ function emVariosDias(c: CompromissoExterno): boolean {
  * Evento de vários dias diz a faixa, porque apagar leva todos.
  */
 function quandoFalado(c: CompromissoExterno, hoje: string): string {
-  if (emVariosDias(c)) return `${diaFalado(c.dia, hoje)} a ${diaFalado(c.ate!, hoje)}`;
+  if (emVariosDias(c)) {
+    return `${diaFalado(c.desde ?? c.dia, hoje)} a ${diaFalado(c.ate ?? c.dia, hoje)}`;
+  }
   const hora = horaDoCompromisso(c);
   const dia = diaFalado(c.dia, hoje);
   if (hora) return `${dia}, ${hora}`;
@@ -821,8 +838,36 @@ function recusaPadrao(deFora: readonly CompromissoExterno[]): Resposta {
 
 const REGRA_PADRAO: RegraDoAlvo = { daParaAgir: DA_PARA_APAGAR, recusa: recusaPadrao };
 
-/** Alterar pede organizar; o resto da regra padrão serve. */
+/** Renomear pede organizar; o resto da regra padrão serve. Evento de vários dias se renomeia. */
 const REGRA_DE_ALTERAR: RegraDoAlvo = { ...REGRA_PADRAO, daParaAgir: DA_PARA_ALTERAR };
+
+const MOTIVO_DE_VARIOS_DIAS =
+  'Esse evento ocupa mais de um dia, e eu não sei movê-lo sem encurtar ou esticar. ' +
+  'Mexa direto no Google Agenda.';
+
+/**
+ * Mover pede organizar **e** um dia só: `AcaoNoGoogle.mover` leva um dia e não
+ * diz se o evento anda inteiro, encolhe ou estica, então `acaoNoGoogle` o
+ * recusa. A régua de escolher o alvo tem de saber o mesmo, ou "Qual delas?"
+ * apareceria para uma ação que termina em recusa. Renomear não tem esse
+ * limite, e por isso não usa esta régua.
+ */
+const DA_PARA_MOVER = (c: CompromissoExterno): boolean => DA_PARA_ALTERAR(c) && !emVariosDias(c);
+
+/**
+ * Quando nenhum candidato se move, o motivo pode ser mais de um. Os que já
+ * passariam por `DA_PARA_ALTERAR` só caíram por serem de vários dias; os
+ * outros caíram por permissão. Se todos caíram pelo mesmo motivo, ele é dito;
+ * misturados, não finjo saber qual vale.
+ */
+function recusaDeMover(deFora: readonly CompromissoExterno[]): Resposta {
+  const soPorVariosDias = deFora.filter((c) => DA_PARA_ALTERAR(c)).length;
+  if (soPorVariosDias === deFora.length) return recusaDoGoogle(deFora, MOTIVO_DE_VARIOS_DIAS);
+  if (soPorVariosDias > 0) return recusaDoGoogle(deFora);
+  return recusaPadrao(deFora);
+}
+
+const REGRA_DE_MOVER: RegraDoAlvo = { daParaAgir: DA_PARA_MOVER, recusa: recusaDeMover };
 
 /** Evento não se conclui: nenhum candidato serve, e o motivo não é permissão. */
 const REGRA_DE_CONCLUIR: RegraDoAlvo = {
@@ -1015,6 +1060,61 @@ export function rotuloDaConfirmacao(efeito: Efeito): string {
   }
 }
 
+/* ── Quando o efeito não acontece ────────────────────────────────────────── */
+
+/**
+ * O que a tela soube depois de tentar o efeito.
+ *
+ * Os efeitos de antes escreviam no banco local, onde falhar é quase
+ * impossível, e a tela podia assumir sucesso. O do Google depende de rede e de
+ * quem mais mexe na agenda, então "feito" passou a ser uma resposta, e não uma
+ * suposição. `motivo` é texto porque chega do servidor: um motivo que este
+ * código não conhece também precisa ter frase.
+ */
+export type ResultadoDoEfeito = { feito: true } | { feito: false; motivo: string };
+
+const NADA_MUDOU = 'Nada mudou.';
+
+/**
+ * A frase para cada recusa do Google, e nenhuma diz que algo foi feito: ela é
+ * mostrada no lugar do "Feito", e uma frase de recusa que soasse como sucesso
+ * seria a pior mentira que a tela poderia contar.
+ *
+ * O último caso não é uma recusa, é falta de resposta (rede, erro do servidor,
+ * resposta torta, ou uma gravação local que lançou). Nele eu não sei se a
+ * mudança chegou lá, e dizer "nada mudou" seria afirmar o que não sei. Por
+ * isso também não cita o Google: serve a qualquer efeito.
+ */
+export function frasePorMotivo(motivo: string): string {
+  switch (motivo) {
+    case 'inexistente':
+      return `Esse evento já não está no Google, então não havia o que mudar. ${NADA_MUDOU}`;
+    case 'sem-permissao':
+      return `O Google não deixou mexer nesse evento: a sua conta não tem permissão para isso. ${NADA_MUDOU}`;
+    case 'desconectado':
+      return `A conexão com o Google caiu. Reconecte o Google Agenda e peça de novo. ${NADA_MUDOU}`;
+    case 'mudou-enquanto-isso':
+      return `Outra pessoa alterou esse evento enquanto eu preparava a mudança, e por segurança não mexi. Confira como ele está e peça de novo. ${NADA_MUDOU}`;
+    case 'e-nosso':
+      return `Esse compromisso é do próprio MSL: nasceu de uma tarefa daqui, e mexer nele por fora seria desfeito na próxima sincronia. Mude pela tarefa. ${NADA_MUDOU}`;
+    default:
+      return 'Não tive resposta, e não sei se a mudança chegou a valer. Confira como está antes de pedir de novo.';
+  }
+}
+
+export type DesfechoDoTurno = { estado: 'confirmado' } | { estado: 'falhou'; frase: string };
+
+/**
+ * Em que pé o turno fica depois de tentar o efeito.
+ *
+ * Só `feito === true` confirma: a resposta vem de fora, e uma que não diga
+ * isso com todas as letras não pode virar "Feito".
+ */
+export function desfechoDoTurno(resultado: ResultadoDoEfeito): DesfechoDoTurno {
+  if (resultado.feito === true) return { estado: 'confirmado' };
+  return { estado: 'falhou', frase: frasePorMotivo((resultado as { motivo?: string }).motivo as string) };
+}
+
 /** Para quem não organiza: mover e renomear não são dele, e o texto diz a quem recorrer. */
 function recusaDeConvidado(c: CompromissoExterno): Resposta {
   return recusaDoGoogle([c], MOTIVO_DE_CONVIDADO);
@@ -1058,13 +1158,7 @@ function acaoNoGoogle(
   if (acao.tipo !== 'apagar' && !souOrganizador) return recusaDeConvidado(c);
   // As cópias de um evento de vários dias foram unidas em uma: `mover` leva um
   // dia só, e não diz se o evento encolhe, estica ou anda inteiro.
-  if (acao.tipo === 'mover' && emVariosDias(c)) {
-    return recusaDoGoogle(
-      [c],
-      'Esse evento ocupa mais de um dia, e eu não sei movê-lo sem encurtar ou esticar. ' +
-        'Mexa direto no Google Agenda.',
-    );
-  }
+  if (acao.tipo === 'mover' && emVariosDias(c)) return recusaDoGoogle([c], MOTIVO_DE_VARIOS_DIAS);
 
   let detalhe: string;
   let tom: Tom;
@@ -1105,8 +1199,8 @@ function acaoNoGoogle(
  *
  * Duas heranças são perigosas e por isso cortadas: o `diaInteiro` (um evento
  * de dia inteiro que ganha hora deixa de ser de dia inteiro, e herdá-lo faria
- * a prévia esconder justamente a hora pedida) e o `ate` (que, atrás do dia
- * novo, viraria uma faixa que o evento não terá).
+ * a prévia esconder justamente a hora pedida) e a faixa `desde`/`ate` (que,
+ * longe do dia novo, viraria uma faixa que o evento não terá).
  */
 function comoFicaDepoisDeMover(
   c: CompromissoExterno,
@@ -1115,6 +1209,7 @@ function comoFicaDepoisDeMover(
   return {
     ...c,
     dia: acao.dia,
+    desde: undefined,
     ate: undefined,
     hora: acao.hora,
     diaInteiro: c.diaInteiro && acao.hora === undefined,
@@ -1600,7 +1695,7 @@ export function responder(
     }
 
     case 'adiar-tarefa': {
-      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, REGRA_DE_ALTERAR);
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, REGRA_DE_MOVER);
       if (alvo.tipo === 'nada') return alvo.resposta;
       if (alvo.tipo === 'compromisso') {
         const c = alvo.compromisso;
@@ -1658,7 +1753,11 @@ export function responder(
     }
 
     case 'editar-tarefa': {
-      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, REGRA_DE_ALTERAR);
+      // Só a hora é mover; título (sozinho ou com hora, que depois recusa)
+      // renomeia, e renomear atravessa os vários dias.
+      const soHora = intencao.mudanca.hora !== undefined && intencao.mudanca.titulo === undefined;
+      const regra = soHora ? REGRA_DE_MOVER : REGRA_DE_ALTERAR;
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, regra);
       if (alvo.tipo === 'nada') return alvo.resposta;
       const pedida = intencao.mudanca;
       if (alvo.tipo === 'compromisso') return editarCompromisso(alvo.compromisso, pedida, hoje);

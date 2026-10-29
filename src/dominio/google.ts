@@ -412,6 +412,15 @@ export interface EventoParaTela {
   local?: string;
   diaInteiro: boolean;
   /**
+   * O primeiro e o último dia de um evento de vários dias, o mesmo em todas as
+   * cópias. A janela da tela corta o evento pelos dois lados, e sem estes dois
+   * campos uma cópia sozinha não sabe que pertence a algo maior: quem apaga
+   * mostraria um dia só enquanto o Google leva todos. Ausentes quando o evento
+   * ocupa um dia só.
+   */
+  desde?: string;
+  ate?: string;
+  /**
    * Se o evento é meu. Evento de outro organizador não aceita alteração
    * minha (o Google recusa ou, pior, aceita só para mim), então o agente só
    * mexe nos que são meus. Na dúvida é `false`: perder uma edição permitida
@@ -459,6 +468,10 @@ export function eventosParaTela(
         ? Math.max(ajuda.distanciaEmDias(inicio.dia, fim), 1)
         : 1;
 
+    // O fim de dia inteiro é exclusivo; o último dia do evento é o anterior.
+    const variosDias =
+      duracao > 1 ? { desde: inicio.dia, ate: ajuda.somarDias(inicio.dia, duracao - 1) } : {};
+
     for (let n = 0; n < duracao; n++) {
       const dia = ajuda.somarDias(inicio.dia, n);
       if (dia < de || dia > ate) continue;
@@ -478,6 +491,7 @@ export function eventosParaTela(
             : undefined,
         local: evento.location?.trim() || undefined,
         diaInteiro,
+        ...variosDias,
         souOrganizador: evento.organizer?.self === true,
       });
     }

@@ -8,8 +8,12 @@ import {
   responder,
   exigeConfirmacao,
   rotuloDaConfirmacao,
+  frasePorMotivo,
+  desfechoDoTurno,
   type CompromissoExterno,
+  type ResultadoDoEfeito,
 } from './agente';
+import type { MotivoDaRecusa } from '../servidor/rotasGoogle';
 import { bancoVazio, type Banco, type Tarefa, type Lancamento, type Rotina, type Projeto } from '../dados/esquema';
 
 /** 2026-09-17 é uma quinta-feira. Toda data escrita aqui parte dela. */
@@ -1358,6 +1362,11 @@ describe('ação sobre evento do Google', () => {
         { souOrganizador: false },
         { mexivel: false },
         { mexivel: false, souOrganizador: false },
+        // De vários dias: renomear e apagar atravessam, mover não. A pergunta
+        // tem de acompanhar a ação, e não o evento.
+        { ate: '2026-09-19' },
+        { desde: '2026-09-15' },
+        { ate: '2026-09-19', souOrganizador: false },
       ];
       const soTexto = (r: ReturnType<typeof responder>) =>
         r.blocos.flatMap((b) => (b.tipo === 'texto' ? [b.texto] : []));
@@ -1491,6 +1500,14 @@ describe('ação sobre evento do Google', () => {
       );
     });
 
+    it('a recusa de um evento unido cita o primeiro dia, qualquer que seja a ordem das cópias', () => {
+      for (const copias of [['2026-09-19', '2026-09-18'], ['2026-09-18', '2026-09-19']]) {
+        const r = apagarViagem(copias.map((d) => viagem(d, { mexivel: false })));
+        expect(r.titulo).toBe('Essa é do Google');
+        expect(itemDe(r)?.detalhe, copias.join()).toBe('2026-09-18');
+      }
+    });
+
     it('uids diferentes com o mesmo título seguem perguntando qual', () => {
       const r = apagarViagem([viagem('2026-09-18', { uid: 'a' }), viagem('2026-09-19', { uid: 'b' })]);
       expect(r.titulo).toBe('Qual delas?');
@@ -1508,6 +1525,132 @@ describe('ação sobre evento do Google', () => {
         const lista = r.blocos.find((b) => b.tipo === 'lista');
         expect(lista && lista.tipo === 'lista' ? lista.itens.length : 0).toBe(2);
       }
+    });
+  });
+
+  describe('o começo e o fim de um evento de vários dias, vindos do dado', () => {
+    const faixa = (extras: Partial<CompromissoExterno>) =>
+      evento({ titulo: 'Viagem a Brasília', diaInteiro: true, hora: undefined, uid: 'v1', ...extras });
+    const apagarViagem = (c: CompromissoExterno) =>
+      responder(vazio(), interpretar('cancela a viagem', HOJE), HOJE, [c]);
+
+    it('uma cópia só, vinda do meio do evento, diz o evento inteiro', () => {
+      const r = apagarViagem(faixa({ dia: '2026-09-19', desde: '2026-09-17', ate: '2026-09-21' }));
+      expect(itemDe(r)?.detalhe).toBe('Hoje a Segunda, 21/09');
+    });
+
+    it('uma cópia só, do último dia, ainda diz de onde o evento veio', () => {
+      // A janela cortou o começo: sem `desde` o evento pareceria começar no
+      // último dia, e apagar levaria muito mais do que a prévia mostrou.
+      const r = apagarViagem(faixa({ dia: '2026-09-21', desde: '2026-09-19' }));
+      expect(itemDe(r)?.detalhe).toBe('Sábado, 19/09 a Segunda, 21/09');
+    });
+
+    it('com o começo e o fim iguais ao dia, é um evento de um dia só', () => {
+      const r = apagarViagem(faixa({ dia: '2026-09-18', desde: '2026-09-18', ate: '2026-09-18' }));
+      expect(itemDe(r)?.detalhe).toBe('Amanhã, dia inteiro');
+    });
+
+    it('as cópias unidas guardam o começo mais antigo, venha ele de qual cópia vier', () => {
+      const a = faixa({ dia: '2026-09-19', desde: '2026-09-17', ate: '2026-09-21' });
+      const b = faixa({ dia: '2026-09-20', desde: '2026-09-17', ate: '2026-09-21' });
+      const sem = faixa({ dia: '2026-09-20' });
+      for (const copias of [[a, b], [b, a], [sem, a], [a, sem]]) {
+        const r = responder(vazio(), interpretar('cancela a viagem', HOJE), HOJE, copias);
+        expect(itemDe(r)?.detalhe, JSON.stringify(copias.map((c) => c.dia))).toBe('Hoje a Segunda, 21/09');
+      }
+    });
+
+    it('mover recusa mesmo quando só o começo denuncia os vários dias', () => {
+      const r = mover(faixa({ dia: '2026-09-21', desde: '2026-09-19' }), 'adiar a viagem para sexta');
+      expect(r.efeito).toBeUndefined();
+      expect(textoDe(r)).toContain('mais de um dia');
+    });
+
+    it('mudar a hora de um evento de dia único não herda o começo antigo na prévia', () => {
+      // Dia e começo iguais a hoje; movido para amanhã, o "depois" não pode
+      // virar a faixa "Hoje a Amanhã".
+      const r = mover(evento({ desde: HOJE, ate: HOJE }), 'adiar a reunião de equipe para sexta');
+      expect(itemDe(r)?.detalhe).toBe('Hoje, 10:00 → Amanhã, 10:00');
+    });
+  });
+
+  describe('a pergunta e a recusa de mover acompanham os vários dias', () => {
+    const viagem = (uid: string, extras: Partial<CompromissoExterno> = {}) =>
+      evento({
+        titulo: 'Viagem',
+        uid,
+        diaInteiro: true,
+        hora: undefined,
+        dia: '2026-09-18',
+        desde: '2026-09-18',
+        ate: '2026-09-20',
+        ...extras,
+      });
+    const dizer = (frase: string, fora: CompromissoExterno[]) =>
+      responder(vazio(), interpretar(frase, HOJE), HOJE, fora);
+    const quemMove = ['adiar a viagem para sexta', 'muda a viagem para 15h'];
+
+    it('dois eventos de vários dias: adiar e mudar a hora recusam de primeira, sem perguntar', () => {
+      for (const frase of quemMove) {
+        const r = dizer(frase, [viagem('a'), viagem('b')]);
+        expect(r.titulo, frase).toBe('Essa é do Google');
+        expect(r.efeito, frase).toBeUndefined();
+        expect(textoDe(r), frase).toContain('mais de um dia');
+      }
+    });
+
+    it('o motivo é o dos vários dias, e não o de "outra pessoa", que seria falso para quem organiza', () => {
+      const r = dizer('adiar a viagem para sexta', [viagem('a'), viagem('b')]);
+      expect(textoDe(r)).not.toContain('de outra pessoa');
+    });
+
+    it('dois eventos de vários dias ainda perguntam qual para renomear e para apagar: ambos atravessam', () => {
+      for (const frase of ['renomeia a viagem para Férias', 'cancela a viagem']) {
+        const r = dizer(frase, [viagem('a'), viagem('b')]);
+        expect(r.titulo, frase).toBe('Qual delas?');
+      }
+    });
+
+    it('um de vários dias e um de um dia só: mover pergunta, porque a escolha do segundo leva a efeito', () => {
+      const dois = [viagem('a'), evento({ titulo: 'Viagem', uid: 'b', dia: '2026-09-19' })];
+      expect(dizer('adiar a viagem para sexta', dois).titulo).toBe('Qual delas?');
+    });
+
+    it('de vários dias e convidado: os motivos diferem, e o texto não escolhe um', () => {
+      const dois = [viagem('a'), evento({ titulo: 'Viagem', uid: 'b', souOrganizador: false })];
+      for (const ordem of [dois, [...dois].reverse()]) {
+        const r = dizer('adiar a viagem para sexta', ordem);
+        expect(r.titulo).toBe('Essa é do Google');
+        expect(textoDe(r)).not.toContain('de outra pessoa');
+        expect(textoDe(r)).not.toContain('mais de um dia');
+      }
+    });
+
+    it('de vários dias e não mexível: também sem escolher um motivo', () => {
+      const dois = [viagem('a'), evento({ titulo: 'Viagem', uid: 'b', mexivel: false })];
+      const r = dizer('adiar a viagem para sexta', dois);
+      expect(r.titulo).toBe('Essa é do Google');
+      expect(textoDe(r)).not.toContain('mais de um dia');
+    });
+
+    it('dois de vários dias de convidado: o motivo continua sendo o de convidado', () => {
+      const r = dizer('adiar a viagem para sexta', [
+        viagem('a', { souOrganizador: false }),
+        viagem('b', { souOrganizador: false }),
+      ]);
+      expect(textoDe(r)).toContain('de outra pessoa');
+      expect(textoDe(r)).not.toContain('mais de um dia');
+    });
+
+    it('uma frase que pede título e hora segue a regra de renomear, que atravessa', () => {
+      const r = responder(
+        vazio(),
+        { tipo: 'editar-tarefa', alvo: 'viagem', mudanca: { titulo: 'Férias', hora: '15:00' } },
+        HOJE,
+        [viagem('a'), viagem('b')],
+      );
+      expect(r.titulo).toBe('Qual delas?');
     });
   });
 
@@ -1541,6 +1684,94 @@ describe('ação sobre evento do Google', () => {
       for (const r of [apagar(evento()), apagar(evento({ souOrganizador: false })), mover(evento()), renomear(evento())]) {
         expect(['Apagar', 'Adiar', 'Salvar']).toContain(r.titulo);
         expect(JSON.stringify(r.blocos)).not.toMatch(/apagad|cancelad|movid|renomead|salv[oa]d|adiad|foi |foram /i);
+      }
+    });
+  });
+});
+
+describe('o que dizer quando o Google não fez', () => {
+  const MOTIVOS: Record<MotivoDaRecusa, true> = {
+    inexistente: true,
+    'sem-permissao': true,
+    desconectado: true,
+    'mudou-enquanto-isso': true,
+    'e-nosso': true,
+  };
+  // Se o servidor ganhar um sexto motivo, a linha acima deixa de compilar.
+  const motivos = Object.keys(MOTIVOS);
+
+  // Promessa de coisa feita. A frase de recusa existe justamente para dizer o
+  // contrário, e a tela já tem um "Feito" para o caso de sucesso.
+  const DIZ_QUE_FEZ = /\bfeit[oa]s?\b|\b(apaguei|apagado|movi|movido|renomeei|renomeado|salvei|salvo|alterei|mudei|removi)\b/i;
+
+  it('são cinco motivos, cada um com a sua frase', () => {
+    expect(motivos).toHaveLength(5);
+    expect(new Set(motivos.map(frasePorMotivo)).size).toBe(5);
+  });
+
+  it('nenhuma frase diz que algo foi feito, e as cinco dizem que nada mudou', () => {
+    for (const m of motivos) {
+      expect(frasePorMotivo(m), m).not.toMatch(DIZ_QUE_FEZ);
+      expect(frasePorMotivo(m), m).toMatch(/nada mudou/i);
+    }
+  });
+
+  it('404 diz que o evento já não existe, e não que falhou', () => {
+    expect(frasePorMotivo('inexistente')).toContain('já não está');
+    expect(frasePorMotivo('inexistente')).not.toMatch(/falh|erro/i);
+  });
+
+  it('"sem-permissao" diz que o Google não deixou, e que é questão de permissão', () => {
+    expect(frasePorMotivo('sem-permissao')).toMatch(/permiss/i);
+  });
+
+  it('"desconectado" manda reconectar', () => {
+    expect(frasePorMotivo('desconectado')).toMatch(/reconect/i);
+  });
+
+  it('"mudou-enquanto-isso" diz que outra pessoa alterou, e que nada mudou', () => {
+    expect(frasePorMotivo('mudou-enquanto-isso')).toMatch(/outra pessoa alterou/i);
+  });
+
+  it('"e-nosso" diz que o compromisso é do próprio MSL, e a quem recorrer', () => {
+    const f = frasePorMotivo('e-nosso');
+    expect(f).toContain('próprio MSL');
+    expect(f).toMatch(/tarefa/i);
+  });
+
+  it('um motivo que não conheço não vira sucesso nem culpa uma causa que não sei', () => {
+    for (const m of ['indisponivel', 'motivo-novo', '', undefined]) {
+      const f = frasePorMotivo(m as string);
+      expect(f, String(m)).not.toMatch(DIZ_QUE_FEZ);
+      expect(f, String(m)).toContain('não sei se');
+      expect(motivos.map(frasePorMotivo), String(m)).not.toContain(f);
+    }
+  });
+
+  it('só quem ficou sem resposta diz "não sei se": os outros cinco sabem', () => {
+    for (const m of motivos) expect(frasePorMotivo(m), m).not.toContain('não sei se');
+  });
+
+  describe('o estado do turno depois do efeito', () => {
+    it('feito confirma', () => {
+      expect(desfechoDoTurno({ feito: true })).toEqual({ estado: 'confirmado' });
+    });
+
+    it('cada motivo falha com a frase dele', () => {
+      for (const m of motivos) {
+        expect(desfechoDoTurno({ feito: false, motivo: m }), m).toEqual({
+          estado: 'falhou',
+          frase: frasePorMotivo(m),
+        });
+      }
+    });
+
+    it('resposta que não diz "feito" com todas as letras não confirma nada', () => {
+      // O servidor, um proxy ou um erro de rede podem devolver qualquer coisa.
+      // Só `feito: true` vira "Feito".
+      for (const torta of [{}, { feito: 'true' }, { feito: 1 }, { feito: undefined }, { feito: false }]) {
+        const d = desfechoDoTurno(torta as unknown as ResultadoDoEfeito);
+        expect(d.estado, JSON.stringify(torta)).toBe('falhou');
       }
     });
   });
