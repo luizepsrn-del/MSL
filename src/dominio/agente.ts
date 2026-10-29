@@ -792,17 +792,52 @@ const DA_PARA_APAGAR = (c: CompromissoExterno): boolean => idParaMexer(c) !== un
 const DA_PARA_ALTERAR = (c: CompromissoExterno): boolean => DA_PARA_APAGAR(c) && c.souOrganizador === true;
 
 /**
- * `daParaAgir` é de quem chama, porque a mesma lista de candidatos pode ser
- * boa para uma ação e inútil para outra: perguntar "qual delas?" para depois
- * recusar todas é mandar o dono decidir sobre o que não vai acontecer. O padrão
- * é a régua de apagar, que é a mais larga das ações do Google.
+ * O que quem chama sabe e `umAlvo` não: a ação.
+ *
+ * - `daParaAgir`: o candidato leva à ação? A mesma lista pode ser boa para uma
+ *   ação e inútil para outra, e perguntar "qual delas?" para depois recusar
+ *   todas é mandar o dono decidir sobre o que não vai acontecer. O padrão é a
+ *   régua de apagar, a mais larga das ações do Google.
+ * - `recusa`: o que dizer quando nenhum leva. É de quem chama porque o motivo
+ *   também é da ação — concluir recusa por "não existe feito", e não por
+ *   permissão. Deixar `umAlvo` deduzi-lo do filtro supunha que o filtro fosse
+ *   sempre a régua seguinte à de apagar, e qualquer terceiro filtro herdaria
+ *   um motivo mentiroso.
  */
+interface RegraDoAlvo {
+  daParaAgir: (c: CompromissoExterno) => boolean;
+  recusa: (deFora: readonly CompromissoExterno[]) => Resposta;
+}
+
+/**
+ * A recusa padrão, para as ações cuja régua é `DA_PARA_APAGAR` ou a que a
+ * estreita: o motivo é de convidado só quando todos são mexíveis e o que falta
+ * é organizar; com um não mexível no meio, não finjo saber qual foi.
+ */
+function recusaPadrao(deFora: readonly CompromissoExterno[]): Resposta {
+  const soFaltaOrganizar = deFora.every((c) => DA_PARA_APAGAR(c));
+  return recusaDoGoogle(deFora, soFaltaOrganizar ? MOTIVO_DE_CONVIDADO : undefined);
+}
+
+const REGRA_PADRAO: RegraDoAlvo = { daParaAgir: DA_PARA_APAGAR, recusa: recusaPadrao };
+
+/** Alterar pede organizar; o resto da regra padrão serve. */
+const REGRA_DE_ALTERAR: RegraDoAlvo = { ...REGRA_PADRAO, daParaAgir: DA_PARA_ALTERAR };
+
+/** Evento não se conclui: nenhum candidato serve, e o motivo não é permissão. */
+const REGRA_DE_CONCLUIR: RegraDoAlvo = {
+  daParaAgir: () => false,
+  recusa: (deFora) => recusaDoGoogle(deFora, NAO_SE_CONCLUI),
+};
+
+const NAO_SE_CONCLUI = 'Compromisso do Google não se conclui: do lado de lá não existe "feito".';
+
 function umAlvo(
   banco: Banco,
   alvo: string,
   hoje: string,
   compromissos: readonly CompromissoExterno[] = [],
-  daParaAgir: (c: CompromissoExterno) => boolean = DA_PARA_APAGAR,
+  regra: RegraDoAlvo = REGRA_PADRAO,
 ): Alvo {
   const candidatas = acharTarefas(banco, alvo);
 
@@ -827,15 +862,9 @@ function umAlvo(
   if (deFora.length === 1) return { tipo: 'compromisso', compromisso: deFora[0] };
 
   if (deFora.length > 1) {
-    // Se nenhum leva à ação, o resultado seria a recusa de qualquer jeito. O
-    // motivo é de convidado só quando todos são mexíveis e o que falta é
-    // organizar; com um não mexível no meio, não finjo saber qual foi.
-    if (deFora.every((c) => !daParaAgir(c))) {
-      const soFaltaOrganizar = deFora.every((c) => DA_PARA_APAGAR(c));
-      return {
-        tipo: 'nada',
-        resposta: recusaDoGoogle(deFora, soFaltaOrganizar ? MOTIVO_DE_CONVIDADO : undefined),
-      };
+    // Se nenhum leva à ação, o resultado seria a recusa de qualquer jeito.
+    if (deFora.every((c) => !regra.daParaAgir(c))) {
+      return { tipo: 'nada', resposta: regra.recusa(deFora) };
     }
     // Do mais próximo ao mais distante, e dentro do dia pela hora; o dia
     // inteiro vem antes, como na agenda.
@@ -1547,16 +1576,11 @@ export function responder(
       };
 
     case 'concluir-tarefa': {
-      const achado = umAlvo(banco, intencao.alvo, hoje, compromissos);
+      const achado = umAlvo(banco, intencao.alvo, hoje, compromissos, REGRA_DE_CONCLUIR);
       if (achado.tipo === 'nada') return achado.resposta;
       // Evento não se conclui: do lado do Google não existe "feito". Apagar,
       // mover e renomear atravessam; concluir fica com a recusa.
-      if (achado.tipo === 'compromisso') {
-        return recusaDoGoogle(
-          [achado.compromisso],
-          'Compromisso do Google não se conclui: do lado de lá não existe "feito".',
-        );
-      }
+      if (achado.tipo === 'compromisso') return REGRA_DE_CONCLUIR.recusa([achado.compromisso]);
       const alvo = achado.tarefa;
       // No passado ("Concluída", "Marcada agora") esta resposta mentia: ela é
       // desenhada **antes** da confirmação, e o efeito pode nunca acontecer.
@@ -1576,7 +1600,7 @@ export function responder(
     }
 
     case 'adiar-tarefa': {
-      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, DA_PARA_ALTERAR);
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, REGRA_DE_ALTERAR);
       if (alvo.tipo === 'nada') return alvo.resposta;
       if (alvo.tipo === 'compromisso') {
         const c = alvo.compromisso;
@@ -1634,7 +1658,7 @@ export function responder(
     }
 
     case 'editar-tarefa': {
-      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, DA_PARA_ALTERAR);
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, REGRA_DE_ALTERAR);
       if (alvo.tipo === 'nada') return alvo.resposta;
       const pedida = intencao.mudanca;
       if (alvo.tipo === 'compromisso') return editarCompromisso(alvo.compromisso, pedida, hoje);

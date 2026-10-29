@@ -1337,6 +1337,93 @@ describe('ação sobre evento do Google', () => {
       expect(textoDe(r)).not.toContain('de outra pessoa');
     });
 
+    it('concluir nunca pergunta qual: recusa de primeira, com o motivo de concluir', () => {
+      for (const extras of [{}, { souOrganizador: false }, { mexivel: false }]) {
+        for (const n of [1, 2, 3]) {
+          const fora = Array.from({ length: n }, (_, i) => reuniao(`u${i}`, extras));
+          const r = dizer('concluir reunião', fora);
+          const rotulo = `${JSON.stringify(extras)} x${n}`;
+          expect(r.titulo, rotulo).toBe('Essa é do Google');
+          expect(r.efeito, rotulo).toBeUndefined();
+          expect(textoDe(r), rotulo).toContain('não existe "feito"');
+          expect(textoDe(r), rotulo).not.toMatch(/não consigo mexer|de outra pessoa/);
+        }
+      }
+    });
+
+    it('o texto da recusa não muda com o número de eventos, em nenhum dos quatro comandos', () => {
+      const frases = ['cancela a reunião', ...quemAltera, 'concluir reunião'];
+      const tipos: Partial<CompromissoExterno>[] = [
+        {},
+        { souOrganizador: false },
+        { mexivel: false },
+        { mexivel: false, souOrganizador: false },
+      ];
+      const soTexto = (r: ReturnType<typeof responder>) =>
+        r.blocos.flatMap((b) => (b.tipo === 'texto' ? [b.texto] : []));
+      for (const frase of frases) {
+        for (const extras of tipos) {
+          const um = dizer(frase, [reuniao('u0', extras)]);
+          if (um.efeito) continue; // só se compara o que recusa
+          for (const n of [2, 3]) {
+            const fora = Array.from({ length: n }, (_, i) => reuniao(`u${i}`, extras));
+            const r = dizer(frase, fora);
+            const rotulo = `${frase} / ${JSON.stringify(extras)} x${n}`;
+            expect(r.titulo, rotulo).toBe(um.titulo);
+            expect(soTexto(r), rotulo).toEqual(soTexto(um));
+          }
+        }
+      }
+    });
+
+    it('oráculo: "Qual delas?" aparece se e somente se algum evento sozinho produz efeito', () => {
+      const tipos: Partial<CompromissoExterno>[] = [
+        {},
+        { souOrganizador: false },
+        { mexivel: false },
+        { mexivel: false, souOrganizador: false },
+      ];
+      const semUid: Partial<CompromissoExterno> = { uid: '' };
+      const todos = [...tipos, semUid];
+      const combinacoes: Partial<CompromissoExterno>[][] = [];
+      for (const a of todos) {
+        combinacoes.push([a]);
+        for (const b of todos) {
+          combinacoes.push([a, b]);
+          for (const c of todos) combinacoes.push([a, b, c]);
+        }
+      }
+      for (const frase of ['cancela a reunião', ...quemAltera, 'concluir reunião']) {
+        for (const combinacao of combinacoes) {
+          const fora = combinacao.map((extras, i) => reuniao(extras.uid === '' ? '' : `u${i}`, extras));
+          const algumAge = fora.some((c) => dizer(frase, [c]).efeito !== undefined);
+          const pergunta = dizer(frase, fora).titulo === 'Qual delas?';
+          // Um evento só nunca pergunta; vários, só quando uma escolha leva a efeito.
+          expect(pergunta, `${frase} / ${JSON.stringify(combinacao)}`).toBe(fora.length > 1 && algumAge);
+        }
+      }
+    });
+
+    it('um convidado e um não mexível, em qualquer ordem, recusam com o texto genérico', () => {
+      const convidado = reuniao('a', { souOrganizador: false });
+      const naoMexivel = reuniao('b', { mexivel: false });
+      for (const ordem of [[convidado, naoMexivel], [naoMexivel, convidado]]) {
+        const r = dizer('adiar a reunião para sexta', ordem);
+        expect(r.titulo).toBe('Essa é do Google');
+        expect(textoDe(r)).not.toContain('de outra pessoa');
+      }
+    });
+
+    it('um não mexível que também é convidado não se confunde com um convidado mexível', () => {
+      const convidado = reuniao('a', { souOrganizador: false });
+      const naoMexivelConvidado = reuniao('b', { mexivel: false, souOrganizador: false });
+      for (const ordem of [[convidado, naoMexivelConvidado], [naoMexivelConvidado, convidado]]) {
+        const r = dizer('adiar a reunião para sexta', ordem);
+        expect(r.titulo).toBe('Essa é do Google');
+        expect(textoDe(r)).not.toContain('de outra pessoa');
+      }
+    });
+
     it('um não mexível e um organizador: a pergunta vale, para apagar e para alterar', () => {
       const dois = [reuniao('a', { mexivel: false }), reuniao('b')];
       for (const frase of [...quemAltera, 'cancela a reunião']) {
