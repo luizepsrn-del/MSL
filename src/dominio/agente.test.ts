@@ -838,6 +838,66 @@ describe('editar tarefa', () => {
     expect(r.efeito).toBeUndefined();
   });
 
+  it('tarefa ganha de compromisso quando o nome casa nos dois', () => {
+    const b = banco({ tarefas: [tarefa({ id: 'r', titulo: 'Reunião' })] });
+    const fora: CompromissoExterno[] = [
+      { titulo: 'Reunião', dia: HOJE, hora: '10:00', diaInteiro: false, uid: 'g1', mexivel: true },
+    ];
+    const r = responder(b, interpretar('exclui a reunião', HOJE), HOJE, fora);
+
+    expect(r.titulo).toBe('Excluir');
+    expect(r.efeito).toMatchObject({ tipo: 'excluir-tarefa', id: 'r' });
+  });
+
+  it('dois compromissos do Google com o mesmo nome perguntam qual', () => {
+    const fora: CompromissoExterno[] = [
+      { titulo: 'Reunião com o cliente', dia: HOJE, hora: '10:00', diaInteiro: false, uid: 'g1', mexivel: true },
+      { titulo: 'Reunião de equipe', dia: '2026-09-19', hora: '14:00', diaInteiro: false, uid: 'g2', mexivel: true },
+    ];
+    const r = responder(banco({ tarefas: [] }), interpretar('exclui a reunião', HOJE), HOJE, fora);
+
+    expect(r.titulo).toBe('Qual delas?');
+    expect(r.efeito).toBeUndefined();
+    const texto = JSON.stringify(r.blocos);
+    expect(texto).toContain('Reunião com o cliente');
+    expect(texto).toContain('Reunião de equipe');
+  });
+
+  it('compromisso não mexível mantém a recusa honesta', () => {
+    const fora: CompromissoExterno[] = [
+      { titulo: 'Reunião de equipe', dia: HOJE, hora: '10:00', diaInteiro: false, uid: 'g1' },
+    ];
+    const r = responder(banco({ tarefas: [] }), interpretar('exclui a reunião', HOJE), HOJE, fora);
+
+    expect(r.titulo).toBe('Essa é do Google');
+    expect(r.efeito).toBeUndefined();
+  });
+
+  it('mexível ou não, o compromisso ainda é recusado nos quatro comandos', () => {
+    const fora: CompromissoExterno[] = [
+      { titulo: 'Reunião de equipe', dia: HOJE, hora: '10:00', diaInteiro: false, uid: 'g1', mexivel: true },
+    ];
+    for (const frase of [
+      'concluir reunião de equipe',
+      'adiar a reunião de equipe para sexta',
+      'exclui a reunião de equipe',
+      'renomeia a reunião de equipe para Call',
+    ]) {
+      const r = responder(banco({ tarefas: [] }), interpretar(frase, HOJE), HOJE, fora);
+      expect(r.titulo, frase).toBe('Essa é do Google');
+      expect(r.efeito, frase).toBeUndefined();
+    }
+  });
+
+  it('dois compromissos que não dá para mexer seguem na recusa, sem pergunta inútil', () => {
+    const fora: CompromissoExterno[] = [
+      { titulo: 'Reunião A', dia: HOJE, hora: '10:00', diaInteiro: false },
+      { titulo: 'Reunião B', dia: HOJE, hora: '11:00', diaInteiro: false },
+    ];
+    const r = responder(banco({ tarefas: [] }), interpretar('exclui a reunião', HOJE), HOJE, fora);
+    expect(r.titulo).toBe('Essa é do Google');
+  });
+
   it('sem nada parecido na agenda de fora, continua sendo "não achei"', () => {
     const r = responder(banco({ tarefas: [] }), interpretar('cancela o dentista', HOJE), HOJE, []);
     expect(r.titulo).toBe('Não achei essa tarefa');

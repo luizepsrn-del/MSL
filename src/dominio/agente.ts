@@ -598,6 +598,18 @@ export interface CompromissoExterno {
   /** `HH:MM` de início; ausente quando ocupa o dia inteiro */
   hora?: string;
   diaInteiro: boolean;
+  /**
+   * O id do evento no Google. É o que uma ação futura usa para apontar o
+   * compromisso certo, em vez de reencontrá-lo pelo título.
+   */
+  uid?: string;
+  /**
+   * Se o Google deixa mexer neste evento. Ausente vale **não**: quem não
+   * afirmou que dá para mexer não ganha uma ação por omissão.
+   */
+  mexivel?: boolean;
+  /** Se a agenda é minha como organizador; convidado não decide pelos outros. */
+  souOrganizador?: boolean;
 }
 
 /** Os compromissos de um dia, em ordem de hora. Dia inteiro vem primeiro. */
@@ -627,15 +639,60 @@ function listaDeCompromissos(itens: readonly CompromissoExterno[], titulo: strin
 /* ── Achar uma tarefa só ─────────────────────────────────────────────────── */
 
 /**
- * O alvo de um comando, quando ele precisa de exatamente uma tarefa.
+ * O alvo de um comando: uma tarefa daqui, um compromisso de fora, ou nada.
  *
- * Três comandos — concluir, adiar e excluir — fazem a mesma pergunta e erram
- * do mesmo jeito caro: agir na tarefa errada só se descobre depois. A escolha
- * aqui é nunca escolher por conta própria quando há empate.
+ * Quatro comandos — concluir, adiar, excluir e editar — fazem a mesma pergunta
+ * e erram do mesmo jeito caro: agir no alvo errado só se descobre depois. A
+ * escolha aqui é nunca escolher por conta própria quando há empate.
+ *
+ * Tarefa ganha de compromisso. O que o MSL criou é dele; e a tarefa espelhada
+ * no Google carrega a marca `msl`, então nem chega na lista de compromissos.
+ * O empate só vale **dentro** de cada grupo: uma tarefa e um compromisso com o
+ * mesmo nome não pedem pergunta, a tarefa responde.
  */
-type Alvo = { achou: true; tarefa: Tarefa } | { achou: false; resposta: Resposta };
+export type Alvo =
+  | { tipo: 'tarefa'; tarefa: Tarefa }
+  | { tipo: 'compromisso'; compromisso: CompromissoExterno }
+  | { tipo: 'nada'; resposta: Resposta };
 
-function umaTarefa(
+/** O dia e a hora de um compromisso numa linha, para dizer de qual se fala. */
+function quandoDoCompromisso(c: CompromissoExterno): string {
+  return c.diaInteiro ? c.dia : `${c.dia}${c.hora ? `, ${c.hora}` : ''}`;
+}
+
+/**
+ * A recusa honesta para compromisso que nasceu fora.
+ *
+ * O agente **mostra** esses compromissos desde que passou a enxergar o Google,
+ * e responder "não achei" sobre algo que ele acabou de listar é mentir por
+ * tecnicismo. Recebe uma lista porque, sem poder mexer em nenhum, listar todos
+ * os que casam é mais útil do que perguntar qual — e perguntar para depois
+ * recusar seria uma pergunta inútil.
+ */
+function recusaDoGoogle(deFora: readonly CompromissoExterno[]): Resposta {
+  return {
+    titulo: 'Essa é do Google',
+    blocos: [
+      {
+        tipo: 'lista',
+        itens: deFora.slice(0, LIMITE_DA_LISTA).map((c) => ({
+          texto: c.titulo,
+          detalhe: quandoDoCompromisso(c),
+          tom: 'neutro' as const,
+        })),
+      },
+      {
+        tipo: 'texto',
+        texto:
+          'Esse compromisso nasceu no Google, e eu só mexo no que foi criado aqui. ' +
+          'Por ora, altere direto no Google Agenda.',
+      },
+      { tipo: 'atalho', rotulo: 'Abrir calendário', destino: '/app/calendario' },
+    ],
+  };
+}
+
+function umAlvo(
   banco: Banco,
   alvo: string,
   hoje: string,
@@ -643,46 +700,11 @@ function umaTarefa(
 ): Alvo {
   const candidatas = acharTarefas(banco, alvo);
 
-  if (candidatas.length === 0) {
-    // Antes de dizer "não achei", olhar a agenda de fora. O agente **mostra**
-    // esses compromissos desde que passou a enxergar o Google, e responder
-    // "não achei" sobre algo que ele acabou de listar é mentir por tecnicismo.
-    const deFora = acharCompromissos(compromissos, alvo);
-    if (deFora.length > 0) {
-      return {
-        achou: false,
-        resposta: {
-          titulo: 'Essa é do Google',
-          blocos: [
-            { tipo: 'lista', itens: deFora.slice(0, LIMITE_DA_LISTA).map((c) => ({
-              texto: c.titulo,
-              detalhe: c.diaInteiro ? c.dia : `${c.dia}${c.hora ? `, ${c.hora}` : ''}`,
-              tom: 'neutro' as const,
-            })) },
-            {
-              tipo: 'texto',
-              texto:
-                'Esse compromisso nasceu no Google, e eu só mexo no que foi criado aqui. ' +
-                'Por ora, altere direto no Google Agenda.',
-            },
-            { tipo: 'atalho', rotulo: 'Abrir calendário', destino: '/app/calendario' },
-          ],
-        },
-      };
-    }
-
-    return {
-      achou: false,
-      resposta: {
-        titulo: 'Não achei essa tarefa',
-        blocos: [{ tipo: 'texto', texto: `Nenhuma tarefa pendente com "${alvo}" no nome.` }],
-      },
-    };
-  }
+  if (candidatas.length === 1) return { tipo: 'tarefa', tarefa: candidatas[0] };
 
   if (candidatas.length > 1) {
     return {
-      achou: false,
+      tipo: 'nada',
       resposta: {
         titulo: 'Qual delas?',
         blocos: [
@@ -693,7 +715,49 @@ function umaTarefa(
     };
   }
 
-  return { achou: true, tarefa: candidatas[0] };
+  // Só olha a agenda de fora quando nenhuma tarefa casou: tarefa vence.
+  const deFora = acharCompromissos(compromissos, alvo);
+
+  if (deFora.length === 1) return { tipo: 'compromisso', compromisso: deFora[0] };
+
+  if (deFora.length > 1) {
+    // Se nenhum é mexível, o resultado seria a recusa de qualquer jeito.
+    if (deFora.every((c) => !c.mexivel)) {
+      return { tipo: 'nada', resposta: recusaDoGoogle(deFora) };
+    }
+    // Do mais próximo ao mais distante, e dentro do dia pela hora; o dia
+    // inteiro vem antes, como na agenda.
+    const ordenados = [...deFora].sort(
+      (x, y) => x.dia.localeCompare(y.dia) || (x.hora ?? '').localeCompare(y.hora ?? ''),
+    );
+    const mostrados = ordenados.slice(0, LIMITE_DA_LISTA);
+    return {
+      tipo: 'nada',
+      resposta: {
+        titulo: 'Qual delas?',
+        blocos: [
+          { tipo: 'texto', texto: `${deFora.length} compromissos do Google combinam com o que você escreveu.` },
+          {
+            tipo: 'lista',
+            restantes: ordenados.length - mostrados.length,
+            itens: mostrados.map((c) => ({
+              texto: c.titulo,
+              detalhe: quandoDoCompromisso(c),
+              tom: 'neutro' as const,
+            })),
+          },
+        ],
+      },
+    };
+  }
+
+  return {
+    tipo: 'nada',
+    resposta: {
+      titulo: 'Não achei essa tarefa',
+      blocos: [{ tipo: 'texto', texto: `Nenhuma tarefa pendente com "${alvo}" no nome.` }],
+    },
+  };
 }
 
 /* ── Resposta ────────────────────────────────────────────────────────────── */
@@ -1175,8 +1239,10 @@ export function responder(
       };
 
     case 'concluir-tarefa': {
-      const achado = umaTarefa(banco, intencao.alvo, hoje, compromissos);
-      if (!achado.achou) return achado.resposta;
+      const achado = umAlvo(banco, intencao.alvo, hoje, compromissos);
+      // Compromisso do Google ainda é recusado aqui; as ações vêm depois.
+      if (achado.tipo === 'nada') return achado.resposta;
+      if (achado.tipo === 'compromisso') return recusaDoGoogle([achado.compromisso]);
       const alvo = achado.tarefa;
       // No passado ("Concluída", "Marcada agora") esta resposta mentia: ela é
       // desenhada **antes** da confirmação, e o efeito pode nunca acontecer.
@@ -1196,8 +1262,9 @@ export function responder(
     }
 
     case 'adiar-tarefa': {
-      const alvo = umaTarefa(banco, intencao.alvo, hoje, compromissos);
-      if (!alvo.achou) return alvo.resposta;
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos);
+      if (alvo.tipo === 'nada') return alvo.resposta;
+      if (alvo.tipo === 'compromisso') return recusaDoGoogle([alvo.compromisso]);
 
       const antes = detalheDe(alvo.tarefa.prazo, alvo.tarefa.hora, hoje);
       const depois = detalheDe(intencao.prazo, intencao.hora ?? alvo.tarefa.hora, hoje);
@@ -1220,8 +1287,9 @@ export function responder(
     }
 
     case 'excluir-tarefa': {
-      const alvo = umaTarefa(banco, intencao.alvo, hoje, compromissos);
-      if (!alvo.achou) return alvo.resposta;
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos);
+      if (alvo.tipo === 'nada') return alvo.resposta;
+      if (alvo.tipo === 'compromisso') return recusaDoGoogle([alvo.compromisso]);
 
       return {
         titulo: 'Excluir',
@@ -1243,8 +1311,9 @@ export function responder(
     }
 
     case 'editar-tarefa': {
-      const alvo = umaTarefa(banco, intencao.alvo, hoje, compromissos);
-      if (!alvo.achou) return alvo.resposta;
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos);
+      if (alvo.tipo === 'nada') return alvo.resposta;
+      if (alvo.tipo === 'compromisso') return recusaDoGoogle([alvo.compromisso]);
 
       const pedida = intencao.mudanca;
       const mudanca: MudancaDeTarefa = {};
