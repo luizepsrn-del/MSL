@@ -128,10 +128,37 @@ export function estaVelho(guardado: Guardado | null, agora: Date): boolean {
 /* ── A conversa com o servidor ───────────────────────────────────────────── */
 
 export class ErroDoGoogle extends Error {
-  constructor(mensagem: string) {
+  constructor(
+    mensagem: string,
+    /** o status HTTP que o servidor devolveu */
+    readonly estado?: number,
+    /** o `erro` do corpo: 'google' quando é o Google, 'sessao-invalida' quando é o MSL */
+    readonly codigo?: string,
+  ) {
     super(mensagem);
     this.name = 'ErroDoGoogle';
   }
+}
+
+/**
+ * O Google deixou de aceitar a credencial guardada?
+ *
+ * É o caso em que o cartão de Ajustes precisa voltar a oferecer **Conectar**:
+ * a credencial ainda existe no servidor, então `google-estado` segue dizendo
+ * "conectado", mas toda chamada falha — o consentimento expira a cada 7 dias em
+ * modo de testes, ou o dono o revogou. Sem este teste o cartão ficava em
+ * "Conectada", com a mensagem "Reconecte a agenda em Ajustes" apontando para um
+ * botão que não existia.
+ *
+ * O 401 da **sessão do MSL** também chega aqui, e não conta: reconectar o
+ * Google não o resolve. É o `codigo` que separa os dois.
+ */
+export function perdeuOAcesso(erro: unknown): boolean {
+  return (
+    erro instanceof ErroDoGoogle &&
+    erro.codigo === 'google' &&
+    (erro.estado === 401 || erro.estado === 403)
+  );
 }
 
 const token = () => window.localStorage.getItem('msl-sessao');
@@ -175,8 +202,14 @@ export async function falar<T>(
     body: temCorpo ? JSON.stringify(corpo ?? {}) : undefined,
   });
 
-  const dados = (await resposta.json().catch(() => ({}))) as T & { mensagem?: string };
-  if (!resposta.ok) throw new ErroDoGoogle(dados.mensagem ?? 'Não consegui falar com o Google.');
+  const dados = (await resposta.json().catch(() => ({}))) as T & { mensagem?: string; erro?: string };
+  if (!resposta.ok) {
+    throw new ErroDoGoogle(
+      dados.mensagem ?? 'Não consegui falar com o Google.',
+      resposta.status,
+      typeof dados.erro === 'string' ? dados.erro : undefined,
+    );
+  }
   return dados;
 }
 
@@ -436,8 +469,17 @@ export function useGoogle(de: string, ate: string): Google {
         setGuardado(novo);
       } catch (e) {
         setErro(e instanceof ErroDoGoogle ? e.message : 'Não consegui falar com o Google.');
-        // O cache velho continua valendo: um erro de rede não é motivo para
-        // esvaziar o calendário do que já estava lá.
+        if (perdeuOAcesso(e)) {
+          // Mesmo desfecho de quando o agente descobre isso ao escrever: a
+          // conexão está morta, então o cartão volta a oferecer Conectar e o
+          // calendário deixa de mostrar eventos que já não se atualizam.
+          geracaoDaLista.current += 1;
+          limparCache(window.localStorage);
+          setGuardado(null);
+          setConectado(false);
+        }
+        // Nos outros erros o cache velho continua valendo: um erro de rede não
+        // é motivo para esvaziar o calendário do que já estava lá.
       } finally {
         emVoo.current = false;
         setSincronizando(false);

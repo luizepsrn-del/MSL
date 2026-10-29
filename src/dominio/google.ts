@@ -27,19 +27,37 @@
  * pediu para mexer. Pela mesma razão a porta recusa o evento que **tem** a
  * marca: mexer no espelho por fora seria desfeito na sincronia seguinte.
  *
- * O que a porta promete, e é o que impede o estrago:
+ * O que a porta garante, e de quem é cada garantia. A divisão importa: quem
+ * mexer num lado achando que o outro cobre vai abrir um buraco.
  *
- * - **não avisa ninguém.** `sendUpdates=none` vai em toda escrita, posto no
+ * **A rota (`rotaGoogleEvento`) impõe:**
+ *
+ * - **ninguém é avisado.** `sendUpdates=none` vai em toda escrita, posto no
  *   funil por onde todas passam. Cancelar uma reunião não manda e-mail aos
  *   convidados por baixo dos panos;
- * - **não toca em série.** Age sempre pelo id da **ocorrência**. Apagar a
- *   reunião semanal de quinta tira a de quinta, não as próximas;
+ * - **mover e renomear recusam o espelho** (`e-nosso`): leem o evento e, se ele
+ *   tem a marca, a próxima sincronia desfaria a mudança, então a resposta é
+ *   recusa e não "feito". **Apagar não lê o evento, de propósito** (seria uma
+ *   ida a mais ao Google em toda exclusão). Apagar um espelho só é impedido
+ *   porque o agente nunca o lista;
+ * - **mover e renomear só valem sobre a versão lida** (`etag`): se alguém
+ *   mexeu entre a leitura e a escrita, nada é feito. A janela é a dessas duas
+ *   chamadas, não o tempo em que o dono decidiu.
+ *
+ * **O agente (este domínio) impõe, e a rota não confere:**
+ *
+ * - **a série é intocável.** O agente aponta sempre o id da **ocorrência**.
+ *   Apagar a reunião semanal de quinta tira a de quinta, não as próximas;
  * - **convidado só apaga.** Apagar tira o evento da agenda de quem apaga (de
  *   todos, se quem apaga organiza). Mover e renomear exigem organizar, porque
- *   o Google recusa a alteração de convidado sem `guestsCanModify`, campo que
- *   não buscamos;
- * - **evento de vários dias não se move**, só se apaga e renomeia;
- * - **a assinatura iCal nunca é mexível:** lá não existe caminho de escrita.
+ *   o Google costuma recusar a alteração de convidado sem `guestsCanModify`,
+ *   campo que não buscamos. A rota não sabe quem organiza;
+ * - **evento de vários dias não se move**, só se apaga e renomeia. A rota não
+ *   sabe a duração;
+ * - **a assinatura iCal nunca é mexível:** o agente só põe `mexivel` nos
+ *   eventos do Google, e lá não existe caminho de escrita;
+ * - **anotação e projeto não existem no Google**, então esses pedidos são
+ *   recusados antes de chegar à rota.
  *
  * O espelho não mudou. Só deixou de ser o único lugar onde o MSL escreve no
  * Google.

@@ -220,6 +220,41 @@ test('sem conexão nenhuma, nada disso aparece', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Conectar' })).toBeVisible();
 });
 
+test('acesso expirado: o cartão deixa de dizer Conectada e oferece Conectar', async ({ page }) => {
+  await comecarLimpo(page);
+  // O servidor ainda guarda a credencial, então `google-estado` diz conectado;
+  // quem sabe que ela morreu é a chamada ao Google.
+  await servidorFalso(page);
+  await page.route('**/api/google-sincronizar', (rota) =>
+    rota.fulfill({
+      status: 401,
+      json: {
+        erro: 'google',
+        mensagem: 'o Google recusou o acesso. Reconecte a agenda em Ajustes.',
+      },
+    }),
+  );
+
+  await page.goto('/app/ajustes');
+  await expect(page.getByText('Reconecte a agenda em Ajustes')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Conectar' })).toBeVisible();
+  await expect(page.getByText('Não conectada')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Desconectar' })).toHaveCount(0);
+});
+
+test('sessão do MSL vencida não finge que o Google caiu', async ({ page }) => {
+  await comecarLimpo(page);
+  await servidorFalso(page);
+  await page.route('**/api/google-sincronizar', (rota) =>
+    rota.fulfill({ status: 401, json: { erro: 'sessao-invalida', mensagem: 'Entre de novo.' } }),
+  );
+
+  await page.goto('/app/ajustes');
+  await expect(page.getByText('Entre de novo.')).toBeVisible();
+  // Reconectar o Google não resolveria: o cartão segue como estava.
+  await expect(page.getByRole('button', { name: 'Desconectar' })).toBeVisible();
+});
+
 /* ── O agente mexe no evento, e diz a verdade quando o Google não deixa ──── */
 
 async function pedirParaApagarAReuniao(page: Page) {

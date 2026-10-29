@@ -13,6 +13,7 @@ import {
   cacheFicouVelho,
   depoisDeMexer,
   mexerNoEventoDoGoogle,
+  perdeuOAcesso,
 } from './google';
 import { bancoVazio, type Banco, type Tarefa, type Peca } from './esquema';
 import { responder, interpretar, type Efeito } from '../dominio/agente';
@@ -586,5 +587,41 @@ describe('mexer num evento do Google', () => {
         expect(cacheFicouVelho({ feito: false, motivo }), motivo).toBe(false);
       }
     });
+  });
+});
+
+describe('perder o acesso ao Google', () => {
+  const resposta = (estado: number, corpo: unknown) =>
+    (async () => new Response(JSON.stringify(corpo), { status: estado })) as typeof fetch;
+
+  /** Pede de verdade pela `falar` e devolve o erro que a tela receberia. */
+  async function erroDe(estado: number, corpo: unknown): Promise<unknown> {
+    let pego: unknown;
+    await comJanela(async () => {
+      try {
+        await falar('/api/google-sincronizar', {}, resposta(estado, corpo));
+      } catch (e) {
+        pego = e;
+      }
+    });
+    return pego;
+  }
+
+  it('o Google recusar o acesso (401 ou 403 da rota) é perder o acesso', async () => {
+    const msg = 'o Google recusou o acesso. Reconecte a agenda em Ajustes.';
+    expect(perdeuOAcesso(await erroDe(401, { erro: 'google', mensagem: msg }))).toBe(true);
+    expect(perdeuOAcesso(await erroDe(403, { erro: 'google', mensagem: msg }))).toBe(true);
+  });
+
+  it('a sessão do MSL vencida NÃO é perder o acesso ao Google', async () => {
+    // Também é 401, mas reconectar o Google não resolve: é preciso entrar de novo.
+    expect(
+      perdeuOAcesso(await erroDe(401, { erro: 'sessao-invalida', mensagem: 'Entre de novo.' })),
+    ).toBe(false);
+  });
+
+  it('falha do Google ou da rede não é perder o acesso', async () => {
+    expect(perdeuOAcesso(await erroDe(502, { erro: 'google', mensagem: 'o Google respondeu 500' }))).toBe(false);
+    expect(perdeuOAcesso(new Error('rede'))).toBe(false);
   });
 });

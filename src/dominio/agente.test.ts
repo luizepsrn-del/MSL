@@ -504,23 +504,90 @@ describe('responder — relatórios saem dos dados, e só', () => {
     expect(t).toContain('Claude Code');
   });
 
-  it('a ajuda conta que apagar, mover e renomear valem para compromisso do Google', () => {
-    const t = textoDe(responder(bancoVazio(), { tipo: 'ajuda' }, HOJE));
-    expect(t).toContain('Google');
-    // a frase antiga prometia o contrário: "mostro, mas não mexo"
-    expect(t).not.toContain('não mexo');
-  });
+  describe('a ajuda não promete o que o agente não entende', () => {
+    const ajuda = responder(bancoVazio(), { tipo: 'ajuda' }, HOJE);
 
-  it('a ajuda diz o que o convidado pode e o que só o organizador pode', () => {
-    const t = textoDe(responder(bancoVazio(), { tipo: 'ajuda' }, HOJE));
-    expect(t).toContain('organiza');
-    expect(t).toContain('convidado');
-  });
+    /** Os exemplos que o dono vai copiar: o texto de cada item das listas de pedidos. */
+    const exemplos = ajuda.blocos.flatMap((b) =>
+      b.tipo === 'lista' && /^(Pergunte|Ou mande)/.test(b.titulo ?? '')
+        ? b.itens.map((i) => ({ texto: i.texto, detalhe: i.detalhe ?? '' }))
+        : [],
+    );
 
-  it('a ajuda promete que ninguém é avisado e que a série fica intacta', () => {
-    const t = textoDe(responder(bancoVazio(), { tipo: 'ajuda' }, HOJE));
-    expect(t).toContain('ninguém é avisado');
-    expect(t).toContain('só aquela ocorrência');
+    // Um compromisso do Google com o nome que os exemplos usam.
+    const reuniao = (extra: Partial<CompromissoExterno> = {}): CompromissoExterno => ({
+      titulo: 'Reunião com o contador',
+      dia: HOJE,
+      hora: '15:00',
+      diaInteiro: false,
+      uid: 'g1',
+      mexivel: true,
+      souOrganizador: true,
+      ...extra,
+    });
+    const doGoogle = [reuniao()];
+
+    it('há exemplos para conferir', () => {
+      expect(exemplos.length).toBeGreaterThan(10);
+    });
+
+    it('cada exemplo é entendido: nenhum cai em "pedido para o Claude Code"', () => {
+      for (const e of exemplos) {
+        const tipo = interpretar(e.texto, HOJE).tipo;
+        expect(tipo, e.texto).not.toBe('pedido');
+        expect(tipo, e.texto).not.toBe('ajuda');
+      }
+    });
+
+    it('cada exemplo que cita o Google age num compromisso do Google', () => {
+      const citamOGoogle = exemplos.filter((e) => e.detalhe.includes('compromisso do Google'));
+      // Sem este piso, tirar "compromisso do Google" dos detalhes esvaziaria o teste.
+      expect(citamOGoogle.length).toBeGreaterThan(0);
+      for (const e of citamOGoogle) {
+        const r = responder(bancoVazio(), interpretar(e.texto, HOJE), HOJE, doGoogle);
+        expect(r.efeito?.tipo, e.texto).toBe('evento-do-google');
+      }
+    });
+
+    it('o exemplo de apagar o compromisso é o que ele é: cancela para os convidados', () => {
+      const r = responder(bancoVazio(), interpretar('Apagar a reunião com o contador', HOJE), HOJE, doGoogle);
+      expect(textoDe(r)).toContain('para todos os convidados');
+    });
+
+    it('anotação e projeto, que a ajuda diz não existirem no Google, são recusados de fato', () => {
+      for (const frase of [
+        'Anotar na reunião com o contador que o cliente pediu orçamento',
+        'Jogar a reunião com o contador para o projeto Acttus',
+      ]) {
+        const r = responder(bancoVazio(), interpretar(frase, HOJE), HOJE, doGoogle);
+        expect(r.efeito, frase).toBeUndefined();
+        expect(textoDe(r), frase).toContain('não existe no Google');
+      }
+    });
+
+    it('o convidado só apaga: mover e renomear são recusados, apagar tem prévia', () => {
+      const convidado = [reuniao({ souOrganizador: false })];
+      const prev = (frase: string) => responder(bancoVazio(), interpretar(frase, HOJE), HOJE, convidado);
+      expect(prev('Apagar a reunião com o contador').efeito?.tipo).toBe('evento-do-google');
+      expect(prev('Renomear a reunião com o contador para call').efeito).toBeUndefined();
+      expect(prev('Mudar a reunião com o contador para as 16h').efeito).toBeUndefined();
+    });
+
+    it('evento de vários dias: apagar e renomear têm prévia, mover é recusado', () => {
+      const varios = [reuniao({ hora: undefined, diaInteiro: true, desde: HOJE, ate: '2026-12-31' })];
+      const prev = (frase: string) => responder(bancoVazio(), interpretar(frase, HOJE), HOJE, varios);
+      expect(prev('Apagar a reunião com o contador').efeito?.tipo).toBe('evento-do-google');
+      expect(prev('Renomear a reunião com o contador para call').efeito?.tipo).toBe('evento-do-google');
+      expect(prev('Adiar a reunião com o contador para dia 25').efeito).toBeUndefined();
+    });
+
+    it('a ajuda diz as regras que esses testes provam, e já não diz "não mexo"', () => {
+      const t = textoDe(ajuda);
+      expect(t).not.toContain('não mexo');
+      expect(t).toContain('Vários dias');
+      expect(t).toContain('Anotação e projeto');
+      expect(t).toContain('só aquela ocorrência');
+    });
   });
 });
 

@@ -1442,7 +1442,7 @@ export function responder(
               },
               { texto: 'Jogar o dentista para o projeto Acttus', detalhe: 'move entre projetos' },
               {
-                texto: 'Apagar a reunião de quinta',
+                texto: 'Apagar a reunião com o contador',
                 detalhe: 'serve também para compromisso do Google',
               },
             ],
@@ -1454,14 +1454,34 @@ export function responder(
               'que vai fazer e espera o seu toque. O que só soma acontece na hora.',
           },
           {
-            tipo: 'texto',
-            texto:
-              'Compromisso que nasceu no Google eu também mexo — apagar, mover e renomear, com ' +
-              'o mesmo toque de confirmação. Se você organiza o compromisso, posso fazer os três; ' +
-              'apagar cancela para todos os convidados, e ninguém é avisado por e-mail. Se você é ' +
-              'só convidado, apagar tira da sua agenda e mais nada: mover e renomear são de quem ' +
-              'organiza, e eu digo isso em vez de tentar. Compromisso que se repete: eu mexo só ' +
-              'aquela ocorrência, nunca a série. Compromisso de agenda assinada (iCal) eu só mostro.',
+            tipo: 'lista',
+            titulo: 'Compromisso que nasceu no Google',
+            itens: [
+              {
+                texto: 'Apagar',
+                detalhe:
+                  'se você organiza, cancela para todos os convidados; se você é só convidado, ' +
+                  'tira da sua agenda e mais nada',
+              },
+              {
+                texto: 'Mover e renomear',
+                detalhe: 'só o que você organiza. Como convidado eu não tento: o Google costuma recusar',
+              },
+              {
+                texto: 'Vários dias',
+                detalhe: 'não se move; apagar e renomear valem',
+              },
+              {
+                texto: 'Anotação e projeto',
+                detalhe: 'não existem no Google; lá só dá para mudar título e horário',
+              },
+              {
+                texto: 'Os que se repetem',
+                detalhe: 'eu mexo só aquela ocorrência, nunca a série inteira',
+              },
+              { texto: 'Aviso', detalhe: 'ninguém recebe e-mail por nada disso' },
+              { texto: 'Agenda assinada (iCal)', detalhe: 'eu só mostro; não existe como alterar' },
+            ],
           },
           {
             tipo: 'texto',

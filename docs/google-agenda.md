@@ -80,11 +80,13 @@ e-mail. Salvar.
 Funciona na hora. **O preço:** neste modo o Google expira o acesso a cada
 7 dias, e você vai precisar clicar em *Conectar* de novo toda semana.
 
-**Atenção:** quando o acesso expira, o cartão em Ajustes pode continuar
-dizendo **"Conectada"**. Ele só sabe que a credencial está guardada, não que o
-Google ainda a aceita. O sinal de que expirou é a sincronização falhar, ou o
-agente dizer que a conexão caiu. O caminho é um só: **Conectar de novo**, em
-Ajustes. Não precisa desconectar antes.
+**Atenção:** quando o acesso expira, o cartão em Ajustes ainda diz
+**"Conectada"** até o MSL tentar falar com o Google. Na primeira tentativa que
+falhar — a sincronização, o botão *Sincronizar agora* ou um pedido ao agente —,
+o cartão passa a dizer **"Não conectada"** e volta a oferecer o botão
+**Conectar**. Quando quem falha é a sincronização, ele mostra também o aviso
+*"Reconecte a agenda em Ajustes"*. Clique em Conectar e autorize de novo. Se o cartão ainda estiver em "Conectada", clique em **Sincronizar agora**
+para ele perceber.
 
 ## 5. Criar as credenciais
 
@@ -132,15 +134,16 @@ Pronto. A partir daí:
 - o que você criar no Google aparece no calendário do MSL;
 - tarefa com prazo e peça com data de publicar viram evento no seu Google;
 - mover no Google move aqui, e mover aqui move lá;
-- e o agente, em **Pedir**, também apaga, move e renomeia o que nasceu no
-  Google. Isso está logo abaixo.
+- e o agente, no menu **Agente**, também apaga, move e renomeia o que nasceu
+  no Google. Isso está logo abaixo.
 
 ## O que o agente mexe no Google
 
 Antes, o que nasceu no Google só aparecia no MSL, e para mudar era preciso
-abrir o Google. Agora você pode pedir ao agente: *"apagar a reunião de
-quinta"*, *"renomear a reunião para call de alinhamento"*, *"mudar o dentista
-para as 16h"*. Ele mostra o que vai fazer e só faz depois do seu toque.
+abrir o Google. Agora você pode pedir ao agente, usando o nome do compromisso:
+*"apagar a reunião com o contador"*, *"renomear a reunião com o contador para
+call de alinhamento"*, *"mudar a reunião com o contador para as 16h"*. Ele
+mostra o que vai fazer e só faz depois do seu toque.
 
 O que vale:
 
@@ -148,15 +151,16 @@ O que vale:
   é cancelado para todos os convidados. Se você é **só convidado**, ele sai
   apenas da sua agenda; os outros continuam com ele.
 - **Mover e renomear** só funcionam no que **você organiza**. Se você é
-  convidado, o agente avisa que não é seu para mudar. O Google recusaria de
-  qualquer jeito.
+  convidado, o agente diz que não é seu para mudar. O MSL nem tenta, porque o
+  Google costuma recusar.
 - **Ninguém recebe e-mail.** O MSL nunca avisa os convidados. Se você cancelar
-  uma reunião que organiza, o Google deixa de mostrá-la para eles, mas não
-  manda aviso. Se for preciso, avise você mesmo.
+  uma reunião que organiza, ela some da agenda deles, mas sem aviso. Se for
+  preciso, avise você mesmo.
 - **Compromisso que se repete: só aquele dia.** Apagar a reunião semanal de
   quinta tira a desta quinta. As próximas ficam. Para acabar com a série
   inteira, faça direto no Google.
 - **Compromisso de vários dias não se move.** Pode apagar e renomear.
+- **Só o título e o horário mudam.** Anotação e projeto não existem no Google.
 - **Agenda assinada pelo endereço (iCal) não se mexe.** O MSL só mostra.
 - **O que o próprio MSL espelhou também não.** Tarefa e peça que viraram
   evento você muda pela tarefa ou pela peça. Mudar só o evento seria desfeito
@@ -164,9 +168,10 @@ O que vale:
 
 Quando o agente tenta e não consegue, ele diz por quê. As razões possíveis: o
 compromisso não existe mais; o Google não deixou; a conexão caiu; o compromisso
-mudou lá enquanto você decidia; ou é um compromisso do próprio MSL. Há ainda um
-caso em que ele diz que **não sabe** se deu certo, quando a resposta se perdeu
-no caminho. Nesse caso, olhe o Google antes de pedir de novo.
+mudou lá no instante entre o agente olhar e gravar; ou é um compromisso do
+próprio MSL. Há ainda um caso em que ele diz que **não sabe** se deu certo,
+quando a resposta se perdeu no caminho. Nesse caso, olhe o Google antes de
+pedir de novo.
 
 ---
 
@@ -180,8 +185,9 @@ no caminho. Nesse caso, olhe o Google antes de pedir de novo.
 | "O Google não verificou este app" | **Esperado no caminho A.** Avançado › Acessar. |
 | "faltam as variáveis do Google" | As variáveis do passo 6 não chegaram — falta o **Redeploy**. |
 | Pedindo para conectar toda semana | Você está no caminho B. É o preço dele; o caminho A resolve. |
-| Ajustes diz **"Conectada"**, mas nada sincroniza e o agente diz que a conexão caiu | O acesso expirou (acontece a cada 7 dias no caminho B) ou foi revogado no Google. A tela não percebe. Clique em **Conectar** de novo. |
-| O agente diz que não pode mover ou renomear | Você é convidado desse compromisso. Só quem organiza pode. Apagar ele faz. |
+| O cartão diz **"Não conectada"** (às vezes com o aviso *"Reconecte a agenda em Ajustes"*) e você já tinha conectado | O acesso expirou (a cada 7 dias no caminho B) ou foi revogado no Google. Clique em **Conectar** de novo. |
+| O agente diz que a conexão caiu | O mesmo. Vá em Ajustes e clique em **Conectar**. |
+| O agente diz que o compromisso é de outra pessoa e não muda | Você é convidado dele. Só quem organiza move ou renomeia. Apagar ele faz. |
 | O agente diz que não sabe se deu certo | A resposta do Google se perdeu no caminho. Abra o Google e veja antes de repetir. |
 
 ## O que o MSL guarda, e onde
