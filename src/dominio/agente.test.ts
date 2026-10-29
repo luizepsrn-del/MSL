@@ -503,6 +503,25 @@ describe('responder — relatórios saem dos dados, e só', () => {
     expect(t).toContain('Não invento número');
     expect(t).toContain('Claude Code');
   });
+
+  it('a ajuda conta que apagar, mover e renomear valem para compromisso do Google', () => {
+    const t = textoDe(responder(bancoVazio(), { tipo: 'ajuda' }, HOJE));
+    expect(t).toContain('Google');
+    // a frase antiga prometia o contrário: "mostro, mas não mexo"
+    expect(t).not.toContain('não mexo');
+  });
+
+  it('a ajuda diz o que o convidado pode e o que só o organizador pode', () => {
+    const t = textoDe(responder(bancoVazio(), { tipo: 'ajuda' }, HOJE));
+    expect(t).toContain('organiza');
+    expect(t).toContain('convidado');
+  });
+
+  it('a ajuda promete que ninguém é avisado e que a série fica intacta', () => {
+    const t = textoDe(responder(bancoVazio(), { tipo: 'ajuda' }, HOJE));
+    expect(t).toContain('ninguém é avisado');
+    expect(t).toContain('só aquela ocorrência');
+  });
 });
 
 describe('lerHora', () => {

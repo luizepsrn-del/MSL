@@ -17,7 +17,32 @@
  *   em vez de criar um segundo;
  * - e apagar a conta do Google não deixa lixo nenhum no banco.
  *
- * Evento **sem** a marca é do Google. O MSL mostra e não toca.
+ * Evento **sem** a marca é do Google. A sincronização continua só lendo e
+ * mostrando esse evento — nunca o altera.
+ *
+ * Esta frase já foi "o MSL mostra e não toca", sem exceção. Deixou de ser: o
+ * agente agora apaga, move e renomeia compromisso que nasceu no Google, mas
+ * por **uma porta separada, com nome**, e não pelo espelho. Misturar as duas
+ * deixaria o sincronizador decidir sozinho o destino do que o dono nunca
+ * pediu para mexer. Pela mesma razão a porta recusa o evento que **tem** a
+ * marca: mexer no espelho por fora seria desfeito na sincronia seguinte.
+ *
+ * O que a porta promete, e é o que impede o estrago:
+ *
+ * - **não avisa ninguém.** `sendUpdates=none` vai em toda escrita, posto no
+ *   funil por onde todas passam. Cancelar uma reunião não manda e-mail aos
+ *   convidados por baixo dos panos;
+ * - **não toca em série.** Age sempre pelo id da **ocorrência**. Apagar a
+ *   reunião semanal de quinta tira a de quinta, não as próximas;
+ * - **convidado só apaga.** Apagar tira o evento da agenda de quem apaga (de
+ *   todos, se quem apaga organiza). Mover e renomear exigem organizar, porque
+ *   o Google recusa a alteração de convidado sem `guestsCanModify`, campo que
+ *   não buscamos;
+ * - **evento de vários dias não se move**, só se apaga e renomeia;
+ * - **a assinatura iCal nunca é mexível:** lá não existe caminho de escrita.
+ *
+ * O espelho não mudou. Só deixou de ser o único lugar onde o MSL escreve no
+ * Google.
  *
  * ## Quem ganha
  *

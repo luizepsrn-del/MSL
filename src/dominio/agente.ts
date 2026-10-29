@@ -1441,6 +1441,10 @@ export function responder(
                 detalhe: 'escreve por cima da anotação que houver',
               },
               { texto: 'Jogar o dentista para o projeto Acttus', detalhe: 'move entre projetos' },
+              {
+                texto: 'Apagar a reunião de quinta',
+                detalhe: 'serve também para compromisso do Google',
+              },
             ],
           },
           {
@@ -1452,7 +1456,16 @@ export function responder(
           {
             tipo: 'texto',
             texto:
-              'Compromisso que nasceu no Google eu mostro, mas não mexo: altere direto lá. ' +
+              'Compromisso que nasceu no Google eu também mexo — apagar, mover e renomear, com ' +
+              'o mesmo toque de confirmação. Se você organiza o compromisso, posso fazer os três; ' +
+              'apagar cancela para todos os convidados, e ninguém é avisado por e-mail. Se você é ' +
+              'só convidado, apagar tira da sua agenda e mais nada: mover e renomear são de quem ' +
+              'organiza, e eu digo isso em vez de tentar. Compromisso que se repete: eu mexo só ' +
+              'aquela ocorrência, nunca a série. Compromisso de agenda assinada (iCal) eu só mostro.',
+          },
+          {
+            tipo: 'texto',
+            texto:
               'Qualquer outra coisa vira um pedido pronto para colar no Claude Code, que é onde ' +
               'o sistema muda — com teste e revisão.',
           },
