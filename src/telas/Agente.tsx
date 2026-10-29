@@ -139,6 +139,11 @@ export function Agente() {
   // A janela é a semana de hoje: é o alcance das perguntas que olham a agenda
   // ("o que tenho hoje?", "e nesta semana?"), e pedir mais seria buscar rede
   // para responder o que ninguém perguntou.
+  //
+  // **Quem alargar isto precisa mexer no texto da recusa.** A resposta de
+  // "não achei" em `dominio/agente.ts` diz ao dono, com todas as letras, que
+  // o agente só enxerga os compromissos desta semana. Alargar a janela aqui
+  // e deixar a frase lá transforma uma explicação honesta em mentira.
   const semana = semanaDe(hoje);
   const google = useGoogle(semana[0], semana[6]);
   const assinatura = useAgendaExterna(semana[0], semana[6]);
