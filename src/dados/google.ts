@@ -150,6 +150,13 @@ export class ErroDoGoogle extends Error {
  * "Conectada", com a mensagem "Reconecte a agenda em Ajustes" apontando para um
  * botão que não existia.
  *
+ * **Só o 401 conta.** O 403 do Google tem outras causas que reconectar não
+ * resolve: limite de pedidos (`rateLimitExceeded`, `quotaExceeded`) e a
+ * Calendar API desligada no projeto. Tratá-lo como perda de acesso derrubaria
+ * a conexão numa rajada de pedidos e, no caso da API desligada, mandaria o dono
+ * reconectar em laço. O `invalid_grant` da renovação — o caso real de
+ * consentimento expirado ou revogado — já chega aqui como 401.
+ *
  * O 401 da **sessão do MSL** também chega aqui, e não conta: reconectar o
  * Google não o resolve. É o `codigo` que separa os dois.
  */
@@ -157,7 +164,7 @@ export function perdeuOAcesso(erro: unknown): boolean {
   return (
     erro instanceof ErroDoGoogle &&
     erro.codigo === 'google' &&
-    (erro.estado === 401 || erro.estado === 403)
+    erro.estado === 401
   );
 }
 
@@ -360,6 +367,12 @@ export interface Google {
   /** ISO UTC da última sincronização */
   sincronizadoEm: string | null;
   erro: string | null;
+  /**
+   * O Google deixou de aceitar uma conexão que já existiu. Diferente de nunca
+   * ter conectado: aqui a configuração no Google Cloud está pronta e só falta
+   * autorizar de novo, e a tela não deve mandar recomeçar do zero.
+   */
+  acessoPerdido: boolean;
   /** quantos eventos o servidor escreveu na última vez */
   escritos: { criados: number; atualizados: number; apagados: number } | null;
   conectar: () => void;
@@ -386,6 +399,7 @@ export function useGoogle(de: string, ate: string): Google {
   );
   const [sincronizando, setSincronizando] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
+  const [acessoPerdido, setAcessoPerdido] = React.useState(false);
   const [escritos, setEscritos] = React.useState<Google['escritos']>(null);
 
   // Uma por vez: trocar de mês três vezes rápido não pode disparar três.
@@ -438,6 +452,7 @@ export function useGoogle(de: string, ate: string): Google {
         if (geracao !== geracaoDaLista.current) return;
 
         setConectado(resultado.conectado);
+        setAcessoPerdido(false);
         setErro(null);
         setEscritos(resultado.escritos);
 
@@ -477,6 +492,7 @@ export function useGoogle(de: string, ate: string): Google {
           limparCache(window.localStorage);
           setGuardado(null);
           setConectado(false);
+          setAcessoPerdido(true);
         }
         // Nos outros erros o cache velho continua valendo: um erro de rede não
         // é motivo para esvaziar o calendário do que já estava lá.
@@ -533,6 +549,7 @@ export function useGoogle(de: string, ate: string): Google {
     sincronizando,
     sincronizadoEm: guardado?.em ?? null,
     erro,
+    acessoPerdido,
     escritos,
 
     conectar: () => {
@@ -553,6 +570,7 @@ export function useGoogle(de: string, ate: string): Google {
           limparCache(window.localStorage);
           setGuardado(null);
           setConectado(false);
+          setAcessoPerdido(false);
           setErro(null);
         } catch (e) {
           setErro(e instanceof ErroDoGoogle ? e.message : 'Não consegui desconectar.');
@@ -573,7 +591,10 @@ export function useGoogle(de: string, ate: string): Google {
       // Uma sincronização em voo trouxe a lista (e o "conectado") de antes de
       // mexer: a resposta dela é descartada, nos dois casos.
       geracaoDaLista.current += 1;
-      if (depois === 'desconectar') setConectado(false);
+      if (depois === 'desconectar') {
+        setConectado(false);
+        setAcessoPerdido(true);
+      }
       else {
         // Outra roda quando a que estava no ar terminar.
         if (emVoo.current) refazer.current = true;

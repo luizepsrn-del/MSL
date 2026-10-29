@@ -607,10 +607,16 @@ describe('perder o acesso ao Google', () => {
     return pego;
   }
 
-  it('o Google recusar o acesso (401 ou 403 da rota) é perder o acesso', async () => {
+  it('o Google recusar o acesso (401 da rota) é perder o acesso', async () => {
     const msg = 'o Google recusou o acesso. Reconecte a agenda em Ajustes.';
     expect(perdeuOAcesso(await erroDe(401, { erro: 'google', mensagem: msg }))).toBe(true);
-    expect(perdeuOAcesso(await erroDe(403, { erro: 'google', mensagem: msg }))).toBe(true);
+  });
+
+  it('o 403 do Google NÃO é perder o acesso: pode ser limite de pedidos ou a API desligada', async () => {
+    // Reconectar não resolve nenhum dos dois; derrubar a conexão por isso
+    // faria o dono reconectar em laço.
+    const msg = 'o Google recusou o acesso. Reconecte a agenda em Ajustes.';
+    expect(perdeuOAcesso(await erroDe(403, { erro: 'google', mensagem: msg }))).toBe(false);
   });
 
   it('a sessão do MSL vencida NÃO é perder o acesso ao Google', async () => {

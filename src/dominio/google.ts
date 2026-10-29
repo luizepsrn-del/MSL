@@ -24,8 +24,9 @@
  * agente agora apaga, move e renomeia compromisso que nasceu no Google, mas
  * por **uma porta separada, com nome**, e não pelo espelho. Misturar as duas
  * deixaria o sincronizador decidir sozinho o destino do que o dono nunca
- * pediu para mexer. Pela mesma razão a porta recusa o evento que **tem** a
- * marca: mexer no espelho por fora seria desfeito na sincronia seguinte.
+ * pediu para mexer. Pela mesma razão a porta, **em mover e renomear**, recusa
+ * o evento que **tem** a marca: mexer no espelho por fora seria desfeito na
+ * sincronia seguinte. Em apagar ela não confere (veja abaixo).
  *
  * O que a porta garante, e de quem é cada garantia. A divisão importa: quem
  * mexer num lado achando que o outro cobre vai abrir um buraco.

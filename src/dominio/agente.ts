@@ -1196,7 +1196,7 @@ function acaoNoGoogle(
       detalhe = quandoFalado(c, hoje);
       tom = souOrganizador ? 'ruim' : 'atencao';
       aviso = souOrganizador
-        ? 'Apagar cancela a reunião para todos os convidados.'
+        ? 'Apagar cancela a reunião para todos os convidados que usam Google Agenda, e ninguém é avisado.'
         : 'Apagar tira o evento só da sua agenda, e ninguém é avisado.';
       break;
     case 'mover':
@@ -1245,7 +1245,7 @@ function comoFicaDepoisDeMover(
 }
 
 /** Só o organizador chega aqui: ele altera o evento de todos os convidados. */
-const AVISO_DE_MUDANCA = 'Como você organiza, a mudança vale para todos os convidados.';
+const AVISO_DE_MUDANCA = 'Como você organiza, a mudança vale para todos os convidados que usam Google Agenda, e ninguém é avisado.';
 
 /**
  * Editar um compromisso do Google: só título e horário existem do lado de lá.
@@ -1460,7 +1460,7 @@ export function responder(
               {
                 texto: 'Apagar',
                 detalhe:
-                  'se você organiza, cancela para todos os convidados; se você é só convidado, ' +
+                  'se você organiza, cancela para os convidados que usam Google Agenda; se você é só convidado, ' +
                   'tira da sua agenda e mais nada',
               },
               {

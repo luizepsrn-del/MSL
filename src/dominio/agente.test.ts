@@ -551,7 +551,7 @@ describe('responder — relatórios saem dos dados, e só', () => {
 
     it('o exemplo de apagar o compromisso é o que ele é: cancela para os convidados', () => {
       const r = responder(bancoVazio(), interpretar('Apagar a reunião com o contador', HOJE), HOJE, doGoogle);
-      expect(textoDe(r)).toContain('para todos os convidados');
+      expect(textoDe(r)).toContain('para todos os convidados que usam Google Agenda');
     });
 
     it('anotação e projeto, que a ajuda diz não existirem no Google, são recusados de fato', () => {

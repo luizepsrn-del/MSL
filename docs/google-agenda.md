@@ -148,7 +148,9 @@ mostra o que vai fazer e só faz depois do seu toque.
 O que vale:
 
 - **Apagar** funciona nos dois casos. Se **você organiza** o compromisso, ele
-  é cancelado para todos os convidados. Se você é **só convidado**, ele sai
+  é cancelado na agenda dos convidados que usam Google Agenda. Quem recebeu o
+  convite por e-mail e não usa o Google pode continuar com ele. Se você é
+  **só convidado**, ele sai
   apenas da sua agenda; os outros continuam com ele.
 - **Mover e renomear** só funcionam no que **você organiza**. Se você é
   convidado, o agente diz que não é seu para mudar. O MSL nem tenta, porque o

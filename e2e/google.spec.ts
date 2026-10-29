@@ -237,9 +237,50 @@ test('acesso expirado: o cartão deixa de dizer Conectada e oferece Conectar', a
 
   await page.goto('/app/ajustes');
   await expect(page.getByText('Reconecte a agenda em Ajustes')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Conectar' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Conectar', exact: true })).toBeVisible();
   await expect(page.getByText('Não conectada')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Desconectar' })).toHaveCount(0);
+  // Quem já configurou tudo não é mandado recomeçar do zero.
+  await expect(page.getByText('continua valendo')).toBeVisible();
+  await expect(page.getByText('vinte e cinco minutos')).toHaveCount(0);
+});
+
+test('acesso expirado: os eventos guardados saem do aparelho junto', async ({ page }) => {
+  await comecarLimpo(page);
+  await servidorFalso(page, {
+    deles: [{ id: 'g1', summary: 'Reunião do Google', start: { date: diaLocal(0) }, end: { date: diaLocal(1) } }],
+  });
+
+  await page.goto('/app/calendario');
+  await expect(page.getByText('Reunião do Google')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('msl-google-eventos'))).not.toBeNull();
+
+  // O acesso morre depois: o cache fresco não dispara sincronização sozinho,
+  // então é o botão que descobre.
+  await page.route('**/api/google-sincronizar', (rota) =>
+    rota.fulfill({ status: 401, json: { erro: 'google', mensagem: 'o Google recusou o acesso. Reconecte a agenda em Ajustes.' } }),
+  );
+  await page.goto('/app/ajustes');
+  await page.getByRole('button', { name: 'Sincronizar agora' }).click();
+  // exact: "Desconectar" também contém "Conectar" e passaria antes da hora.
+  await expect(page.getByRole('button', { name: 'Conectar', exact: true })).toBeVisible();
+
+  // Sem isso o calendário mostraria, ao reabrir, uma lista que ninguém mais atualiza.
+  expect(await page.evaluate(() => localStorage.getItem('msl-google-eventos'))).toBeNull();
+});
+
+test('o 403 do Google (limite, API desligada) não derruba a conexão', async ({ page }) => {
+  await comecarLimpo(page);
+  await servidorFalso(page);
+  await page.route('**/api/google-sincronizar', (rota) =>
+    rota.fulfill({ status: 403, json: { erro: 'google', mensagem: 'o Google recusou o acesso. Reconecte a agenda em Ajustes.' } }),
+  );
+
+  await page.goto('/app/ajustes');
+  await expect(page.getByText('Reconecte a agenda em Ajustes')).toBeVisible();
+  // Reconectar não resolveria: o cartão segue conectado, com o erro à vista.
+  await expect(page.getByRole('button', { name: 'Desconectar' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Conectar', exact: true })).toHaveCount(0);
 });
 
 test('sessão do MSL vencida não finge que o Google caiu', async ({ page }) => {

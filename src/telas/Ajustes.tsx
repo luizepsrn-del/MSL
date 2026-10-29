@@ -670,6 +670,12 @@ function ContaDoGoogle() {
               <strong>tarefas com prazo</strong> e as <strong>peças com data de publicar</strong>{' '}
               viram evento lá. Mover de um lado move do outro — vence quem mexeu por último.
             </>
+          ) : google.acessoPerdido ? (
+            <>
+              O Google deixou de aceitar a conexão — o consentimento expirou ou foi retirado.
+              A configuração que você fez no Google Cloud continua valendo: é só clicar em{' '}
+              <strong>Conectar</strong> e autorizar de novo.
+            </>
           ) : (
             <>
               Para ligar nos dois sentidos é preciso criar uma credencial no Google Cloud, uma vez.
