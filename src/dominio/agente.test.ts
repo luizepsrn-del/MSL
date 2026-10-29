@@ -1294,6 +1294,8 @@ describe('ação sobre evento do Google', () => {
     const dizer = (frase: string, fora: CompromissoExterno[]) =>
       responder(vazio(), interpretar(frase, HOJE), HOJE, fora);
     const quemAltera = ['adiar a reunião para sexta', 'renomeia a reunião para Call', 'muda a reunião para 15h'];
+    // Anotação e projeto não existem no Google: nenhuma escolha leva a efeito.
+    const quemAnota = ['anota na reunião que volta às 15', 'move a reunião para o projeto Site'];
 
     it('dois eventos de convidado: alterar recusa de primeira, sem perguntar qual', () => {
       const dois = [reuniao('a', { souOrganizador: false }), reuniao('b', { souOrganizador: false })];
@@ -1402,7 +1404,7 @@ describe('ação sobre evento do Google', () => {
           for (const c of todos) combinacoes.push([a, b, c]);
         }
       }
-      for (const frase of ['cancela a reunião', ...quemAltera, 'concluir reunião']) {
+      for (const frase of ['cancela a reunião', ...quemAltera, ...quemAnota, 'concluir reunião']) {
         for (const combinacao of combinacoes) {
           const fora = combinacao.map((extras, i) => reuniao(extras.uid === '' ? '' : `u${i}`, extras));
           const algumAge = fora.some((c) => dizer(frase, [c]).efeito !== undefined);
@@ -1643,7 +1645,7 @@ describe('ação sobre evento do Google', () => {
       expect(textoDe(r)).not.toContain('mais de um dia');
     });
 
-    it('uma frase que pede título e hora segue a regra de renomear, que atravessa', () => {
+    it('título e hora juntos (frase que o parser não produz hoje) ainda perguntam qual antes de recusar', () => {
       const r = responder(
         vazio(),
         { tipo: 'editar-tarefa', alvo: 'viagem', mudanca: { titulo: 'Férias', hora: '15:00' } },
@@ -1651,6 +1653,70 @@ describe('ação sobre evento do Google', () => {
         [viagem('a'), viagem('b')],
       );
       expect(r.titulo).toBe('Qual delas?');
+    });
+  });
+
+  describe('anotação e projeto não existem no Google: a recusa vem sem perguntar qual', () => {
+    const viagem = (uid: string, extras: Partial<CompromissoExterno> = {}) =>
+      evento({ titulo: 'Viagem', uid, ...extras });
+    const anotar = (fora: CompromissoExterno[]) =>
+      responder(vazio(), interpretar('anota na viagem que volta dia 20', HOJE), HOJE, fora);
+    const projeto = (fora: CompromissoExterno[]) =>
+      responder(vazio(), interpretar('move a viagem para o projeto Site', HOJE), HOJE, fora);
+
+    it('as frases são mesmo edições de anotação e de projeto, e não outra coisa', () => {
+      expect(interpretar('anota na viagem que volta dia 20', HOJE)).toMatchObject({
+        tipo: 'editar-tarefa',
+        mudanca: { anotacao: expect.any(String) },
+      });
+      expect(interpretar('move a viagem para o projeto Site', HOJE)).toMatchObject({
+        tipo: 'editar-tarefa',
+        mudanca: { projeto: 'Site' },
+      });
+    });
+
+    it('dois eventos de organizador: recusa de primeira, com o mesmo texto de um só', () => {
+      for (const dizer of [anotar, projeto]) {
+        const um = dizer([viagem('a')]);
+        for (const n of [2, 3]) {
+          const r = dizer(Array.from({ length: n }, (_, i) => viagem(`u${i}`)));
+          expect(r.titulo, `x${n}`).toBe('Isso não existe no Google');
+          expect(r.efeito).toBeUndefined();
+          expect(textoDe(r), `x${n}`).toBe(textoDe(um));
+        }
+      }
+    });
+
+    it('dois convidados: o motivo é o de convidado, como com um só', () => {
+      const dois = [viagem('a', { souOrganizador: false }), viagem('b', { souOrganizador: false })];
+      const r = anotar(dois);
+      expect(r.titulo).toBe('Essa é do Google');
+      expect(textoDe(r)).toContain('de outra pessoa');
+    });
+
+    it('um organizador e um convidado: os motivos diferem, e o texto não escolhe um', () => {
+      for (const ordem of [[viagem('a'), viagem('b', { souOrganizador: false })], [viagem('b', { souOrganizador: false }), viagem('a')]]) {
+        const r = anotar(ordem);
+        expect(r.titulo).toBe('Essa é do Google');
+        expect(textoDe(r)).not.toContain('de outra pessoa');
+        expect(textoDe(r)).not.toContain('anotação');
+      }
+    });
+
+    it('um organizador e um não mexível: também sem escolher', () => {
+      const r = anotar([viagem('a'), viagem('b', { mexivel: false })]);
+      expect(r.titulo).toBe('Essa é do Google');
+      expect(textoDe(r)).not.toContain('anotação');
+    });
+
+    it('com uma tarefa homônima, a tarefa continua ganhando', () => {
+      const r = responder(
+        banco({ tarefas: [tarefa({ id: 't1', titulo: 'Viagem' })] }),
+        interpretar('anota na viagem que volta dia 20', HOJE),
+        HOJE,
+        [viagem('a'), viagem('b')],
+      );
+      expect(r.efeito).toMatchObject({ tipo: 'editar-tarefa', id: 't1' });
     });
   });
 

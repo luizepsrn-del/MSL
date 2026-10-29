@@ -229,6 +229,24 @@ export function cacheFicouVelho(resultado: ResultadoDoEfeito): boolean {
   return ['inexistente', 'mudou-enquanto-isso', 'desconectado'].includes(resultado.motivo);
 }
 
+export type DepoisDeMexer = 'nada' | 'ressincronizar' | 'desconectar';
+
+/**
+ * O que a memória do hook faz depois de mexer.
+ *
+ * Separada do hook para ter prova: é a decisão em que um erro deixa o agente
+ * listando o evento que acabou de ser apagado. `limparCache` só mexe no disco;
+ * quem responde é o estado em memória, e ele precisa sair junto.
+ * - perdi o acesso: a lista é de uma conta que já não vale, e buscar de novo
+ *   com a credencial caída só repetiria o erro;
+ * - o cache ficou velho: esvazia a memória e busca de novo;
+ * - nada mudou lá: nada se toca.
+ */
+export function depoisDeMexer(resultado: ResultadoDoEfeito): DepoisDeMexer {
+  if (!cacheFicouVelho(resultado)) return 'nada';
+  return !resultado.feito && resultado.motivo === 'desconectado' ? 'desconectar' : 'ressincronizar';
+}
+
 /**
  * Lê o que o servidor respondeu. Só `feito: true` é sucesso, e uma recusa só
  * vale com motivo; qualquer outra forma é "sem resposta", porque dizer que
@@ -339,6 +357,12 @@ export function useGoogle(de: string, ate: string): Google {
 
   // Uma por vez: trocar de mês três vezes rápido não pode disparar três.
   const emVoo = React.useRef(false);
+  // Mexer num evento invalida a lista: uma busca que já estava no ar trouxe a
+  // de antes. A geração diz qual busca ainda vale, e `refazer` pede outra
+  // quando a que estava em voo terminar.
+  const geracaoDaLista = React.useRef(0);
+  const refazer = React.useRef(false);
+  const sincronizarRef = React.useRef<(forcar: boolean) => Promise<void>>(async () => {});
   // O banco de agora, para a sincronização não mandar um retrato velho.
   const bancoAgora = React.useRef(banco);
   bancoAgora.current = banco;
@@ -362,6 +386,7 @@ export function useGoogle(de: string, ate: string): Google {
       if (!forcar && !estaVelho(lerCache(window.localStorage), new Date())) return;
 
       emVoo.current = true;
+      const geracao = geracaoDaLista.current;
       setSincronizando(true);
       try {
         const janelaDe = somarDias(hoje, -DIAS_PARA_TRAS);
@@ -397,6 +422,10 @@ export function useGoogle(de: string, ate: string): Google {
           }
         }
 
+        // Mexeram num evento enquanto esta busca estava no ar: a lista dela é
+        // a de antes, e gravá-la traria de volta o evento que acabou de sumir.
+        if (geracao !== geracaoDaLista.current) return;
+
         const novo = { eventos: resultado.deles, em: new Date().toISOString() };
         gravarCache(window.localStorage, novo);
         setGuardado(novo);
@@ -407,10 +436,15 @@ export function useGoogle(de: string, ate: string): Google {
       } finally {
         emVoo.current = false;
         setSincronizando(false);
+        if (refazer.current) {
+          refazer.current = false;
+          void sincronizarRef.current(true);
+        }
       }
     },
     [carregando, hoje, editarTarefa, editarPeca],
   );
+  sincronizarRef.current = sincronizar;
 
   // Ao abrir: pergunta se está conectado e sincroniza se fizer sentido.
   React.useEffect(() => {
@@ -483,16 +517,19 @@ export function useGoogle(de: string, ate: string): Google {
 
     mexerNoEvento: async (efeito) => {
       const resultado = await mexerNoEventoDoGoogle(efeito, window.localStorage);
-      if (!cacheFicouVelho(resultado)) return resultado;
+      const depois = depoisDeMexer(resultado);
+      if (depois === 'nada') return resultado;
 
-      if (!resultado.feito && resultado.motivo === 'desconectado') {
-        // Sem acesso, a lista que eu tinha é de uma conta que já não vale.
-        setGuardado(null);
-        setConectado(false);
-      } else {
-        // Rebusca já: o agente responde pelo que está em memória, e depois de
-        // apagar ele ainda listaria o evento até o próximo ciclo.
-        void sincronizar(true);
+      // O disco já foi limpo; a memória também, ou o agente seguiria listando
+      // o evento até a rebusca chegar, e para sempre se ela falhar.
+      setGuardado(null);
+      if (depois === 'desconectar') setConectado(false);
+      else {
+        // Uma sincronização em voo trouxe a lista de antes de mexer: a
+        // resposta dela é descartada e outra roda quando ela terminar.
+        geracaoDaLista.current += 1;
+        if (emVoo.current) refazer.current = true;
+        else void sincronizar(true);
       }
       return resultado;
     },

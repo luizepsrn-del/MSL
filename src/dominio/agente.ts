@@ -869,6 +869,34 @@ function recusaDeMover(deFora: readonly CompromissoExterno[]): Resposta {
 
 const REGRA_DE_MOVER: RegraDoAlvo = { daParaAgir: DA_PARA_MOVER, recusa: recusaDeMover };
 
+const RECUSA_SEM_ANOTACAO: Resposta = {
+  titulo: 'Isso não existe no Google',
+  blocos: [
+    {
+      tipo: 'texto',
+      texto:
+        'Um compromisso do Google não tem anotação nem projeto. ' +
+        'Dele eu só consigo mudar o título e o horário.',
+    },
+  ],
+};
+
+/**
+ * Anotação e projeto são conceitos do MSL: nenhum evento do Google os aceita,
+ * então nenhuma escolha leva a uma ação e perguntar "qual delas?" seria mandar
+ * o dono decidir sobre o que será recusado. Quem organiza ouve a razão da
+ * frase; os outros, a razão deles, e quando os motivos se misturam o texto não
+ * escolhe um (mesma lógica de `recusaDeMover`).
+ */
+function recusaDeAnotar(deFora: readonly CompromissoExterno[]): Resposta {
+  const soPelaFrase = deFora.filter((c) => DA_PARA_ALTERAR(c)).length;
+  if (soPelaFrase === deFora.length) return RECUSA_SEM_ANOTACAO;
+  if (soPelaFrase > 0) return recusaDoGoogle(deFora);
+  return recusaPadrao(deFora);
+}
+
+const REGRA_DE_ANOTAR: RegraDoAlvo = { daParaAgir: () => false, recusa: recusaDeAnotar };
+
 /** Evento não se conclui: nenhum candidato serve, e o motivo não é permissão. */
 const REGRA_DE_CONCLUIR: RegraDoAlvo = {
   daParaAgir: () => false,
@@ -1112,7 +1140,7 @@ export type DesfechoDoTurno = { estado: 'confirmado' } | { estado: 'falhou'; fra
  */
 export function desfechoDoTurno(resultado: ResultadoDoEfeito): DesfechoDoTurno {
   if (resultado.feito === true) return { estado: 'confirmado' };
-  return { estado: 'falhou', frase: frasePorMotivo((resultado as { motivo?: string }).motivo as string) };
+  return { estado: 'falhou', frase: frasePorMotivo(resultado.motivo) };
 }
 
 /** Para quem não organiza: mover e renomear não são dele, e o texto diz a quem recorrer. */
@@ -1236,17 +1264,7 @@ function editarCompromisso(c: CompromissoExterno, pedida: MudancaPedida, hoje: s
   if (c.souOrganizador !== true) return recusaDeConvidado(c);
 
   if (pedida.anotacao !== undefined || pedida.projeto !== undefined) {
-    return {
-      titulo: 'Isso não existe no Google',
-      blocos: [
-        {
-          tipo: 'texto',
-          texto:
-            'Um compromisso do Google não tem anotação nem projeto. ' +
-            'Dele eu só consigo mudar o título e o horário.',
-        },
-      ],
-    };
+    return RECUSA_SEM_ANOTACAO;
   }
 
   const querTitulo = pedida.titulo !== undefined;
@@ -1753,10 +1771,17 @@ export function responder(
     }
 
     case 'editar-tarefa': {
-      // Só a hora é mover; título (sozinho ou com hora, que depois recusa)
-      // renomeia, e renomear atravessa os vários dias.
-      const soHora = intencao.mudanca.hora !== undefined && intencao.mudanca.titulo === undefined;
-      const regra = soHora ? REGRA_DE_MOVER : REGRA_DE_ALTERAR;
+      // Anotação e projeto não existem do lado de lá. Só a hora é mover; título
+      // (sozinho ou com hora, que depois recusa) renomeia, e renomear atravessa
+      // os vários dias.
+      const { anotacao, projeto, hora, titulo } = intencao.mudanca;
+      const soHora = hora !== undefined && titulo === undefined;
+      const regra =
+        anotacao !== undefined || projeto !== undefined
+          ? REGRA_DE_ANOTAR
+          : soHora
+            ? REGRA_DE_MOVER
+            : REGRA_DE_ALTERAR;
       const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, regra);
       if (alvo.tipo === 'nada') return alvo.resposta;
       const pedida = intencao.mudanca;

@@ -288,3 +288,19 @@ test('o Google aceita: manda o id certo e só então diz "Feito"', async ({ page
   await expect(page.getByText('Feito', { exact: true })).toBeVisible();
   expect(corpos).toEqual([{ acao: 'apagar', uid: 'g1' }]);
 });
+
+test('toque duplo em "Apagar no Google" manda um pedido só', async ({ page }) => {
+  const { botao } = await pedirParaApagarAReuniao(page);
+  const corpos: unknown[] = [];
+  await page.route('**/api/google-evento', async (rota) => {
+    corpos.push(JSON.parse(rota.request().postData() ?? '{}'));
+    // Resposta devagar: o segundo toque tem de cair com o primeiro ainda no ar.
+    await new Promise((resolver) => setTimeout(resolver, 400));
+    return rota.fulfill({ json: { feito: true } });
+  });
+
+  await botao.dblclick();
+
+  await expect(page.getByText('Feito', { exact: true })).toBeVisible();
+  expect(corpos).toHaveLength(1);
+});

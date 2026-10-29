@@ -11,6 +11,7 @@ import {
   compromissosDaAgenda,
   corpoDoEvento,
   cacheFicouVelho,
+  depoisDeMexer,
   mexerNoEventoDoGoogle,
 } from './google';
 import { bancoVazio, type Banco, type Tarefa, type Peca } from './esquema';
@@ -538,6 +539,34 @@ describe('mexer num evento do Google', () => {
     it('janela privada, em que limpar o cache falha, não derruba um sucesso', async () => {
       const { resultado } = await tenta(responde({ feito: true }), guardaQuebrada());
       expect(resultado).toEqual({ feito: true });
+    });
+  });
+
+  describe('o que fazer depois de mexer', () => {
+    it('sucesso: buscar de novo, porque a lista que eu tenho ainda tem o evento como era', () => {
+      expect(depoisDeMexer({ feito: true })).toBe('ressincronizar');
+    });
+
+    it('o evento sumiu ou mudou: buscar de novo', () => {
+      for (const motivo of ['inexistente', 'mudou-enquanto-isso']) {
+        expect(depoisDeMexer({ feito: false, motivo }), motivo).toBe('ressincronizar');
+      }
+    });
+
+    it('perdi o acesso: desconectar, e não buscar de novo com uma credencial que não vale', () => {
+      expect(depoisDeMexer({ feito: false, motivo: 'desconectado' })).toBe('desconectar');
+    });
+
+    it('nada mudou lá: não mexer em nada', () => {
+      for (const motivo of ['sem-permissao', 'e-nosso', 'indisponivel', 'qualquer']) {
+        expect(depoisDeMexer({ feito: false, motivo }), motivo).toBe('nada');
+      }
+    });
+
+    it('concorda com o cache: só fica "nada" quando ele continua valendo', () => {
+      for (const r of [{ feito: true as const }, ...['inexistente', 'mudou-enquanto-isso', 'desconectado', 'sem-permissao', 'e-nosso', 'indisponivel'].map((motivo) => ({ feito: false as const, motivo }))]) {
+        expect(depoisDeMexer(r) === 'nada', JSON.stringify(r)).toBe(!cacheFicouVelho(r));
+      }
     });
   });
 
