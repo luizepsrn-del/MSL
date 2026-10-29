@@ -123,7 +123,20 @@ test('dizendo o nome inteiro, ele conclui', async ({ page }) => {
   await page.goto('/app/pedir');
 
   await perguntar(page, 'concluir renovar o seguro');
-  await expect(page.getByText('Concluída')).toBeVisible();
+
+  // Primeiro a prévia: o agente mostra o que vai concluir e avisa que nada foi
+  // gravado. Esperar "Concluída" aqui, antes do toque, era anunciar um feito que
+  // ainda não houve — e foi o que o teste antigo cobrava.
+  await expect(page.getByText('Nada foi gravado ainda.')).toBeVisible();
+  // exact: a frase que eu digitei também contém o nome e aparece na conversa.
+  await expect(page.getByText('Renovar o seguro', { exact: true })).toBeVisible();
+
+  const botao = page.getByRole('button', { name: 'Concluir', exact: true });
+  await expect(botao).toBeVisible();
+  await botao.click();
+
+  // Quem anuncia o resultado é a tela, depois do toque.
+  await expect(page.getByText('Feito', { exact: true })).toBeVisible();
 
   await page.goto('/app/tarefas');
   await expect(page.getByText('2 pendentes')).toBeVisible();

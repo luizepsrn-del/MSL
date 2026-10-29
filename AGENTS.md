@@ -154,7 +154,12 @@ reading its test is how the system starts lying.
   schema field, no event id travelling between devices: two devices find the
   same event by the mark and *update* instead of creating a second, and
   deleting the Google account leaves no litter in the bank. An event without
-  the mark belongs to Google and is never touched.
+  the mark belongs to Google: the *sync* only reads it. The agent can delete,
+  move and rename it, but through a separate door (`/api/google-evento`) that
+  sends no e-mail (`sendUpdates=none`), acts on the occurrence id and never on
+  a series, and refuses to move or rename a mirror. Guests may only delete;
+  move/rename need being the organizer. See the top of `src/dominio/google.ts`
+  for which side (route or domain) enforces each rule.
 - **Two-way conflicts use the same rule as the device merge: last write wins.**
   Google's `updated` against the record's `alteradoEm`. It works because the
   comparison only runs when the content *differs* — writing to Google stamps a
