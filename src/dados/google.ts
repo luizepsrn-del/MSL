@@ -9,6 +9,7 @@ import {
 } from '../dominio/google';
 import { somarDias, distanciaEmDias } from '../dominio/rotina';
 import { relogioEm, FUSO_PADRAO } from '../dominio/ical';
+import type { CompromissoExterno, Efeito, ResultadoDoEfeito } from '../dominio/agente';
 import { useBanco } from './BancoContexto';
 
 /**
@@ -127,10 +128,44 @@ export function estaVelho(guardado: Guardado | null, agora: Date): boolean {
 /* ── A conversa com o servidor ───────────────────────────────────────────── */
 
 export class ErroDoGoogle extends Error {
-  constructor(mensagem: string) {
+  constructor(
+    mensagem: string,
+    /** o status HTTP que o servidor devolveu */
+    readonly estado?: number,
+    /** o `erro` do corpo: 'google' quando é o Google, 'sessao-invalida' quando é o MSL */
+    readonly codigo?: string,
+  ) {
     super(mensagem);
     this.name = 'ErroDoGoogle';
   }
+}
+
+/**
+ * O Google deixou de aceitar a credencial guardada?
+ *
+ * É o caso em que o cartão de Ajustes precisa voltar a oferecer **Conectar**:
+ * a credencial ainda existe no servidor, então `google-estado` segue dizendo
+ * "conectado", mas toda chamada falha — o consentimento expira a cada 7 dias em
+ * modo de testes, ou o dono o revogou. Sem este teste o cartão ficava em
+ * "Conectada", com a mensagem "Reconecte a agenda em Ajustes" apontando para um
+ * botão que não existia.
+ *
+ * **Só o 401 conta.** O 403 do Google tem outras causas que reconectar não
+ * resolve: limite de pedidos (`rateLimitExceeded`, `quotaExceeded`) e a
+ * Calendar API desligada no projeto. Tratá-lo como perda de acesso derrubaria
+ * a conexão numa rajada de pedidos e, no caso da API desligada, mandaria o dono
+ * reconectar em laço. O `invalid_grant` da renovação — o caso real de
+ * consentimento expirado ou revogado — já chega aqui como 401.
+ *
+ * O 401 da **sessão do MSL** também chega aqui, e não conta: reconectar o
+ * Google não o resolve. É o `codigo` que separa os dois.
+ */
+export function perdeuOAcesso(erro: unknown): boolean {
+  return (
+    erro instanceof ErroDoGoogle &&
+    erro.codigo === 'google' &&
+    erro.estado === 401
+  );
 }
 
 const token = () => window.localStorage.getItem('msl-sessao');
@@ -151,12 +186,27 @@ export const METODO: Record<string, 'GET' | 'POST'> = {
   '/api/google-conectar': 'POST',
   '/api/google-sincronizar': 'POST',
   '/api/google-desconectar': 'POST',
+  '/api/google-evento': 'POST',
 };
+
+/**
+ * Quanto o navegador espera o servidor antes de desistir.
+ *
+ * Maior que o pior caso do servidor de propósito: para mexer num evento ele
+ * renova o acesso (10 s), lê (15 s) e escreve (15 s), cada um com seu próprio
+ * limite. Com 45 s, quem responde é o servidor, que sabe dizer o que houve; o
+ * navegador só desiste quando o servidor também deixou de responder (sinal
+ * perdido no meio do envio, por exemplo). Sem limite nenhum, `fetch` espera
+ * para sempre, e o turno do agente ficava em "Aplicando…" sem saída: o botão
+ * de confirmar já sumiu e não há nova tentativa.
+ */
+export const LIMITE_DE_ESPERA_MS = 45_000;
 
 export async function falar<T>(
   caminho: string,
   corpo?: unknown,
   buscar: typeof fetch = fetch,
+  limiteMs: number = LIMITE_DE_ESPERA_MS,
 ): Promise<T> {
   const acesso = token();
   const metodo = METODO[caminho] ?? 'POST';
@@ -171,10 +221,19 @@ export async function falar<T>(
       ...(acesso ? { Authorization: `Bearer ${acesso}` } : {}),
     },
     body: temCorpo ? JSON.stringify(corpo ?? {}) : undefined,
+    // O sinal também cobre a leitura do corpo: a resposta pode chegar pela
+    // metade e travar ali.
+    signal: AbortSignal.timeout(limiteMs),
   });
 
-  const dados = (await resposta.json().catch(() => ({}))) as T & { mensagem?: string };
-  if (!resposta.ok) throw new ErroDoGoogle(dados.mensagem ?? 'Não consegui falar com o Google.');
+  const dados = (await resposta.json().catch(() => ({}))) as T & { mensagem?: string; erro?: string };
+  if (!resposta.ok) {
+    throw new ErroDoGoogle(
+      dados.mensagem ?? 'Não consegui falar com o Google.',
+      resposta.status,
+      typeof dados.erro === 'string' ? dados.erro : undefined,
+    );
+  }
   return dados;
 }
 
@@ -184,6 +243,167 @@ export interface ResultadoDaSincronia {
   puxar: { chave: string; dia: string; hora?: string }[];
   escritos: { criados: number; atualizados: number; apagados: number };
   faltou: number;
+}
+
+/* ── Mexer num evento que não é nosso ────────────────────────────────────── */
+
+type EfeitoNoGoogle = Extract<Efeito, { tipo: 'evento-do-google' }>;
+
+/**
+ * O corpo do pedido para `/api/google-evento`.
+ *
+ * O fuso vai sempre: o servidor entende "sexta, 15:00" no relógio de quem
+ * pediu, e o dele não é o meu.
+ */
+export function corpoDoEvento(efeito: EfeitoNoGoogle): Record<string, unknown> {
+  const { acao, uid } = efeito;
+  switch (acao.tipo) {
+    case 'apagar':
+      return { acao: 'apagar', uid };
+    case 'renomear':
+      return { acao: 'renomear', uid, novo: acao.novo };
+    case 'mover':
+      return { acao: 'mover', uid, dia: acao.dia, hora: acao.hora, fuso: FUSO_PADRAO };
+    default: {
+      // Ação nova sem corpo viraria um pedido vazio, e o servidor o recusaria
+      // com um erro que não diz de quem é a culpa.
+      const naoTratada: never = acao;
+      throw new Error(`ação sem corpo: ${JSON.stringify(naoTratada)}`);
+    }
+  }
+}
+
+/**
+ * A cópia local de eventos deixou de valer?
+ *
+ * Depois de mexer, claro. Mas também depois das recusas que dizem que o Google
+ * está diferente do que eu tinha: o evento sumiu, alguém o alterou, ou perdi o
+ * acesso. Mostrar a lista antiga depois de ouvir isso é repetir o engano que
+ * acabou de ser corrigido. Nas outras recusas nada mudou lá, e o cache serve.
+ */
+export function cacheFicouVelho(resultado: ResultadoDoEfeito): boolean {
+  if (resultado.feito) return true;
+  return ['inexistente', 'mudou-enquanto-isso', 'desconectado'].includes(resultado.motivo);
+}
+
+export type DepoisDeMexer = 'nada' | 'ressincronizar' | 'desconectar';
+
+/**
+ * O que a memória do hook faz depois de mexer.
+ *
+ * Separada do hook para ter prova: é a decisão em que um erro deixa o agente
+ * listando o evento que acabou de ser apagado. `limparCache` só mexe no disco;
+ * quem responde é o estado em memória, e ele precisa sair junto.
+ * - perdi o acesso: a lista é de uma conta que já não vale, e buscar de novo
+ *   com a credencial caída só repetiria o erro;
+ * - o cache ficou velho: esvazia a memória e busca de novo;
+ * - nada mudou lá: nada se toca.
+ */
+export function depoisDeMexer(resultado: ResultadoDoEfeito): DepoisDeMexer {
+  if (!cacheFicouVelho(resultado)) return 'nada';
+  return !resultado.feito && resultado.motivo === 'desconectado' ? 'desconectar' : 'ressincronizar';
+}
+
+/**
+ * Lê o que o servidor respondeu. Só `feito: true` é sucesso, e uma recusa só
+ * vale com motivo; qualquer outra forma é "sem resposta", porque dizer que
+ * deu certo com base numa resposta que não entendo seria inventar.
+ */
+function lerResultado(dados: unknown): ResultadoDoEfeito {
+  const d = dados as { feito?: unknown; motivo?: unknown } | null;
+  if (d?.feito === true) return { feito: true };
+  if (d?.feito === false && typeof d.motivo === 'string') return { feito: false, motivo: d.motivo };
+  return { feito: false, motivo: SEM_RESPOSTA };
+}
+
+/** O motivo de quando o servidor não respondeu o que se esperava. */
+const SEM_RESPOSTA = 'indisponivel';
+
+/**
+ * O que um erro de `falar` diz sobre o evento: mexeram nele ou não?
+ *
+ * Antes tudo virava `SEM_RESPOSTA` ("não sei se valeu"), e isso jogava fora o
+ * que o servidor sabia. Aqui o `estado` separa três casos:
+ *
+ * - **429**: o Google pediu para esperar. A rota só o fabrica a partir de uma
+ *   recusa do Google a uma chamada, então nada foi escrito, e o que ajuda o
+ *   dono é saber que basta esperar;
+ * - **outro 4xx**: o servidor recusou o pedido antes de falar com o Google
+ *   (pedido torto, sessão vencida), então também nada foi escrito;
+ * - **o resto** (5xx, rede, tempo esgotado): a escrita pode ter chegado ao
+ *   Google e a resposta se perdido, ou o próprio Google ter falhado depois de
+ *   aplicar. Aqui a única frase honesta é "não sei".
+ *
+ * O 4xx **não** quer dizer "o servidor entendeu e nada fez" para qualquer erro
+ * com `estado`: o 500 e o 502 também têm, e são justamente os incertos.
+ */
+export function motivoDoErro(erro: unknown): string {
+  if (!(erro instanceof ErroDoGoogle) || erro.estado === undefined) return SEM_RESPOSTA;
+  if (erro.estado === 429) return 'esperar';
+  if (erro.codigo === 'sessao-invalida') return 'sessao-vencida';
+  if (erro.estado >= 400 && erro.estado < 500) return 'recusado';
+  return SEM_RESPOSTA;
+}
+
+/**
+ * Apaga, move ou renomeia um evento do Google e diz o que aconteceu.
+ *
+ * Nunca lança: todo erro vira um motivo (`motivoDoErro`), e a tela decide o
+ * que dizer. Rede caída, tempo esgotado e erro do servidor ficam "sem
+ * resposta"; o que o servidor garantiu que não escreveu ganha motivo próprio.
+ * Lançar aqui deixaria o turno preso em "enviando" ou, pior, o faria cair no
+ * "Feito" de quem não espera falha.
+ */
+export async function mexerNoEventoDoGoogle(
+  efeito: EfeitoNoGoogle,
+  guarda: Storage,
+  buscar: typeof fetch = fetch,
+  limiteMs: number = LIMITE_DE_ESPERA_MS,
+): Promise<ResultadoDoEfeito> {
+  let resultado: ResultadoDoEfeito;
+  try {
+    resultado = lerResultado(
+      await falar<unknown>('/api/google-evento', corpoDoEvento(efeito), buscar, limiteMs),
+    );
+  } catch (erro) {
+    // O que o servidor soube não se joga fora: ver `motivoDoErro`.
+    resultado = { feito: false, motivo: motivoDoErro(erro) };
+  }
+  if (cacheFicouVelho(resultado)) limparCache(guarda);
+  return resultado;
+}
+
+/* ── De onde vêm os compromissos do agente ───────────────────────────────── */
+
+/**
+ * Os compromissos que o agente enxerga: a mesma regra do calendário. Conectado
+ * ao Google, ele manda; senão vale a agenda assinada. Duas fontes ao mesmo
+ * tempo mostrariam tudo em dobro.
+ *
+ * Só o Google tem caminho de escrita, e por isso só os dele são `mexivel`. O
+ * campo diz "dá para apontar este evento": ter id. A diferença entre apagar e
+ * alterar **não** mora aqui: convidado também apaga (o DELETE tira só a cópia
+ * dele), e mover e renomear pedem `souOrganizador`, que o domínio confere por
+ * conta própria. Fazer `mexivel` valer `souOrganizador` tiraria do convidado o
+ * apagar, que o dono decidiu manter. A assinatura iCal passa sem o campo, e
+ * ausente vale não.
+ */
+export function compromissosDaAgenda(
+  google: Pick<Google, 'conectado' | 'eventos'>,
+  assinatura: { agenda: { eventos: readonly CompromissoExterno[] } | null },
+): readonly CompromissoExterno[] {
+  if (!google.conectado) return assinatura.agenda?.eventos ?? [];
+  return google.eventos.map((e) => ({
+    titulo: e.titulo,
+    dia: e.dia,
+    hora: e.hora,
+    diaInteiro: e.diaInteiro,
+    uid: e.uid,
+    mexivel: e.uid !== '',
+    souOrganizador: e.souOrganizador,
+    desde: e.desde,
+    ate: e.ate,
+  }));
 }
 
 /* ── O gancho ────────────────────────────────────────────────────────────── */
@@ -196,11 +416,23 @@ export interface Google {
   /** ISO UTC da última sincronização */
   sincronizadoEm: string | null;
   erro: string | null;
+  /**
+   * O Google deixou de aceitar uma conexão que já existiu. Diferente de nunca
+   * ter conectado: aqui a configuração no Google Cloud está pronta e só falta
+   * autorizar de novo, e a tela não deve mandar recomeçar do zero.
+   *
+   * Só a **sincronização** o liga. Cada tela tem a sua cópia deste estado, e o
+   * cartão de Ajustes não vê a do agente: quando o agente descobre a perda, o
+   * cache sai do disco e o cartão percebe na próxima vez que sincronizar.
+   */
+  acessoPerdido: boolean;
   /** quantos eventos o servidor escreveu na última vez */
   escritos: { criados: number; atualizados: number; apagados: number } | null;
   conectar: () => void;
   desconectar: () => void;
   sincronizarAgora: () => void;
+  /** apaga, move ou renomeia um evento, e diz se o Google fez */
+  mexerNoEvento: (efeito: EfeitoNoGoogle) => Promise<ResultadoDoEfeito>;
 }
 
 /**
@@ -220,10 +452,17 @@ export function useGoogle(de: string, ate: string): Google {
   );
   const [sincronizando, setSincronizando] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
+  const [acessoPerdido, setAcessoPerdido] = React.useState(false);
   const [escritos, setEscritos] = React.useState<Google['escritos']>(null);
 
   // Uma por vez: trocar de mês três vezes rápido não pode disparar três.
   const emVoo = React.useRef(false);
+  // Mexer num evento invalida a lista: uma busca que já estava no ar trouxe a
+  // de antes. A geração diz qual busca ainda vale, e `refazer` pede outra
+  // quando a que estava em voo terminar.
+  const geracaoDaLista = React.useRef(0);
+  const refazer = React.useRef(false);
+  const sincronizarRef = React.useRef<(forcar: boolean) => Promise<void>>(async () => {});
   // O banco de agora, para a sincronização não mandar um retrato velho.
   const bancoAgora = React.useRef(banco);
   bancoAgora.current = banco;
@@ -247,6 +486,7 @@ export function useGoogle(de: string, ate: string): Google {
       if (!forcar && !estaVelho(lerCache(window.localStorage), new Date())) return;
 
       emVoo.current = true;
+      const geracao = geracaoDaLista.current;
       setSincronizando(true);
       try {
         const janelaDe = somarDias(hoje, -DIAS_PARA_TRAS);
@@ -259,7 +499,13 @@ export function useGoogle(de: string, ate: string): Google {
           itens: paraEspelhar(bancoAgora.current, janelaDe, janelaAte),
         });
 
+        // Mexeram num evento ou perderam o acesso enquanto esta busca estava
+        // no ar: ela trouxe a lista e o "conectado" de antes, e valer qualquer
+        // dos dois reconectaria ou traria de volta o que acabou de sumir.
+        if (geracao !== geracaoDaLista.current) return;
+
         setConectado(resultado.conectado);
+        setAcessoPerdido(false);
         setErro(null);
         setEscritos(resultado.escritos);
 
@@ -282,20 +528,39 @@ export function useGoogle(de: string, ate: string): Google {
           }
         }
 
+        // Mexeram num evento enquanto esta busca estava no ar: a lista dela é
+        // a de antes, e gravá-la traria de volta o evento que acabou de sumir.
+        if (geracao !== geracaoDaLista.current) return;
+
         const novo = { eventos: resultado.deles, em: new Date().toISOString() };
         gravarCache(window.localStorage, novo);
         setGuardado(novo);
       } catch (e) {
         setErro(e instanceof ErroDoGoogle ? e.message : 'Não consegui falar com o Google.');
-        // O cache velho continua valendo: um erro de rede não é motivo para
-        // esvaziar o calendário do que já estava lá.
+        if (perdeuOAcesso(e)) {
+          // Mesmo desfecho de quando o agente descobre isso ao escrever: a
+          // conexão está morta, então o cartão volta a oferecer Conectar e o
+          // calendário deixa de mostrar eventos que já não se atualizam.
+          geracaoDaLista.current += 1;
+          limparCache(window.localStorage);
+          setGuardado(null);
+          setConectado(false);
+          setAcessoPerdido(true);
+        }
+        // Nos outros erros o cache velho continua valendo: um erro de rede não
+        // é motivo para esvaziar o calendário do que já estava lá.
       } finally {
         emVoo.current = false;
         setSincronizando(false);
+        if (refazer.current) {
+          refazer.current = false;
+          void sincronizarRef.current(true);
+        }
       }
     },
     [carregando, hoje, editarTarefa, editarPeca],
   );
+  sincronizarRef.current = sincronizar;
 
   // Ao abrir: pergunta se está conectado e sincroniza se fizer sentido.
   React.useEffect(() => {
@@ -337,6 +602,7 @@ export function useGoogle(de: string, ate: string): Google {
     sincronizando,
     sincronizadoEm: guardado?.em ?? null,
     erro,
+    acessoPerdido,
     escritos,
 
     conectar: () => {
@@ -357,6 +623,7 @@ export function useGoogle(de: string, ate: string): Google {
           limparCache(window.localStorage);
           setGuardado(null);
           setConectado(false);
+          setAcessoPerdido(false);
           setErro(null);
         } catch (e) {
           setErro(e instanceof ErroDoGoogle ? e.message : 'Não consegui desconectar.');
@@ -365,5 +632,25 @@ export function useGoogle(de: string, ate: string): Google {
     },
 
     sincronizarAgora: () => void sincronizar(true),
+
+    mexerNoEvento: async (efeito) => {
+      const resultado = await mexerNoEventoDoGoogle(efeito, window.localStorage);
+      const depois = depoisDeMexer(resultado);
+      if (depois === 'nada') return resultado;
+
+      // O disco já foi limpo; a memória também, ou o agente seguiria listando
+      // o evento até a rebusca chegar, e para sempre se ela falhar.
+      setGuardado(null);
+      // Uma sincronização em voo trouxe a lista (e o "conectado") de antes de
+      // mexer: a resposta dela é descartada, nos dois casos.
+      geracaoDaLista.current += 1;
+      if (depois === 'desconectar') setConectado(false);
+      else {
+        // Outra roda quando a que estava no ar terminar.
+        if (emVoo.current) refazer.current = true;
+        else void sincronizar(true);
+      }
+      return resultado;
+    },
   };
 }

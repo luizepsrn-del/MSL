@@ -563,7 +563,42 @@ function acharCompromissos(
 ): CompromissoExterno[] {
   const procurado = normalizar(alvo);
   if (procurado === '') return [];
-  return compromissos.filter((c) => normalizar(c.titulo).includes(procurado));
+  return umPorEvento(compromissos.filter((c) => normalizar(c.titulo).includes(procurado)));
+}
+
+/**
+ * Um evento de vários dias chega em uma cópia por dia, todas com o mesmo
+ * `uid`. Para o alvo de um comando elas são **um** evento: perguntar "qual
+ * delas?" entre três linhas iguais não leva a efeito nenhum, e mostrar só uma
+ * data enquanto apagar leva o evento inteiro esconde o estrago.
+ *
+ * A cópia que sobra vai do primeiro ao último dia que se conhece. Sem `uid`
+ * não há como saber que são o mesmo evento, então nada se une.
+ */
+function umPorEvento(achados: readonly CompromissoExterno[]): CompromissoExterno[] {
+  const porUid = new Map<string, CompromissoExterno>();
+  const saida: CompromissoExterno[] = [];
+  for (const c of achados) {
+    const unido = c.uid ? porUid.get(c.uid) : undefined;
+    if (unido) {
+      const dias = [
+        unido.desde ?? unido.dia,
+        unido.dia,
+        unido.ate ?? unido.dia,
+        c.desde ?? c.dia,
+        c.dia,
+        c.ate ?? c.dia,
+      ].sort();
+      unido.desde = dias[0];
+      unido.dia = unido.dia < c.dia ? unido.dia : c.dia;
+      unido.ate = dias[5];
+      continue;
+    }
+    const copia = { ...c };
+    if (c.uid) porUid.set(c.uid, copia);
+    saida.push(copia);
+  }
+  return saida;
 }
 
 /** Projetos ativos cujo nome contém o procurado. Mesma régua de `acharTarefas`. */
@@ -598,6 +633,26 @@ export interface CompromissoExterno {
   /** `HH:MM` de início; ausente quando ocupa o dia inteiro */
   hora?: string;
   diaInteiro: boolean;
+  /**
+   * O id do evento no Google. É o que uma ação futura usa para apontar o
+   * compromisso certo, em vez de reencontrá-lo pelo título.
+   */
+  uid?: string;
+  /**
+   * Se o Google deixa mexer neste evento. Ausente vale **não**: quem não
+   * afirmou que dá para mexer não ganha uma ação por omissão.
+   */
+  mexivel?: boolean;
+  /** Se a agenda é minha como organizador; convidado não decide pelos outros. */
+  souOrganizador?: boolean;
+  /**
+   * O primeiro e o último dia de um evento de vários dias. Quem entrega os
+   * dados já o repete em uma cópia por dia, todas com o mesmo `uid`; estes
+   * campos servem para quando a janela só deixa passar uma delas, e cortou o
+   * evento pelo começo, pelo fim ou pelos dois. Ausentes valem o próprio `dia`.
+   */
+  desde?: string;
+  ate?: string;
 }
 
 /** Os compromissos de um dia, em ordem de hora. Dia inteiro vem primeiro. */
@@ -627,62 +682,243 @@ function listaDeCompromissos(itens: readonly CompromissoExterno[], titulo: strin
 /* ── Achar uma tarefa só ─────────────────────────────────────────────────── */
 
 /**
- * O alvo de um comando, quando ele precisa de exatamente uma tarefa.
+ * O alvo de um comando: uma tarefa daqui, um compromisso de fora, ou nada.
  *
- * Três comandos — concluir, adiar e excluir — fazem a mesma pergunta e erram
- * do mesmo jeito caro: agir na tarefa errada só se descobre depois. A escolha
- * aqui é nunca escolher por conta própria quando há empate.
+ * Quatro comandos — concluir, adiar, excluir e editar — fazem a mesma pergunta
+ * e erram do mesmo jeito caro: agir no alvo errado só se descobre depois. A
+ * escolha aqui é nunca escolher por conta própria quando há empate.
+ *
+ * Tarefa ganha de compromisso. O que o MSL criou é dele; e a tarefa espelhada
+ * no Google carrega a marca `msl`, então nem chega na lista de compromissos.
+ * O empate só vale **dentro** de cada grupo: uma tarefa e um compromisso com o
+ * mesmo nome não pedem pergunta, a tarefa responde.
  */
-type Alvo = { achou: true; tarefa: Tarefa } | { achou: false; resposta: Resposta };
+export type Alvo =
+  | { tipo: 'tarefa'; tarefa: Tarefa }
+  | { tipo: 'compromisso'; compromisso: CompromissoExterno }
+  | { tipo: 'nada'; resposta: Resposta };
 
-function umaTarefa(
+/** O dia e a hora de um compromisso numa linha, para dizer de qual se fala. */
+function quandoDoCompromisso(c: CompromissoExterno): string {
+  return c.diaInteiro ? c.dia : `${c.dia}${c.hora ? `, ${c.hora}` : ''}`;
+}
+
+const SEM_COMO_MEXER =
+  'Esse compromisso é do Google, e eu não consigo mexer nele daqui. ' +
+  'Por ora, altere direto no Google Agenda.';
+
+/** `Hoje`, `Amanhã`, `Ontem`; ou `Sexta, 25/09`, que se confere de relance. */
+function diaFalado(dia: string, hoje: string): string {
+  if (dia === hoje) return 'Hoje';
+  if (dia === somarDias(hoje, 1)) return 'Amanhã';
+  if (dia === somarDias(hoje, -1)) return 'Ontem';
+  return `${maiuscula(DIAS_CHEIOS[diaDaSemana(dia)])}, ${dia.slice(8)}/${dia.slice(5, 7)}`;
+}
+
+/**
+ * O evento ocupa mais de um dia?
+ *
+ * Os dois lados contam: a janela corta o começo do evento do mesmo jeito que
+ * corta o fim, e uma cópia do último dia, vista sozinha, parece de um dia só.
+ */
+function emVariosDias(c: CompromissoExterno): boolean {
+  return (c.ate ?? c.dia) > (c.desde ?? c.dia);
+}
+
+/**
+ * Quando o compromisso acontece, para a prévia.
+ *
+ * Em dia falado, e não em `2026-09-18`: a prévia existe para o dono pegar o
+ * alvo errado depois de um ditado mal entendido, e "Amanhã" se confere num
+ * relance. E "Vence", que a tarefa usa, é a palavra errada para uma reunião.
+ * Evento de vários dias diz a faixa, porque apagar leva todos.
+ */
+function quandoFalado(c: CompromissoExterno, hoje: string): string {
+  if (emVariosDias(c)) {
+    return `${diaFalado(c.desde ?? c.dia, hoje)} a ${diaFalado(c.ate ?? c.dia, hoje)}`;
+  }
+  const hora = horaDoCompromisso(c);
+  const dia = diaFalado(c.dia, hoje);
+  if (hora) return `${dia}, ${hora}`;
+  return c.diaInteiro ? `${dia}, dia inteiro` : dia;
+}
+
+/**
+ * A recusa honesta para compromisso que nasceu fora.
+ *
+ * O agente **mostra** esses compromissos desde que passou a enxergar o Google,
+ * e responder "não achei" sobre algo que ele acabou de listar é mentir por
+ * tecnicismo. Recebe uma lista porque, sem poder mexer em nenhum, listar todos
+ * os que casam é mais útil do que perguntar qual — e perguntar para depois
+ * recusar seria uma pergunta inútil.
+ *
+ * O `motivo` troca o texto quando a razão da recusa não é "não consigo": hoje
+ * só concluir, que não é questão de permissão — do lado de lá não existe "feito".
+ */
+function recusaDoGoogle(
+  deFora: readonly CompromissoExterno[],
+  motivo: string = SEM_COMO_MEXER,
+): Resposta {
+  return {
+    titulo: 'Essa é do Google',
+    blocos: [
+      {
+        tipo: 'lista',
+        itens: deFora.slice(0, LIMITE_DA_LISTA).map((c) => ({
+          texto: c.titulo,
+          detalhe: quandoDoCompromisso(c),
+          tom: 'neutro' as const,
+        })),
+      },
+      { tipo: 'texto', texto: motivo },
+      { tipo: 'atalho', rotulo: 'Abrir calendário', destino: '/app/calendario' },
+    ],
+  };
+}
+
+/** A hora de início, que um evento de dia inteiro não tem, ainda que o dado traga uma. */
+function horaDoCompromisso(c: CompromissoExterno): string | undefined {
+  return c.diaInteiro ? undefined : c.hora;
+}
+
+/**
+ * O id do evento, se dá mesmo para agir nele; senão, nada.
+ *
+ * Os dois campos são opcionais no tipo, então nada impede montar um efeito com
+ * `uid` indefinido — quem impede é esta função, e as duas checagens fazem
+ * trabalhos diferentes. O que barra a assinatura iCal é só `mexivel`: ela
+ * **chega com `uid`**, e quando o `UID` falta o leitor usa o próprio título no
+ * lugar (`ical.ts`). Ou seja, ter `uid` não prova que é um id do Google, e se a
+ * checagem de `mexivel` cair um efeito sairia com o título de uma reunião no
+ * lugar de um id. A checagem de `uid` cobre o outro lado: o tipo o deixa
+ * ausente, e o id vazio também não aponta para evento nenhum, por isso o teste
+ * é de verdade e não de `undefined`. Ausente vale "não dá".
+ */
+function idParaMexer(c: CompromissoExterno): string | undefined {
+  return c.mexivel === true && c.uid ? c.uid : undefined;
+}
+
+/** Dá para apagar: tem id e o Google deixa mexer. Convidado também apaga, só da própria agenda. */
+const DA_PARA_APAGAR = (c: CompromissoExterno): boolean => idParaMexer(c) !== undefined;
+
+/**
+ * Dá para mover ou renomear: além de apagar, é preciso organizar o evento. O
+ * Google só aceita a mudança de um convidado quando o organizador habilitou
+ * `guestsCanModify`, e isso não buscamos. Só `true` vale organizador.
+ */
+const DA_PARA_ALTERAR = (c: CompromissoExterno): boolean => DA_PARA_APAGAR(c) && c.souOrganizador === true;
+
+/**
+ * O que quem chama sabe e `umAlvo` não: a ação.
+ *
+ * - `daParaAgir`: o candidato leva à ação? A mesma lista pode ser boa para uma
+ *   ação e inútil para outra, e perguntar "qual delas?" para depois recusar
+ *   todas é mandar o dono decidir sobre o que não vai acontecer. O padrão é a
+ *   régua de apagar, a mais larga das ações do Google.
+ * - `recusa`: o que dizer quando nenhum leva. É de quem chama porque o motivo
+ *   também é da ação — concluir recusa por "não existe feito", e não por
+ *   permissão. Deixar `umAlvo` deduzi-lo do filtro supunha que o filtro fosse
+ *   sempre a régua seguinte à de apagar, e qualquer terceiro filtro herdaria
+ *   um motivo mentiroso.
+ */
+interface RegraDoAlvo {
+  daParaAgir: (c: CompromissoExterno) => boolean;
+  recusa: (deFora: readonly CompromissoExterno[]) => Resposta;
+}
+
+/**
+ * A recusa padrão, para as ações cuja régua é `DA_PARA_APAGAR` ou a que a
+ * estreita: o motivo é de convidado só quando todos são mexíveis e o que falta
+ * é organizar; com um não mexível no meio, não finjo saber qual foi.
+ */
+function recusaPadrao(deFora: readonly CompromissoExterno[]): Resposta {
+  const soFaltaOrganizar = deFora.every((c) => DA_PARA_APAGAR(c));
+  return recusaDoGoogle(deFora, soFaltaOrganizar ? MOTIVO_DE_CONVIDADO : undefined);
+}
+
+const REGRA_PADRAO: RegraDoAlvo = { daParaAgir: DA_PARA_APAGAR, recusa: recusaPadrao };
+
+/** Renomear pede organizar; o resto da regra padrão serve. Evento de vários dias se renomeia. */
+const REGRA_DE_ALTERAR: RegraDoAlvo = { ...REGRA_PADRAO, daParaAgir: DA_PARA_ALTERAR };
+
+const MOTIVO_DE_VARIOS_DIAS =
+  'Esse evento ocupa mais de um dia, e por ora eu não mexo no horário dele. ' +
+  'Mova pelo Google Agenda.';
+
+/**
+ * Mover pede organizar **e** um dia só: `AcaoNoGoogle.mover` leva um dia e não
+ * diz se o evento anda inteiro, encolhe ou estica, então `acaoNoGoogle` o
+ * recusa. A régua de escolher o alvo tem de saber o mesmo, ou "Qual delas?"
+ * apareceria para uma ação que termina em recusa. Renomear não tem esse
+ * limite, e por isso não usa esta régua.
+ */
+const DA_PARA_MOVER = (c: CompromissoExterno): boolean => DA_PARA_ALTERAR(c) && !emVariosDias(c);
+
+/**
+ * Quando nenhum candidato se move, o motivo pode ser mais de um. Os que já
+ * passariam por `DA_PARA_ALTERAR` só caíram por serem de vários dias; os
+ * outros caíram por permissão. Se todos caíram pelo mesmo motivo, ele é dito;
+ * misturados, não finjo saber qual vale.
+ */
+function recusaDeMover(deFora: readonly CompromissoExterno[]): Resposta {
+  const soPorVariosDias = deFora.filter((c) => DA_PARA_ALTERAR(c)).length;
+  if (soPorVariosDias === deFora.length) return recusaDoGoogle(deFora, MOTIVO_DE_VARIOS_DIAS);
+  if (soPorVariosDias > 0) return recusaDoGoogle(deFora);
+  return recusaPadrao(deFora);
+}
+
+const REGRA_DE_MOVER: RegraDoAlvo = { daParaAgir: DA_PARA_MOVER, recusa: recusaDeMover };
+
+const RECUSA_SEM_ANOTACAO: Resposta = {
+  titulo: 'Isso não existe no Google',
+  blocos: [
+    {
+      tipo: 'texto',
+      texto:
+        'Um compromisso do Google não tem anotação nem projeto. ' +
+        'Dele eu só mexo no título e, quando cabe num dia só, no horário.',
+    },
+  ],
+};
+
+/**
+ * Anotação e projeto são conceitos do MSL: nenhum evento do Google os aceita,
+ * então nenhuma escolha leva a uma ação e perguntar "qual delas?" seria mandar
+ * o dono decidir sobre o que será recusado. Quem organiza ouve a razão da
+ * frase; os outros, a razão deles, e quando os motivos se misturam o texto não
+ * escolhe um (mesma lógica de `recusaDeMover`).
+ */
+function recusaDeAnotar(deFora: readonly CompromissoExterno[]): Resposta {
+  const soPelaFrase = deFora.filter((c) => DA_PARA_ALTERAR(c)).length;
+  if (soPelaFrase === deFora.length) return RECUSA_SEM_ANOTACAO;
+  if (soPelaFrase > 0) return recusaDoGoogle(deFora);
+  return recusaPadrao(deFora);
+}
+
+const REGRA_DE_ANOTAR: RegraDoAlvo = { daParaAgir: () => false, recusa: recusaDeAnotar };
+
+/** Evento não se conclui: nenhum candidato serve, e o motivo não é permissão. */
+const REGRA_DE_CONCLUIR: RegraDoAlvo = {
+  daParaAgir: () => false,
+  recusa: (deFora) => recusaDoGoogle(deFora, NAO_SE_CONCLUI),
+};
+
+const NAO_SE_CONCLUI = 'Compromisso do Google não se conclui: do lado de lá não existe "feito".';
+
+function umAlvo(
   banco: Banco,
   alvo: string,
   hoje: string,
   compromissos: readonly CompromissoExterno[] = [],
+  regra: RegraDoAlvo = REGRA_PADRAO,
 ): Alvo {
   const candidatas = acharTarefas(banco, alvo);
 
-  if (candidatas.length === 0) {
-    // Antes de dizer "não achei", olhar a agenda de fora. O agente **mostra**
-    // esses compromissos desde que passou a enxergar o Google, e responder
-    // "não achei" sobre algo que ele acabou de listar é mentir por tecnicismo.
-    const deFora = acharCompromissos(compromissos, alvo);
-    if (deFora.length > 0) {
-      return {
-        achou: false,
-        resposta: {
-          titulo: 'Essa é do Google',
-          blocos: [
-            { tipo: 'lista', itens: deFora.slice(0, LIMITE_DA_LISTA).map((c) => ({
-              texto: c.titulo,
-              detalhe: c.diaInteiro ? c.dia : `${c.dia}${c.hora ? `, ${c.hora}` : ''}`,
-              tom: 'neutro' as const,
-            })) },
-            {
-              tipo: 'texto',
-              texto:
-                'Esse compromisso nasceu no Google, e eu só mexo no que foi criado aqui. ' +
-                'Por ora, altere direto no Google Agenda.',
-            },
-            { tipo: 'atalho', rotulo: 'Abrir calendário', destino: '/app/calendario' },
-          ],
-        },
-      };
-    }
-
-    return {
-      achou: false,
-      resposta: {
-        titulo: 'Não achei essa tarefa',
-        blocos: [{ tipo: 'texto', texto: `Nenhuma tarefa pendente com "${alvo}" no nome.` }],
-      },
-    };
-  }
+  if (candidatas.length === 1) return { tipo: 'tarefa', tarefa: candidatas[0] };
 
   if (candidatas.length > 1) {
     return {
-      achou: false,
+      tipo: 'nada',
       resposta: {
         titulo: 'Qual delas?',
         blocos: [
@@ -693,7 +929,63 @@ function umaTarefa(
     };
   }
 
-  return { achou: true, tarefa: candidatas[0] };
+  // Só olha a agenda de fora quando nenhuma tarefa casou: tarefa vence.
+  const deFora = acharCompromissos(compromissos, alvo);
+
+  if (deFora.length === 1) return { tipo: 'compromisso', compromisso: deFora[0] };
+
+  if (deFora.length > 1) {
+    // Se nenhum leva à ação, o resultado seria a recusa de qualquer jeito.
+    if (deFora.every((c) => !regra.daParaAgir(c))) {
+      return { tipo: 'nada', resposta: regra.recusa(deFora) };
+    }
+    // Do mais próximo ao mais distante, e dentro do dia pela hora; o dia
+    // inteiro vem antes, como na agenda.
+    const ordenados = [...deFora].sort(
+      (x, y) => x.dia.localeCompare(y.dia) || (x.hora ?? '').localeCompare(y.hora ?? ''),
+    );
+    const mostrados = ordenados.slice(0, LIMITE_DA_LISTA);
+    return {
+      tipo: 'nada',
+      resposta: {
+        titulo: 'Qual delas?',
+        blocos: [
+          { tipo: 'texto', texto: `${deFora.length} compromissos do Google combinam com o que você escreveu.` },
+          {
+            tipo: 'lista',
+            restantes: ordenados.length - mostrados.length,
+            itens: mostrados.map((c) => ({
+              texto: c.titulo,
+              detalhe: quandoDoCompromisso(c),
+              tom: 'neutro' as const,
+            })),
+          },
+        ],
+      },
+    };
+  }
+
+  // A recusa fala dos dois mundos, porque o dono pode estar olhando um
+  // compromisso no calendário e dizendo "tarefa" por hábito. E diz o limite: a
+  // tela só passa os compromissos da semana corrente (`Agente.tsx` abre a
+  // janela em `semanaDe(hoje)`), então um da semana que vem não existe para
+  // cá. Sem isso, o dono acharia que o sistema está quebrado. Se a janela
+  // mudar lá, esta frase tem de mudar junto.
+  return {
+    tipo: 'nada',
+    resposta: {
+      titulo: 'Não achei isso',
+      blocos: [
+        {
+          tipo: 'texto',
+          texto:
+            `Nenhuma tarefa pendente nem compromisso desta semana com "${alvo}" no nome. ` +
+            'Eu procuro pelo nome e só enxergo os compromissos da semana corrente: ' +
+            'um de outra semana não aparece para mim.',
+        },
+      ],
+    },
+  };
 }
 
 /* ── Resposta ────────────────────────────────────────────────────────────── */
@@ -713,6 +1005,15 @@ export type Bloco =
   | { tipo: 'barras'; itens: { rotulo: string; fracao: number; valor: string }[] }
   | { tipo: 'atalho'; rotulo: string; destino: string };
 
+/**
+ * As três coisas que dá para fazer num evento do Google. Concluir não está
+ * aqui de propósito: não existe "feito" do lado de lá.
+ */
+export type AcaoNoGoogle =
+  | { tipo: 'apagar' }
+  | { tipo: 'mover'; dia: string; hora?: string }
+  | { tipo: 'renomear'; novo: string };
+
 /** O que a resposta pede que o banco faça. A tela executa; o domínio não. */
 export type Efeito =
   | { tipo: 'criar-tarefa'; titulo: string; prazo?: string; hora?: string; contexto: Contexto }
@@ -727,6 +1028,19 @@ export type Efeito =
       valor: number;
       entrada: boolean;
       categoria: Categoria;
+    }
+  /**
+   * Uma ação num compromisso que vive no Google. `uid` aponta o evento certo e
+   * `titulo` é o nome de **agora**, para a tela dizer o que mexeu. `souOrganizador`
+   * viaja junto porque decide o tamanho do estrago, e a tela não deve ter de
+   * adivinhá-lo de novo.
+   */
+  | {
+      tipo: 'evento-do-google';
+      uid: string;
+      titulo: string;
+      souOrganizador: boolean;
+      acao: AcaoNoGoogle;
     }
   /** o texto vai para o compositor de pedido, que já existia */
   | { tipo: 'montar-pedido'; descricao: string };
@@ -755,6 +1069,7 @@ export function exigeConfirmacao(efeito: Efeito): boolean {
     case 'adiar-tarefa':
     case 'excluir-tarefa':
     case 'editar-tarefa':
+    case 'evento-do-google':
       return true;
     case 'criar-tarefa':
     case 'criar-lancamento':
@@ -763,7 +1078,13 @@ export function exigeConfirmacao(efeito: Efeito): boolean {
   }
 }
 
-/** A frase do botão que confirma. Curta, e dizendo o que vai acontecer. */
+/**
+ * A frase do botão que confirma. Curta, e dizendo o que vai acontecer.
+ *
+ * Nunca "Cancelar": o botão que desiste já diz isso, e dois botões iguais lado
+ * a lado com efeitos opostos cobram caro no dia errado. Por isso apagar um
+ * evento é "Apagar no Google", que também diz **onde** o estrago acontece.
+ */
 export function rotuloDaConfirmacao(efeito: Efeito): string {
   switch (efeito.tipo) {
     case 'concluir-tarefa':
@@ -774,9 +1095,234 @@ export function rotuloDaConfirmacao(efeito: Efeito): string {
       return 'Excluir';
     case 'editar-tarefa':
       return 'Salvar';
-    default:
+    case 'evento-do-google':
+      return efeito.acao.tipo === 'apagar' ? 'Apagar no Google' : 'Salvar no Google';
+    case 'criar-tarefa':
+    case 'criar-lancamento':
+    case 'montar-pedido':
+      // Não pedem confirmação (`exigeConfirmacao`), então o botão nunca é
+      // desenhado para eles; o rótulo existe só para a função ser total.
       return 'Confirmar';
+    default: {
+      // Um efeito novo caía aqui e ganhava "Confirmar" em silêncio, o rótulo
+      // que não diz o que vai acontecer. Agora o compilador o cobra.
+      const naoTratado: never = efeito;
+      throw new Error(`efeito sem rótulo: ${JSON.stringify(naoTratado)}`);
+    }
   }
+}
+
+/* ── Quando o efeito não acontece ────────────────────────────────────────── */
+
+/**
+ * O que a tela soube depois de tentar o efeito.
+ *
+ * Os efeitos de antes escreviam no banco local, onde falhar é quase
+ * impossível, e a tela podia assumir sucesso. O do Google depende de rede e de
+ * quem mais mexe na agenda, então "feito" passou a ser uma resposta, e não uma
+ * suposição. `motivo` é texto porque chega do servidor: um motivo que este
+ * código não conhece também precisa ter frase.
+ */
+export type ResultadoDoEfeito = { feito: true } | { feito: false; motivo: string };
+
+const NADA_MUDOU = 'Nada mudou.';
+
+/**
+ * A frase para cada recusa do Google, e nenhuma diz que algo foi feito: ela é
+ * mostrada no lugar do "Feito", e uma frase de recusa que soasse como sucesso
+ * seria a pior mentira que a tela poderia contar.
+ *
+ * `esperar`, `sessao-vencida` e `recusado` vêm do servidor dizendo que nem
+ * chegou a escrever, e por isso podem afirmar que nada mudou. O último caso
+ * não é uma recusa, é falta de resposta (rede, tempo esgotado, erro do
+ * servidor, resposta torta, ou uma gravação local que lançou). Nele eu não sei
+ * se a mudança chegou lá, e dizer "nada mudou" seria afirmar o que não sei.
+ * Por isso também não cita o Google: serve a qualquer efeito.
+ */
+export function frasePorMotivo(motivo: string): string {
+  switch (motivo) {
+    case 'inexistente':
+      return `Esse evento já não está no Google, então não havia o que mudar. ${NADA_MUDOU}`;
+    case 'sem-permissao':
+      return `O Google não deixou mexer nesse evento: a sua conta não tem permissão para isso. ${NADA_MUDOU}`;
+    case 'desconectado':
+      return `A conexão com o Google caiu. Reconecte o Google Agenda e peça de novo. ${NADA_MUDOU}`;
+    case 'mudou-enquanto-isso':
+      return `Outra pessoa alterou esse evento enquanto eu preparava a mudança, e por segurança não mexi. Confira como ele está e peça de novo. ${NADA_MUDOU}`;
+    case 'esperar':
+      return `O Google pediu para esperar um pouco antes de novos pedidos. Tente de novo em instantes. ${NADA_MUDOU}`;
+    case 'sessao-vencida':
+      return `A sua sessão no MSL venceu, e o pedido nem chegou ao Google. Entre de novo e peça outra vez. ${NADA_MUDOU}`;
+    case 'recusado':
+      return `O servidor não aceitou o pedido, então nada foi enviado ao Google. Tente de novo; se repetir, é defeito daqui. ${NADA_MUDOU}`;
+    case 'e-nosso':
+      return `Esse compromisso é do próprio MSL: nasceu de uma tarefa daqui, e mexer nele por fora seria desfeito na próxima sincronia. Mude pela tarefa. ${NADA_MUDOU}`;
+    default:
+      return 'Não tive resposta, e não sei se a mudança chegou a valer. Confira como está antes de pedir de novo.';
+  }
+}
+
+export type DesfechoDoTurno = { estado: 'confirmado' } | { estado: 'falhou'; frase: string };
+
+/**
+ * Em que pé o turno fica depois de tentar o efeito.
+ *
+ * Só `feito === true` confirma: a resposta vem de fora, e uma que não diga
+ * isso com todas as letras não pode virar "Feito".
+ */
+export function desfechoDoTurno(resultado: ResultadoDoEfeito): DesfechoDoTurno {
+  if (resultado.feito === true) return { estado: 'confirmado' };
+  return { estado: 'falhou', frase: frasePorMotivo(resultado.motivo) };
+}
+
+/** Para quem não organiza: mover e renomear não são dele, e o texto diz a quem recorrer. */
+function recusaDeConvidado(c: CompromissoExterno): Resposta {
+  return recusaDoGoogle([c], MOTIVO_DE_CONVIDADO);
+}
+
+const MOTIVO_DE_CONVIDADO =
+  'Esse evento é de outra pessoa, e alterá-lo não é algo que eu consiga fazer daqui. ' +
+  'Fale com quem organiza, ou mexa direto no Google Agenda.';
+
+/**
+ * A prévia de uma ação num evento do Google, e o efeito que a acompanha.
+ *
+ * É a última coisa entre uma frase e uma reunião real desaparecendo, então ela
+ * diz o tamanho do estrago, que depende de quem eu sou no evento:
+ * - organizador: apagar **cancela para os convidados que usam Google Agenda**;
+ * - convidado (ou ausente): apagar tira o evento só da minha agenda, e
+ *   ninguém é avisado. É por isso que apagar vale para os dois.
+ *
+ * Mover e renomear só valem para o organizador. O Google só aceita a mudança de
+ * um convidado quando o organizador habilitou `guestsCanModify`, campo que não
+ * buscamos; e a régua da casa (`EventoParaTela.souOrganizador`, em `google.ts`)
+ * é a mesma: na dúvida, não mexe, porque perder uma edição permitida custa menos
+ * que tentar uma proibida. Convidado recebe recusa, e não um aviso que
+ * afirmaria uma permissão que ninguém verificou.
+ *
+ * No infinitivo, como as outras prévias: isto é desenhado antes da confirmação,
+ * e o efeito pode nunca acontecer.
+ */
+function acaoNoGoogle(
+  c: CompromissoExterno,
+  hoje: string,
+  titulo: string,
+  acao: AcaoNoGoogle,
+): Resposta {
+  const uid = idParaMexer(c);
+  if (uid === undefined) return recusaDoGoogle([c]);
+
+  // Só `true` vale organizador: ausente é convidado, que decide por menos gente.
+  const souOrganizador = c.souOrganizador === true;
+
+  if (acao.tipo !== 'apagar' && !souOrganizador) return recusaDeConvidado(c);
+  // As cópias de um evento de vários dias foram unidas em uma: `mover` leva um
+  // dia só, e não diz se o evento encolhe, estica ou anda inteiro.
+  if (acao.tipo === 'mover' && emVariosDias(c)) return recusaDoGoogle([c], MOTIVO_DE_VARIOS_DIAS);
+
+  let detalhe: string;
+  let tom: Tom;
+  let aviso: string;
+  switch (acao.tipo) {
+    case 'apagar':
+      detalhe = quandoFalado(c, hoje);
+      tom = souOrganizador ? 'ruim' : 'atencao';
+      aviso = souOrganizador
+        ? 'Apagar cancela a reunião para todos os convidados que usam Google Agenda, e ninguém é avisado.'
+        : 'Apagar tira o evento só da sua agenda, e ninguém é avisado.';
+      break;
+    case 'mover':
+      detalhe = `${quandoFalado(c, hoje)} → ${quandoFalado(comoFicaDepoisDeMover(c, acao), hoje)}`;
+      tom = 'atencao';
+      aviso = AVISO_DE_MUDANCA;
+      break;
+    case 'renomear':
+      detalhe = `${c.titulo} → ${acao.novo}`;
+      tom = 'atencao';
+      aviso = AVISO_DE_MUDANCA;
+      break;
+  }
+
+  return {
+    titulo,
+    blocos: [
+      { tipo: 'lista', itens: [{ texto: c.titulo, detalhe, tom }] },
+      { tipo: 'texto', texto: aviso },
+    ],
+    efeito: { tipo: 'evento-do-google', uid, titulo: c.titulo, souOrganizador, acao },
+  };
+}
+
+/**
+ * O evento como ele fica depois de mover, para a prévia dizer o que vai
+ * acontecer e não o que o dado de antes sugere.
+ *
+ * Duas heranças são perigosas e por isso cortadas: o `diaInteiro` (um evento
+ * de dia inteiro que ganha hora deixa de ser de dia inteiro, e herdá-lo faria
+ * a prévia esconder justamente a hora pedida) e a faixa `desde`/`ate` (que,
+ * longe do dia novo, viraria uma faixa que o evento não terá).
+ */
+function comoFicaDepoisDeMover(
+  c: CompromissoExterno,
+  acao: Extract<AcaoNoGoogle, { tipo: 'mover' }>,
+): CompromissoExterno {
+  return {
+    ...c,
+    dia: acao.dia,
+    desde: undefined,
+    ate: undefined,
+    hora: acao.hora,
+    diaInteiro: c.diaInteiro && acao.hora === undefined,
+  };
+}
+
+/** Só o organizador chega aqui: ele altera o evento dos convidados que usam Google Agenda. */
+const AVISO_DE_MUDANCA = 'Como você organiza, a mudança vale para todos os convidados que usam Google Agenda, e ninguém é avisado.';
+
+/**
+ * Editar um compromisso do Google: só título e horário existem do lado de lá.
+ *
+ * Anotação e projeto são conceitos do MSL, e aceitar a frase em silêncio
+ * faria a prévia prometer algo que nunca será gravado. Título e horário juntos
+ * também recusam, mas por limite **meu**: `AcaoNoGoogle` carrega uma ação por
+ * efeito. Escolher uma das duas por conta própria seria descartar metade do
+ * pedido sem avisar.
+ */
+function editarCompromisso(c: CompromissoExterno, pedida: MudancaPedida, hoje: string): Resposta {
+  if (idParaMexer(c) === undefined) return recusaDoGoogle([c]);
+  // Antes de qualquer outra checagem: quem não pode alterar não deve ouvir
+  // "peça o título, depois o horário" nem "só mexo no título", porque
+  // os pedidos seguintes seriam todos recusados.
+  if (c.souOrganizador !== true) return recusaDeConvidado(c);
+
+  if (pedida.anotacao !== undefined || pedida.projeto !== undefined) {
+    return RECUSA_SEM_ANOTACAO;
+  }
+
+  const querTitulo = pedida.titulo !== undefined;
+  const querHora = pedida.hora !== undefined;
+  if (querTitulo && querHora) {
+    return {
+      titulo: 'Uma coisa de cada vez',
+      blocos: [
+        {
+          tipo: 'texto',
+          texto: 'Por enquanto eu faço uma mudança por vez neste evento: peça o título, depois o horário.',
+        },
+      ],
+    };
+  }
+  if (pedida.titulo !== undefined) {
+    return acaoNoGoogle(c, hoje, 'Salvar', { tipo: 'renomear', novo: pedida.titulo });
+  }
+  if (pedida.hora !== undefined) {
+    // Mudar só a hora é mover para o mesmo dia.
+    return acaoNoGoogle(c, hoje, 'Salvar', { tipo: 'mover', dia: c.dia, hora: pedida.hora });
+  }
+  return {
+    titulo: 'O que mudar?',
+    blocos: [{ tipo: 'texto', texto: 'Diga o novo título ou o novo horário do evento.' }],
+  };
 }
 
 /**
@@ -927,6 +1473,10 @@ export function responder(
                 detalhe: 'escreve por cima da anotação que houver',
               },
               { texto: 'Jogar o dentista para o projeto Acttus', detalhe: 'move entre projetos' },
+              {
+                texto: 'Apagar a reunião com o contador',
+                detalhe: 'serve também para compromisso do Google',
+              },
             ],
           },
           {
@@ -936,9 +1486,38 @@ export function responder(
               'que vai fazer e espera o seu toque. O que só soma acontece na hora.',
           },
           {
+            tipo: 'lista',
+            titulo: 'Compromisso que nasceu no Google',
+            itens: [
+              {
+                texto: 'Apagar',
+                detalhe:
+                  'se você organiza, cancela para os convidados que usam Google Agenda; se você é só convidado, ' +
+                  'tira da sua agenda e mais nada',
+              },
+              {
+                texto: 'Mover e renomear',
+                detalhe: 'só o que você organiza. Como convidado eu não tento: o Google costuma recusar',
+              },
+              {
+                texto: 'Vários dias',
+                detalhe: 'não se move; apagar e renomear valem',
+              },
+              {
+                texto: 'Anotação e projeto',
+                detalhe: 'não existem no Google; lá só dá para mudar título e horário',
+              },
+              {
+                texto: 'Os que se repetem',
+                detalhe: 'eu mexo só aquela ocorrência, nunca a série inteira',
+              },
+              { texto: 'Aviso', detalhe: 'ninguém recebe e-mail por nada disso' },
+              { texto: 'Agenda assinada (iCal)', detalhe: 'eu só mostro; não existe como alterar' },
+            ],
+          },
+          {
             tipo: 'texto',
             texto:
-              'Compromisso que nasceu no Google eu mostro, mas não mexo: altere direto lá. ' +
               'Qualquer outra coisa vira um pedido pronto para colar no Claude Code, que é onde ' +
               'o sistema muda — com teste e revisão.',
           },
@@ -1175,8 +1754,11 @@ export function responder(
       };
 
     case 'concluir-tarefa': {
-      const achado = umaTarefa(banco, intencao.alvo, hoje, compromissos);
-      if (!achado.achou) return achado.resposta;
+      const achado = umAlvo(banco, intencao.alvo, hoje, compromissos, REGRA_DE_CONCLUIR);
+      if (achado.tipo === 'nada') return achado.resposta;
+      // Evento não se conclui: do lado do Google não existe "feito". Apagar,
+      // mover e renomear atravessam; concluir fica com a recusa.
+      if (achado.tipo === 'compromisso') return REGRA_DE_CONCLUIR.recusa([achado.compromisso]);
       const alvo = achado.tarefa;
       // No passado ("Concluída", "Marcada agora") esta resposta mentia: ela é
       // desenhada **antes** da confirmação, e o efeito pode nunca acontecer.
@@ -1196,8 +1778,16 @@ export function responder(
     }
 
     case 'adiar-tarefa': {
-      const alvo = umaTarefa(banco, intencao.alvo, hoje, compromissos);
-      if (!alvo.achou) return alvo.resposta;
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, REGRA_DE_MOVER);
+      if (alvo.tipo === 'nada') return alvo.resposta;
+      if (alvo.tipo === 'compromisso') {
+        const c = alvo.compromisso;
+        return acaoNoGoogle(c, hoje, 'Adiar', {
+          tipo: 'mover',
+          dia: intencao.prazo,
+          hora: intencao.hora ?? horaDoCompromisso(c),
+        });
+      }
 
       const antes = detalheDe(alvo.tarefa.prazo, alvo.tarefa.hora, hoje);
       const depois = detalheDe(intencao.prazo, intencao.hora ?? alvo.tarefa.hora, hoje);
@@ -1220,8 +1810,11 @@ export function responder(
     }
 
     case 'excluir-tarefa': {
-      const alvo = umaTarefa(banco, intencao.alvo, hoje, compromissos);
-      if (!alvo.achou) return alvo.resposta;
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos);
+      if (alvo.tipo === 'nada') return alvo.resposta;
+      if (alvo.tipo === 'compromisso') {
+        return acaoNoGoogle(alvo.compromisso, hoje, 'Apagar', { tipo: 'apagar' });
+      }
 
       return {
         titulo: 'Excluir',
@@ -1243,10 +1836,22 @@ export function responder(
     }
 
     case 'editar-tarefa': {
-      const alvo = umaTarefa(banco, intencao.alvo, hoje, compromissos);
-      if (!alvo.achou) return alvo.resposta;
-
+      // Anotação e projeto não existem do lado de lá. Só a hora é mover; título
+      // (sozinho ou com hora, que depois recusa) renomeia, e renomear atravessa
+      // os vários dias.
+      const { anotacao, projeto, hora, titulo } = intencao.mudanca;
+      const soHora = hora !== undefined && titulo === undefined;
+      const regra =
+        anotacao !== undefined || projeto !== undefined
+          ? REGRA_DE_ANOTAR
+          : soHora
+            ? REGRA_DE_MOVER
+            : REGRA_DE_ALTERAR;
+      const alvo = umAlvo(banco, intencao.alvo, hoje, compromissos, regra);
+      if (alvo.tipo === 'nada') return alvo.resposta;
       const pedida = intencao.mudanca;
+      if (alvo.tipo === 'compromisso') return editarCompromisso(alvo.compromisso, pedida, hoje);
+
       const mudanca: MudancaDeTarefa = {};
       // Um por um, e não um espalhamento: `{ hora: undefined }` chegaria no
       // banco como ordem de apagar a hora, e a frase não pediu isso.

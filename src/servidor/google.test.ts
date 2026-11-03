@@ -7,6 +7,7 @@ import {
   desconectar,
   acessoValido,
   clienteDoCalendario,
+  clienteDoEvento,
   GoogleNaoConfigurado,
   ErroDoGoogle,
   ESCOPO,
@@ -161,6 +162,24 @@ describe('renovar o acesso', () => {
     return armazem;
   }
 
+  it('invalid_grant diz para reconectar, com o código que a tela entende', async () => {
+    // O dono revogou o consentimento, ou o app em modo de testes expirou o token.
+    const armazem = await comCredencial({ expiraEm: '2026-09-17T11:00:00.000Z' });
+    const { buscar } = falso({ error: 'invalid_grant', error_description: 'Token revoked.' }, 400);
+    await expect(acessoValido(armazem, 'u1', AMBIENTE, buscar, AGORA)).rejects.toMatchObject({
+      estado: 401,
+      message: expect.stringContaining('Reconecte'),
+    });
+  });
+
+  it('outro erro de renovação segue com o estado de sempre', async () => {
+    const armazem = await comCredencial({ expiraEm: '2026-09-17T11:00:00.000Z' });
+    const { buscar } = falso({ error: 'server_error' }, 500);
+    await expect(acessoValido(armazem, 'u1', AMBIENTE, buscar, AGORA)).rejects.toMatchObject({
+      estado: 502,
+    });
+  });
+
   it('usa o que ainda vale, sem falar com o Google', async () => {
     const armazem = await comCredencial();
     const { buscar, pedidos } = falso({});
@@ -253,6 +272,27 @@ describe('a API do calendário', () => {
     expect(pedidos[1].url).toContain('/ev1');
   });
 
+  it('toda escrita leva sendUpdates=none, para nada sair por e-mail', async () => {
+    // Decisão do dono: o MSL nunca avisa terceiro. Fica no cliente, e não em
+    // cada chamador, para uma chamada nova não poder esquecer.
+    const { buscar, pedidos } = falso({ id: 'x' });
+    const cliente = clienteDoCalendario('acesso', buscar);
+    const corpo = {
+      summary: 'X',
+      start: { date: '2026-09-17' },
+      end: { date: '2026-09-18' },
+      extendedProperties: { private: { msl: 'tarefa:t1' } },
+    };
+
+    await cliente.criar(corpo);
+    await cliente.atualizar('ev1', corpo);
+    await cliente.apagar('ev1');
+    await cliente.listar('2026-09-01', '2026-09-30');
+
+    const escritas = pedidos.slice(0, 3);
+    for (const e of escritas) expect(new URL(e.url).searchParams.get('sendUpdates')).toBe('none');
+  });
+
   it('o id do evento é escapado no endereço', async () => {
     const { buscar, pedidos } = falso(null);
     await clienteDoCalendario('acesso', buscar).apagar('a/b?c');
@@ -266,6 +306,14 @@ describe('a API do calendário', () => {
     await expect(clienteDoCalendario('acesso', buscar).apagar('ev1')).resolves.toBeUndefined();
   });
 
+  it('403 não manda reconectar: é limite ou API desligada, e reconectar não resolve', async () => {
+    const { buscar } = falso({ error: { message: 'Calendar API has not been used' } }, 403);
+    const pedido = clienteDoCalendario('acesso', buscar).listar('2026-09-01', '2026-09-02');
+    await expect(pedido).rejects.toMatchObject({ estado: 403 });
+    await expect(pedido).rejects.not.toThrow(/Reconecte/);
+    await expect(pedido).rejects.toThrow(/Calendar API|limite/);
+  });
+
   it('acesso recusado pede reconexão, em vez de uma mensagem de biblioteca', async () => {
     const { buscar } = falso({ error: 'invalid' }, 401);
     await expect(clienteDoCalendario('acesso', buscar).listar('2026-09-01', '2026-09-02'))
@@ -277,5 +325,54 @@ describe('a API do calendário', () => {
     await expect(
       clienteDoCalendario('acesso', buscar).listar('2026-09-01', '2026-09-02'),
     ).rejects.toThrow(ErroDoGoogle);
+  });
+});
+
+describe('o cliente de um evento só', () => {
+  /** Um `fetch` que guarda o endereço e os cabeçalhos de cada pedido. */
+  function registrando(estado = 200, corpo: unknown = {}) {
+    const pedidos: { url: URL; metodo: string; cabecalhos: Record<string, string> }[] = [];
+    const buscar = (async (url: string, opcoes: RequestInit = {}) => {
+      pedidos.push({
+        url: new URL(url),
+        metodo: opcoes.method ?? 'GET',
+        cabecalhos: (opcoes.headers ?? {}) as Record<string, string>,
+      });
+      return new Response(JSON.stringify(corpo), { status: estado });
+    }) as unknown as typeof fetch;
+    return { buscar, pedidos };
+  }
+
+  it('o id fica inteiro no último trecho do caminho', async () => {
+    const { buscar, pedidos } = registrando();
+    await clienteDoEvento('acesso', buscar).apagar('a/b?c');
+    expect(pedidos[0].url.pathname).toBe('/calendar/v3/calendars/primary/events/a%2Fb%3Fc');
+  });
+
+  it.each(['.', '..', ''])(
+    'recusa o id %j: encodeURIComponent não escapa ponto, e a URL sairia do evento',
+    async (id) => {
+      // `/events/..` vira `/calendars/primary` depois da normalização da URL, e
+      // `/events/.` vira a coleção de eventos.
+      const { buscar, pedidos } = registrando();
+      const cliente = clienteDoEvento('acesso', buscar);
+      await expect(cliente.ler(id)).rejects.toThrow();
+      await expect(cliente.apagar(id)).rejects.toThrow();
+      await expect(cliente.alterar(id, { summary: 'X' }, '"e"')).rejects.toThrow();
+      expect(pedidos).toHaveLength(0);
+    },
+  );
+
+  it('alterar manda o etag em If-Match', async () => {
+    const { buscar, pedidos } = registrando();
+    await clienteDoEvento('acesso', buscar).alterar('ev1', { summary: 'X' }, '"abc"');
+    expect(pedidos[0].cabecalhos['If-Match']).toBe('"abc"');
+  });
+
+  it('412 é "mudou-enquanto-isso", e não exceção', async () => {
+    const { buscar } = registrando(412);
+    await expect(
+      clienteDoEvento('acesso', buscar).alterar('ev1', { summary: 'X' }, '"abc"'),
+    ).resolves.toEqual({ ok: false, motivo: 'mudou-enquanto-isso' });
   });
 });

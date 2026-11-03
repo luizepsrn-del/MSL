@@ -9,6 +9,7 @@ import {
   MARCA,
   MINUTOS_PADRAO,
   eventosParaTela,
+  corpoDoMover,
   type EventoDoGoogle,
   type ItemParaEspelhar,
 } from './google';
@@ -322,6 +323,49 @@ describe('traduzir para o calendário', () => {
     ]);
   });
 
+  describe('o primeiro e o último dia do evento de vários dias', () => {
+    // A janela corta o evento pelos dois lados, e quem decide apagar precisa
+    // dizer o evento inteiro, não o pedaço que a janela deixou passar.
+    const viagem = evento({
+      extendedProperties: undefined,
+      summary: 'Viagem',
+      start: { date: '2026-09-17' },
+      end: { date: '2026-09-20' },
+    });
+
+    it('cada cópia leva o primeiro dia e o último, e o último é o fim exclusivo menos um', () => {
+      for (const copia of naTela([viagem])) {
+        expect(copia.desde).toBe('2026-09-17');
+        expect(copia.ate).toBe('2026-09-19');
+      }
+    });
+
+    it('a janela que só deixa passar um dia não muda o que o evento é', () => {
+      const [so] = naTela([viagem], '2026-09-18', '2026-09-18');
+      expect(so.dia).toBe('2026-09-18');
+      expect(so.desde).toBe('2026-09-17');
+      expect(so.ate).toBe('2026-09-19');
+    });
+
+    it('evento de um dia só não leva nem um nem outro', () => {
+      const [um] = naTela([evento({ extendedProperties: undefined })]);
+      expect(um.desde).toBeUndefined();
+      expect(um.ate).toBeUndefined();
+    });
+
+    it('evento com hora não leva: ele aparece uma vez só', () => {
+      const [com] = naTela([
+        evento({
+          extendedProperties: undefined,
+          start: { dateTime: '2026-09-17T17:00:00Z' },
+          end: { dateTime: '2026-09-17T18:00:00Z' },
+        }),
+      ]);
+      expect(com.desde).toBeUndefined();
+      expect(com.ate).toBeUndefined();
+    });
+  });
+
   it('com hora traz o fim do mesmo dia', () => {
     const consulta = evento({
       extendedProperties: undefined,
@@ -396,5 +440,137 @@ describe('a série de um evento que se repete', () => {
   it('evento único não inventa série', () => {
     const avulso = evento({ id: 'sozinho', extendedProperties: undefined });
     expect(eventosParaTela([avulso], '2026-09-01', '2026-09-30', AJUDA2)[0].serie).toBeUndefined();
+  });
+});
+
+describe('quem organiza o evento', () => {
+  const AJUDA = {
+    somarDias,
+    distanciaEmDias: (a: string, b: string) =>
+      Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000),
+    paraLocal: OPCOES.paraLocal,
+  };
+
+  it('organizer.self verdadeiro vira souOrganizador', () => {
+    const [e] = eventosParaTela(
+      [evento({ organizer: { self: true } })],
+      '2026-09-01',
+      '2026-09-30',
+      AJUDA,
+    );
+    expect(e.souOrganizador).toBe(true);
+  });
+
+  it('sem organizer, assume que não sou — o estrago menor', () => {
+    const [e] = eventosParaTela([evento({})], '2026-09-01', '2026-09-30', AJUDA);
+    expect(e.souOrganizador).toBe(false);
+  });
+});
+
+describe('mover um evento', () => {
+  const AJUDA = {
+    somarDias,
+    distanciaEmDias: (a: string, b: string) =>
+      Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000),
+    paraLocal: OPCOES.paraLocal,
+  };
+
+  it('mantém os minutos que o evento tinha', () => {
+    const e = evento({
+      start: { dateTime: '2026-10-29T14:00:00Z' },
+      end: { dateTime: '2026-10-29T15:30:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO, AJUDA);
+    expect(c.start.dateTime).toContain('2026-11-02T09:00');
+    expect(c.end.dateTime).toContain('2026-11-02T10:30');
+    expect(c.start.timeZone).toBe(FUSO);
+    expect(c.end.timeZone).toBe(FUSO);
+  });
+
+  it('evento de dia inteiro que ganha hora deixa de ser de dia inteiro', () => {
+    const e = evento({ start: { date: '2026-10-29' }, end: { date: '2026-10-30' } });
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO, AJUDA);
+    expect(c.start.date).toBeUndefined();
+    expect(c.start.dateTime).toContain('2026-11-02T09:00');
+    expect(c.end.date).toBeUndefined();
+    expect(c.end.dateTime).toContain(`2026-11-02T${somarMinutos('09:00', MINUTOS_PADRAO)}`);
+  });
+
+  it('viagem de vários dias que ganha hora segue com os mesmos dias', () => {
+    // Cinco dias de férias movidos "para sexta às 9h" não podem virar meia hora.
+    const e = evento({ start: { date: '2026-10-17' }, end: { date: '2026-10-22' } });
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO, AJUDA);
+    expect(c.start.dateTime).toBe('2026-11-02T09:00:00');
+    expect(c.end.dateTime).toBe('2026-11-07T09:00:00');
+  });
+
+  it('sem hora, continua de dia inteiro no dia novo', () => {
+    const e = evento({ start: { date: '2026-10-29' }, end: { date: '2026-10-30' } });
+    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO, AJUDA);
+    expect(c.start.date).toBe('2026-11-02');
+    expect(c.start.dateTime).toBeUndefined();
+    expect(c.end.date).toBe('2026-11-03');
+    expect(c.end.dateTime).toBeUndefined();
+  });
+
+  it('viagem de vários dias leva os dias junto', () => {
+    const e = evento({ start: { date: '2026-10-17' }, end: { date: '2026-10-20' } });
+    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO, AJUDA);
+    expect(c.start.date).toBe('2026-11-02');
+    expect(c.end.date).toBe('2026-11-05');
+  });
+
+  it('sem hora nova, o evento com hora mantém a hora local e a duração', () => {
+    // 15:00 em São Paulo é 18:00Z: a hora que se preserva é a local, não a do ISO.
+    const e = evento({
+      start: { dateTime: '2026-10-29T18:00:00Z' },
+      end: { dateTime: '2026-10-29T19:00:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', undefined, FUSO, AJUDA);
+    expect(c.start.dateTime).toContain('2026-11-02T15:00');
+    expect(c.end.dateTime).toContain('2026-11-02T16:00');
+    expect(c.start.date).toBeUndefined();
+    expect(c.end.date).toBeUndefined();
+  });
+
+  it('o fim que passa da meia-noite cai no dia seguinte, sem perder minutos', () => {
+    const e = evento({
+      start: { dateTime: '2026-10-29T14:00:00Z' },
+      end: { dateTime: '2026-10-29T15:30:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', '23:00', FUSO, AJUDA);
+    expect(c.start.dateTime).toContain('2026-11-02T23:00');
+    expect(c.end.dateTime).toContain('2026-11-03T00:30');
+  });
+
+  it('evento de dois dias e meio cai no dia certo, na hora certa', () => {
+    // 42 h: de 18:00Z de 29/10 a 12:00Z de 31/10.
+    const e = evento({
+      start: { dateTime: '2026-10-29T18:00:00Z' },
+      end: { dateTime: '2026-10-31T12:00:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO, AJUDA);
+    expect(c.start.dateTime).toContain('2026-11-02T09:00');
+    expect(c.end.dateTime).toContain('2026-11-04T03:00');
+  });
+
+  it('hora vazia vale como ausente e não apaga o horário do evento', () => {
+    const e = evento({
+      start: { dateTime: '2026-10-29T18:00:00Z' },
+      end: { dateTime: '2026-10-29T19:00:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', '', FUSO, AJUDA);
+    expect(c.start.dateTime).toContain('2026-11-02T15:00');
+    expect(c.end.dateTime).toContain('2026-11-02T16:00');
+    expect(c.start.date).toBeUndefined();
+  });
+
+  it('fim antes do começo não vira duração negativa', () => {
+    const e = evento({
+      start: { dateTime: '2026-10-29T15:00:00Z' },
+      end: { dateTime: '2026-10-29T14:00:00Z' },
+    });
+    const c = corpoDoMover(e, '2026-11-02', '09:00', FUSO, AJUDA);
+    expect(c.end.dateTime).toContain(`2026-11-02T${somarMinutos('09:00', MINUTOS_PADRAO)}`);
   });
 });

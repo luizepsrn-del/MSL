@@ -154,7 +154,12 @@ reading its test is how the system starts lying.
   schema field, no event id travelling between devices: two devices find the
   same event by the mark and *update* instead of creating a second, and
   deleting the Google account leaves no litter in the bank. An event without
-  the mark belongs to Google and is never touched.
+  the mark belongs to Google: the *sync* only reads it. The agent can delete,
+  move and rename it, but through a separate door (`/api/google-evento`) that
+  sends no e-mail (`sendUpdates=none`), acts on the occurrence id and never on
+  a series, and refuses to move or rename a mirror. Guests may only delete;
+  move/rename need being the organizer. See the top of `src/dominio/google.ts`
+  for which side (route or domain) enforces each rule.
 - **Two-way conflicts use the same rule as the device merge: last write wins.**
   Google's `updated` against the record's `alteradoEm`. It works because the
   comparison only runs when the content *differs* — writing to Google stamps a
@@ -196,6 +201,24 @@ reading its test is how the system starts lying.
   is what makes Criação part of the system instead of a notepad beside it. A
   `semente` never enters the queue — it is raw material, and an idea that turns
   into nagging is the shortest path to not writing ideas down.
+
+- **Instagram metrics never enter the bank.** Only the token (server, in the
+  `Armazem`) and `Peca.instagramPostId` are stored; numbers are read from Meta
+  on each visit, behind a one-hour server cache. **No data is not zero**: Meta
+  omits profile visits and follows for Reels, and a missing metric stays
+  `undefined` and leaves the average. A previous period the read did not fully
+  cover (the server stops at `TETO_DE_POSTS`) is not compared at all —
+  `anteriorCompleto` in `src/dominio/instagram.ts`. Only Graph codes 10, 100 and
+  200 on an insight mean "no data"; rate limits and outages fail the read, so
+  an empty screen never sits in the cache for an hour.
+
+- **At most 12 functions in `api/` — the Vercel Hobby limit.** One more and
+  the whole build is refused, nothing published. Each provider is one function
+  (`api/google.ts`, `api/instagram.ts`) dispatching through
+  `src/servidor/despacho.ts`; `vercel.json` rewrites the public paths
+  (`/api/google-callback`, `/api/instagram-estado`) to it, so the addresses
+  registered at Google and Meta never change. `src/servidor/api.test.ts`
+  fails past 12.
 
 Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `criacao`, `metas`, `pedir`, `regras`, `ajustes`. Each has its own URL.
 `/design-system` is the library showcase.

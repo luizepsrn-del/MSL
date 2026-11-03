@@ -190,7 +190,9 @@ export function Calendario() {
     google.conectado
       ? google.eventos.filter((e) => e.dia === dia)
       : assinatura.agenda
-        ? eventosDoDia(assinatura.agenda, dia)
+        ? // A assinatura por endereço é só leitura: o iCal não diz quem organiza,
+          // e sem login não há como alterar nada — nunca é "meu".
+          eventosDoDia(assinatura.agenda, dia).map((e) => ({ ...e, souOrganizador: false }))
         : [];
 
   // Os dois caminhos numa forma só, para as contas de insights.

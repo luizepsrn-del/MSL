@@ -17,7 +17,55 @@
  *   em vez de criar um segundo;
  * - e apagar a conta do Google não deixa lixo nenhum no banco.
  *
- * Evento **sem** a marca é do Google. O MSL mostra e não toca.
+ * Evento **sem** a marca é do Google. A sincronização continua só lendo e
+ * mostrando esse evento — nunca o altera.
+ *
+ * Esta frase já foi "o MSL mostra e não toca", sem exceção. Deixou de ser: o
+ * agente agora apaga, move e renomeia compromisso que nasceu no Google, mas
+ * por **uma porta separada, com nome**, e não pelo espelho. Misturar as duas
+ * deixaria o sincronizador decidir sozinho o destino do que o dono nunca
+ * pediu para mexer. Pela mesma razão a porta, **em mover e renomear**, recusa
+ * o evento que **tem** a marca: mexer no espelho por fora seria desfeito na
+ * sincronia seguinte. Em apagar ela não confere (veja abaixo).
+ *
+ * O que a porta garante, e de quem é cada garantia. A divisão importa: quem
+ * mexer num lado achando que o outro cobre vai abrir um buraco.
+ *
+ * **A rota (`rotaGoogleEvento`) impõe:**
+ *
+ * - **ninguém é avisado.** `sendUpdates=none` vai em toda escrita, posto no
+ *   funil por onde todas passam. Cancelar uma reunião não manda e-mail aos
+ *   convidados por baixo dos panos;
+ * - **mover e renomear recusam o espelho** (`e-nosso`): leem o evento e, se ele
+ *   tem a marca, a próxima sincronia desfaria a mudança, então a resposta é
+ *   recusa e não "feito". **Apagar não lê o evento, de propósito** (seria uma
+ *   ida a mais ao Google em toda exclusão). Apagar um espelho só é impedido
+ *   porque o agente nunca o lista;
+ * - **mover e renomear só valem sobre a versão lida** (`etag`): se alguém
+ *   mexeu entre a leitura e a escrita, nada é feito. A janela é a dessas duas
+ *   chamadas, não o tempo em que o dono decidiu.
+ *
+ * **O agente (este domínio) impõe, e a rota não confere:**
+ *
+ * - **a série é intocável.** O agente aponta sempre o id da **ocorrência**.
+ *   Apagar a reunião semanal de quinta tira a de quinta, não as próximas;
+ * - **convidado só apaga.** Apagar tira o evento da agenda de quem apaga; se
+ *   quem apaga organiza, tira também da agenda dos convidados que usam Google
+ *   Agenda (os demais podem seguir com o convite). Mover e renomear exigem organizar, porque
+ *   o Google costuma recusar a alteração de convidado sem `guestsCanModify`,
+ *   campo que não buscamos. A rota não sabe quem organiza;
+ * - **evento de vários dias não se move por aqui**, só se apaga e renomeia. É
+ *   uma escolha do agente, não uma incapacidade: `corpoDoMover` sabe a duração
+ *   e trata o caso (tem teste), mas `AcaoNoGoogle.mover` leva um dia só e não
+ *   diz se o evento anda inteiro, encolhe ou estica, então o domínio fecha a
+ *   porta (`DA_PARA_MOVER`). O ramo da rota segue vivo e sem consumidor;
+ * - **a assinatura iCal nunca é mexível:** o agente só põe `mexivel` nos
+ *   eventos do Google, e lá não existe caminho de escrita;
+ * - **anotação e projeto não existem no Google**, então esses pedidos são
+ *   recusados antes de chegar à rota.
+ *
+ * O espelho não mudou. Só deixou de ser o único lugar onde o MSL escreve no
+ * Google.
  *
  * ## Quem ganha
  *
@@ -62,6 +110,11 @@ export interface EventoDoGoogle {
    * marcar terça a terça seria trabalho sem fim.
    */
   recurringEventId?: string;
+  /**
+   * A versão do evento. Mandada em `If-Match`, faz o Google recusar a escrita
+   * se alguém mexeu no evento depois que ele foi lido.
+   */
+  etag?: string;
   summary?: string;
   status?: string;
   /** ISO UTC da última alteração do lado do Google */
@@ -70,6 +123,12 @@ export interface EventoDoGoogle {
   start?: { date?: string; dateTime?: string };
   end?: { date?: string; dateTime?: string };
   extendedProperties?: { private?: Record<string, string> };
+  /**
+   * Quem organiza o evento. `self` é o Google dizendo que sou eu, sem eu
+   * precisar comparar e-mails — o que falharia com alias e com agenda
+   * compartilhada.
+   */
+  organizer?: { self?: boolean; email?: string };
 }
 
 /** A marca do MSL num evento, ou `null` quando o evento é do Google. */
@@ -128,6 +187,79 @@ export function corpoDoEvento(
       dateTime: `${item.dia}T${somarMinutos(item.hora, MINUTOS_PADRAO)}:00`,
       timeZone: fuso,
     },
+  };
+}
+
+/**
+ * O novo `start` e `end` de um evento movido para outro dia (e, se vier, hora).
+ *
+ * A duração é do evento, não do destino: uma reunião de uma hora e meia
+ * continua com uma hora e meia ao mudar de dia. Ela sai da diferença entre os
+ * dois instantes — que têm deslocamento, então a conta vale em qualquer fuso —
+ * e, se o evento não tem os dois (era de dia inteiro, ou o fim veio estranho),
+ * cai no bloco padrão em vez de inventar uma duração.
+ *
+ * A hora só é tocada quando veio uma: mover "para sexta" não pode apagar o
+ * horário que o compromisso já tinha, nem virá-lo em dia inteiro. Sem hora
+ * nova, o evento com hora fica com a hora **local** de antes — lida por
+ * `paraLocal`, porque o `dateTime` do Google vem em UTC e a hora que importa é
+ * a da parede. Só o evento que já era de dia inteiro continua de dia inteiro,
+ * levando os dias dele junto (uma viagem de três dias segue com três).
+ *
+ * Cada lado leva `date` **ou** `dateTime`, nunca os dois: o Google recusa o
+ * evento que tem ambos. Por isso o corpo é montado do zero, e não aproveitando
+ * o `start` antigo — que carregaria o campo do tipo anterior para o novo.
+ */
+export function corpoDoMover(
+  evento: EventoDoGoogle,
+  dia: string,
+  hora: string | undefined,
+  fuso: string,
+  ajuda: {
+    somarDias: (dia: string, dias: number) => string;
+    distanciaEmDias: (a: string, b: string) => number;
+    paraLocal: (iso: string) => { dia: string; hora: string };
+  },
+): Pick<CorpoDoEvento, 'start' | 'end'> {
+  const inicio = evento.start?.dateTime;
+  const fim = evento.end?.dateTime;
+  // Vazio vem de parser e quer dizer "sem hora": tratá-lo como hora apagaria o
+  // horário do evento, que é justamente o que esta função não pode fazer.
+  const horaFinal = hora || (inicio ? ajuda.paraLocal(inicio).hora : undefined);
+
+  if (!horaFinal) {
+    const de = evento.start?.date;
+    const ate = evento.end?.date;
+    const dias = de && ate ? Math.max(ajuda.distanciaEmDias(de, ate), 1) : 1;
+    return { start: { date: dia }, end: { date: ajuda.somarDias(dia, dias) } };
+  }
+
+  const medida = inicio && fim ? (Date.parse(fim) - Date.parse(inicio)) / 60_000 : NaN;
+  // Um bloco de vários dias que ganha hora segue com os mesmos dias — "mover as
+  // férias para sexta às 9h" não pode virar meia hora. De um dia só (ou sem
+  // medida nenhuma) vale o bloco padrão.
+  const de = evento.start?.date;
+  const ate = evento.end?.date;
+  const diasInteiros = de && ate ? ajuda.distanciaEmDias(de, ate) : 0;
+  const minutos =
+    Number.isFinite(medida) && medida > 0
+      ? medida
+      : diasInteiros > 1
+        ? diasInteiros * 1440
+        : MINUTOS_PADRAO;
+
+  // O fim sai do total de minutos e cai no dia que tiver que cair. Não é
+  // `somarMinutos`: o teto de 23:59 dela serve ao bloco padrão de um item do
+  // MSL, mas aqui cortaria em silêncio a reunião que passa da meia-noite — e o
+  // Google aceitaria o evento errado.
+  const [h, m] = horaFinal.split(':').map(Number);
+  const total = h * 60 + m + minutos;
+  const fimDia = ajuda.somarDias(dia, Math.floor(total / 1440));
+  const fimHora = `${doisDigitos(Math.floor((total % 1440) / 60))}:${doisDigitos(total % 60)}`;
+
+  return {
+    start: { dateTime: `${dia}T${horaFinal}:00`, timeZone: fuso },
+    end: { dateTime: `${fimDia}T${fimHora}:00`, timeZone: fuso },
   };
 }
 
@@ -327,6 +459,22 @@ export interface EventoParaTela {
   fim?: string;
   local?: string;
   diaInteiro: boolean;
+  /**
+   * O primeiro e o último dia de um evento de vários dias, o mesmo em todas as
+   * cópias. A janela da tela corta o evento pelos dois lados, e sem estes dois
+   * campos uma cópia sozinha não sabe que pertence a algo maior: quem apaga
+   * mostraria um dia só enquanto o Google leva todos. Ausentes quando o evento
+   * ocupa um dia só.
+   */
+  desde?: string;
+  ate?: string;
+  /**
+   * Se o evento é meu. Evento de outro organizador não aceita alteração
+   * minha (o Google recusa ou, pior, aceita só para mim), então o agente só
+   * mexe nos que são meus. Na dúvida é `false`: perder uma edição permitida
+   * custa menos que tentar uma proibida.
+   */
+  souOrganizador: boolean;
 }
 
 /**
@@ -368,6 +516,10 @@ export function eventosParaTela(
         ? Math.max(ajuda.distanciaEmDias(inicio.dia, fim), 1)
         : 1;
 
+    // O fim de dia inteiro é exclusivo; o último dia do evento é o anterior.
+    const variosDias =
+      duracao > 1 ? { desde: inicio.dia, ate: ajuda.somarDias(inicio.dia, duracao - 1) } : {};
+
     for (let n = 0; n < duracao; n++) {
       const dia = ajuda.somarDias(inicio.dia, n);
       if (dia < de || dia > ate) continue;
@@ -387,6 +539,8 @@ export function eventosParaTela(
             : undefined,
         local: evento.location?.trim() || undefined,
         diaInteiro,
+        ...variosDias,
+        souOrganizador: evento.organizer?.self === true,
       });
     }
   }
