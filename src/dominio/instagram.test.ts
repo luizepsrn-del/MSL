@@ -8,6 +8,7 @@ import {
   anteriorCompleto,
   variacao,
   funil,
+  rankear,
   hoje,
   itemDoInstagram,
   type PostDoInstagram,
@@ -284,5 +285,36 @@ describe('hoje', () => {
       marcavel: false,
     });
     expect(itemDoInstagram(dados(base.map((p, i) => ({ ...p, publicadoEm: `2026-11-0${i + 1}T15:00:00Z` }))), '2026-11-03')).toBeNull();
+  });
+});
+
+describe('rankear', () => {
+  const p = (id: string, alcance?: number, extra: Partial<PostDoInstagram> = {}): PostDoInstagram => ({
+    id,
+    legenda: id,
+    formato: 'carrossel',
+    publicadoEm: '2026-10-20T12:00:00Z',
+    link: '',
+    curtidas: 0,
+    comentarios: 0,
+    alcance,
+    ...extra,
+  });
+
+  it('ordena do maior para o menor, sem dado por último, com a razão sobre a mediana', () => {
+    const r = rankear([p('a', 100), p('b'), p('c', 300), p('d', 200)], 'alcance');
+    expect(r.map((x) => x.post.id)).toEqual(['c', 'd', 'a', 'b']);
+    expect(r[0].razao).toBeCloseTo(1.5);
+    expect(r[3]).toMatchObject({ valor: undefined, razao: null });
+  });
+
+  it('menos de três com dado ou mediana zero: sem razão', () => {
+    expect(rankear([p('a', 100), p('b', 50)], 'alcance')[0].razao).toBeNull();
+    expect(rankear([p('a', 0), p('b', 0), p('c', 5)], 'alcance')[0].razao).toBeNull();
+  });
+
+  it('guardados soma salvos e compartilhamentos', () => {
+    const r = rankear([p('a', 1, { salvamentos: 2, compartilhamentos: 3 }), p('b', 1, { salvamentos: 9 })], 'guardados');
+    expect(r.map((x) => [x.post.id, x.valor])).toEqual([['b', 9], ['a', 5]]);
   });
 });

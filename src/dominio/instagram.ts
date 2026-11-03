@@ -79,7 +79,7 @@ function media(valores: number[]): number | null {
   return valores.length ? valores.reduce((a, b) => a + b, 0) / valores.length : null;
 }
 
-function mediana(valores: number[]): number | null {
+export function mediana(valores: number[]): number | null {
   if (!valores.length) return null;
   const o = [...valores].sort((a, b) => a - b);
   const meio = Math.floor(o.length / 2);
@@ -96,7 +96,7 @@ const soma = (valores: number[]): number | null =>
   valores.length ? valores.reduce((a, b) => a + b, 0) : null;
 
 const n = (v: number) => formatarNumero(Math.round(v));
-const vezes = (r: number) => `${formatarNumero(Math.round(r * 10) / 10)}×`;
+export const vezes = (r: number) => `${formatarNumero(Math.round(r * 10) / 10)}×`;
 
 /** A primeira linha da legenda, curta o bastante para caber numa frase. */
 export function legendaCurta(legenda: string, limite = 60): string {
@@ -532,4 +532,38 @@ export function itemDoInstagram(dados: DadosDoInstagram, dia: string): ItemDoFoc
     faixa: 6,
     marcavel: false,
   };
+}
+
+/* ── Ranking ─────────────────────────────────────────────────────────────── */
+
+export type MetricaDoRanking = 'alcance' | 'guardados' | 'visitas' | 'seguidores';
+
+export const VALOR_DA_METRICA: Record<MetricaDoRanking, (p: PostDoInstagram) => number | undefined> = {
+  alcance: (p) => p.alcance,
+  guardados: (p) =>
+    p.salvamentos === undefined && p.compartilhamentos === undefined
+      ? undefined
+      : (p.salvamentos ?? 0) + (p.compartilhamentos ?? 0),
+  visitas: (p) => p.visitasAoPerfil,
+  seguidores: (p) => p.seguidoresGanhos,
+};
+
+export interface PosicaoNoRanking {
+  post: PostDoInstagram;
+  valor: number | undefined;
+  /** valor em vezes a mediana do período; nulo com pouco dado ou mediana zero */
+  razao: number | null;
+}
+
+/** Os posts do maior para o menor na métrica; sem dado vai para o fim. */
+export function rankear(posts: PostDoInstagram[], metrica: MetricaDoRanking): PosicaoNoRanking[] {
+  const valor = VALOR_DA_METRICA[metrica];
+  const comDado = definidos(posts.map(valor));
+  const med = comDado.length >= MINIMO_POR_FORMATO ? mediana(comDado) : null;
+  return posts
+    .map((post) => {
+      const v = valor(post);
+      return { post, valor: v, razao: med && v !== undefined ? v / med : null };
+    })
+    .sort((a, b) => (b.valor ?? -1) - (a.valor ?? -1));
 }

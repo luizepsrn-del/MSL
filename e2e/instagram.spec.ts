@@ -24,7 +24,17 @@ const POSTS = [
 ];
 
 const DADOS = {
-  perfil: { usuario: '_luizpereira_', seguidores: 2242, totalDePosts: 69 },
+  perfil: {
+    usuario: '_luizpereira_',
+    nome: 'Luiz Eduardo',
+    bio: 'Aumento a previsibilidade de receita em escritórios',
+    // Uma imagem de verdade, sem rede: o teste não depende da CDN da Meta.
+    foto: 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==',
+    seguidores: 2243,
+    seguindo: 2225,
+    totalDePosts: 69,
+    site: 'https://acttusco.com',
+  },
   posts: POSTS,
   lidoEm: new Date().toISOString(),
 };
@@ -134,34 +144,117 @@ test.describe('Ajustes', () => {
 });
 
 test.describe('Criação · Instagram', () => {
-  test('mostra a conta, os números e o que fazer', async ({ page }) => {
+  test('cabeçalho de perfil, números e o que fazer', async ({ page }) => {
     const erros: string[] = [];
     page.on('pageerror', (e) => erros.push(String(e)));
     await semear(page);
     await metaFalsa(page, 'pronto');
     await page.goto('/app/criacao?aba=instagram');
-    await expect(page.getByText('@_luizpereira_', { exact: true })).toBeVisible();
+    const cabecalho = page.getByRole('region', { name: 'Perfil do Instagram' });
+    await expect(cabecalho.getByText('@_luizpereira_', { exact: true })).toBeVisible();
+    await expect(cabecalho.getByRole('img', { name: 'Foto de _luizpereira_' })).toBeVisible();
+    await expect(cabecalho.getByText('Luiz Eduardo')).toBeVisible();
+    await expect(cabecalho.getByText(/previsibilidade de receita/)).toBeVisible();
+    await expect(cabecalho.getByText('2.243')).toBeVisible();
+    await expect(cabecalho.getByText('2.225')).toBeVisible();
+    await expect(cabecalho.getByText('69', { exact: true })).toBeVisible();
+    await expect(cabecalho.getByRole('link', { name: 'acttusco.com' })).toBeVisible();
+    await expect(cabecalho.getByRole('link', { name: 'Abrir no Instagram' })).toHaveAttribute(
+      'href',
+      'https://www.instagram.com/_luizpereira_/',
+    );
     await expect(page.getByText('Alcance médio por post')).toBeVisible();
     await expect(page.getByText('O que fazer')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Criar semente' }).first()).toBeVisible();
-    await expect(page.getByText('8 no período')).toBeVisible();
     await expect(page.locator('body')).not.toContainText('NaN');
     expect(erros).toEqual([]);
   });
 
-  test('30 dias deixa de fora os posts mais antigos', async ({ page }) => {
+  test('perfil sem foto, bio nem site não deixa buraco', async ({ page }) => {
+    await semear(page);
+    await metaFalsa(page, 'pronto');
+    await page.route('**/api/instagram', (rota) =>
+      rota.fulfill({ json: { ...DADOS, perfil: { usuario: '_luizpereira_', seguidores: 10, totalDePosts: 8 } } }),
+    );
+    await page.goto('/app/criacao?aba=instagram');
+    const cabecalho = page.getByRole('region', { name: 'Perfil do Instagram' });
+    await expect(cabecalho.getByText('@_luizpereira_', { exact: true })).toBeVisible();
+    await expect(cabecalho.getByRole('img')).toHaveCount(0);
+    await expect(cabecalho.getByText('L', { exact: true })).toBeVisible();
+    await expect(cabecalho.getByText('seguindo')).toHaveCount(0);
+  });
+
+  test('pílulas de período mudam a contagem', async ({ page }) => {
+    await semear(page);
+    await metaFalsa(page, 'pronto');
+    await page.goto('/app/criacao?aba=instagram&vista=ranking');
+    await expect(page.getByText('4 no período')).toBeVisible();
+    await page.getByRole('button', { name: '7 dias' }).click();
+    await expect(page.getByText('2 no período')).toBeVisible();
+    await page.getByRole('button', { name: 'Tudo', exact: true }).click();
+    await expect(page.getByText('8 no período')).toBeVisible();
+  });
+
+  test('a vista vai no endereço', async ({ page }) => {
     await semear(page);
     await metaFalsa(page, 'pronto');
     await page.goto('/app/criacao?aba=instagram');
-    await page.locator('#ig-periodo').click();
-    await page.getByRole('option', { name: 'Últimos 30 dias' }).click();
-    await expect(page.getByText('4 no período')).toBeVisible();
+    await page.getByRole('button', { name: 'Galeria' }).click();
+    await expect(page).toHaveURL(/aba=instagram&vista=galeria/);
+    await page.getByRole('button', { name: 'Ranking' }).click();
+    await expect(page).toHaveURL(/vista=ranking/);
+    await page.getByRole('button', { name: 'Visão geral' }).click();
+    await expect(page).not.toHaveURL(/vista=/);
+  });
+
+  test('funil aparece com posts de feed suficientes e marca a maior queda', async ({ page }) => {
+    await semear(page);
+    await metaFalsa(page, 'pronto');
+    await page.goto('/app/criacao?aba=instagram');
+    // Em 30 dias só um carrossel tem visitas: pouco para um funil.
+    await expect(page.getByText('Do alcance ao seguidor')).toHaveCount(0);
+    await page.getByRole('button', { name: '90 dias' }).click();
+    const funil = page.getByRole('region', { name: 'Funil' });
+    await expect(funil.getByText('Visitaram o perfil')).toBeVisible();
+    await expect(funil.getByText('maior queda')).toHaveCount(1);
+    await expect(funil.getByText(/Reels ficam de fora/)).toBeVisible();
+  });
+
+  test('ranking ordena e mostra quantas vezes a mediana', async ({ page }) => {
+    await semear(page);
+    await metaFalsa(page, 'pronto');
+    await page.goto('/app/criacao?aba=instagram&vista=ranking');
+    const linhas = page.getByRole('list', { name: 'Ranking dos posts' }).getByRole('listitem');
+    await expect(linhas.first()).toContainText('Por aqui é assim!');
+    await expect(linhas.first()).toContainText('×');
+    await page.getByRole('button', { name: 'Salvos', exact: true }).click();
+    await expect(linhas.first()).toContainText('Assisti O Mentalista');
+  });
+
+  test('galeria mostra os posts como cartões e destaca o melhor', async ({ page }) => {
+    await semear(page);
+    await metaFalsa(page, 'pronto');
+    await page.goto('/app/criacao?aba=instagram&vista=galeria');
+    const cartoes = page.getByRole('link', { name: /Abrir post/ });
+    await expect(cartoes).toHaveCount(4);
+    await expect(page.getByText('Melhor do período')).toHaveCount(1);
+  });
+
+  test('Hoje aparece quando um post novo vai muito bem', async ({ page }) => {
+    await semear(page);
+    await metaFalsa(page, 'pronto');
+    const novo = { ...POSTS[0], id: 'reel-hoje', legenda: 'Reel de hoje', publicadoEm: new Date().toISOString(), alcance: 9000 };
+    await page.route('**/api/instagram', (rota) => rota.fulfill({ json: { ...DADOS, posts: [novo, ...POSTS] } }));
+    await page.goto('/app/criacao?aba=instagram');
+    const bloco = page.getByRole('region', { name: 'Hoje' });
+    await expect(bloco.getByText(/Seu Reel de hoje está com .*× o alcance normal/)).toBeVisible();
   });
 
   test('criar semente leva a recomendação para a aba Peças', async ({ page }) => {
     await semear(page);
     await metaFalsa(page, 'pronto');
-    await page.goto('/app/criacao?aba=instagram');
+    await page.goto('/app/criacao?aba=instagram&vista=ranking');
+    await page.getByRole('button', { name: 'Visão geral' }).click();
     await page.getByRole('button', { name: 'Criar semente' }).first().click();
     await expect(page.getByText('Semente criada na aba Peças.')).toBeVisible();
     await page.getByRole('button', { name: 'Peças' }).click();
@@ -171,9 +264,8 @@ test.describe('Criação · Instagram', () => {
   test('ligar uma peça publicada ao post mostra o alcance na linha da peça', async ({ page }) => {
     await semear(page);
     await metaFalsa(page, 'pronto');
-    await page.goto('/app/criacao?aba=instagram');
-    await page.locator('#ig-ordem').click();
-    await page.getByRole('option', { name: 'Mais salvos e compartilhados' }).click();
+    await page.goto('/app/criacao?aba=instagram&vista=ranking');
+    await page.getByRole('button', { name: 'Salvos', exact: true }).click();
     await page.getByRole('button', { name: 'Ligar a uma peça' }).first().click();
     await page.getByRole('button', { name: 'Carrossel do Mentalista' }).click();
     await expect(page.getByText('Peça ligada ao post.')).toBeVisible();
