@@ -68,7 +68,7 @@ O resultado tem:
     escolhido na capa;
 - **Pedir ajuste:** um campo de uma linha ("mais curto", "mais polêmico") que
   gera de novo mantendo o resto;
-- **Salvar como peça:** cria uma peça em **rascunho**, tipo `reel` ou
+- **Salvar como peça:** cria uma peça em **rascunho**, tipo `roteiro` (Reel) ou
   `carrossel`, com o corpo no formato do MSL (carrossel com cards separados por
   `---`) e o título igual ao gancho. Depois abre a aba Peças com ela.
 
@@ -146,7 +146,7 @@ Função pura `montarPedido(...)` em `src/dominio/estudio.ts`. Entra:
 
 ## Banco (versão 20, migração aditiva)
 
-- `Banco.referencias?: Referencia[]`, em que
+- coleção `referencias: Referencia[]`, em que
 
   ```ts
   interface Referencia extends Registro {
@@ -164,10 +164,13 @@ Função pura `montarPedido(...)` em `src/dominio/estudio.ts`. Entra:
   ```
 
   A miniatura pode expirar; sem ela, o cartão mostra o ícone do formato.
-- `Banco.perfisDeReferencia?: string[]`: os @ cadastrados.
+- coleção `perfisDeReferencia: PerfilDeReferencia[]` (`Registro` + `usuario`): os @
+  cadastrados. É coleção, e não lista de strings, para sincronizar e apagar
+  entre aparelhos como as outras (lápides em `removidos`).
 - `Peca.geradaPorIa?: boolean` e `Peca.referenciasUsadas?: string[]` (ids de
   `Referencia`).
-- A migração 19 → 20 só sobe a versão; todos os campos são opcionais.
+- A migração 19 → 20 cria as duas coleções vazias e sobe a versão. Os
+  campos novos da peça são opcionais.
 
 ## Fora de escopo
 
