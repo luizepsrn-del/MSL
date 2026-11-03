@@ -7,6 +7,9 @@ import {
   LIMITE_DE_RECOMENDACOES,
   anteriorCompleto,
   variacao,
+  funil,
+  hoje,
+  itemDoInstagram,
   type PostDoInstagram,
 } from './instagram';
 
@@ -192,5 +195,94 @@ describe('variacao', () => {
   it('sem anterior ou sem dado, não há variação', () => {
     expect(variacao(800, 2000, false)).toBeUndefined();
     expect(variacao(null, 2000, true)).toBeUndefined();
+  });
+});
+
+describe('período de 7 dias', () => {
+  it('a janela começa 7 dias antes de hoje', () => {
+    const p = (id: string, dia: string) => post({ id, formato: 'imagem', publicadoEm: `${dia}T15:00:00Z` });
+    const { atual, anterior } = dividirPorPeriodo([p('a', '2026-10-28'), p('b', '2026-10-25')], 7, '2026-11-03');
+    expect(atual.map((x) => x.id)).toEqual(['a']);
+    expect(anterior.map((x) => x.id)).toEqual(['b']);
+  });
+});
+
+describe('funil', () => {
+  const feed = (id: string, alcance: number, visitas: number, seguidores: number) =>
+    post({
+      id, formato: 'carrossel', publicadoEm: '2026-10-20T15:00:00Z',
+      alcance, curtidas: 50, comentarios: 10, salvamentos: 5, compartilhamentos: 5,
+      visitasAoPerfil: visitas, seguidoresGanhos: seguidores,
+    });
+
+  it('soma os degraus dos posts de feed e aponta o gargalo', () => {
+    const f = funil([feed('a', 1000, 20, 1), feed('b', 1000, 20, 1), feed('c', 1000, 20, 1)])!;
+    expect(f.posts).toBe(3);
+    expect(f.degraus.map((d) => d.total)).toEqual([3000, 210, 30, 60, 3]);
+    expect(f.degraus[0].taxa).toBeNull();
+    expect(f.degraus[1].taxa).toBeCloseTo(0.07);
+    // seguiram / visitaram = 3/60 = 5%: a menor taxa
+    expect(f.gargalo).toBe(4);
+  });
+
+  it('Reels ficam de fora: a Meta não informa visitas para eles', () => {
+    const reel = post({ id: 'r', formato: 'reels', publicadoEm: '2026-10-20T15:00:00Z', alcance: 99999 });
+    const f = funil([feed('a', 1000, 20, 1), feed('b', 1000, 20, 1), feed('c', 1000, 20, 1), reel])!;
+    expect(f.degraus[0].total).toBe(3000);
+  });
+
+  it('com menos de 3 posts com dado, não há funil', () => {
+    expect(funil([feed('a', 1000, 20, 1), feed('b', 1000, 20, 1)])).toBeNull();
+    expect(funil([])).toBeNull();
+  });
+});
+
+describe('hoje', () => {
+  const dados = (posts: PostDoInstagram[]) => ({
+    perfil: { usuario: '_luizpereira_', seguidores: 2242, totalDePosts: posts.length },
+    posts,
+    lidoEm: '2026-11-03T18:00:00Z',
+  });
+  const reel = (id: string, dia: string, alcance: number, hora = '15:00:00Z') =>
+    post({ id, formato: 'reels', publicadoEm: `${dia}T${hora}`, alcance });
+  const base = [reel('r1', '2026-10-10', 1000), reel('r2', '2026-10-15', 1200), reel('r3', '2026-10-20', 1100)];
+
+  it('post de ontem com 2× a mediana do formato vira ação', () => {
+    const h = hoje(dados([reel('novo', '2026-11-02', 2500), ...base]), '2026-11-03');
+    expect(h.novos).toHaveLength(1);
+    expect(h.novos[0].razao).toBeCloseTo(2500 / 1100);
+    expect(h.diasSemPostar).toBe(1);
+    expect(h.acoes[0]).toMatch(/Reel de ontem está com 2,3× o alcance normal/);
+  });
+
+  it('6 dias sem postar vira ação', () => {
+    const h = hoje(dados([reel('ultimo', '2026-10-28', 900), ...base]), '2026-11-03');
+    expect(h.novos).toEqual([]);
+    expect(h.diasSemPostar).toBe(6);
+    expect(h.acoes).toEqual(['6 dias sem postar no Instagram.']);
+  });
+
+  it('formato com menos de 3 posts: post novo sem razão e sem ação forte', () => {
+    const h = hoje(dados([reel('novo', '2026-11-03', 5000), reel('r1', '2026-10-10', 100)]), '2026-11-03');
+    expect(h.novos[0].razao).toBeNull();
+    expect(h.acoes).toEqual([]);
+  });
+
+  it('23h de São Paulo ainda é hoje', () => {
+    // 02:00 UTC do dia 4 = 23:00 do dia 3 em São Paulo
+    const h = hoje(dados([reel('noite', '2026-11-04', 900, '02:00:00Z'), ...base]), '2026-11-03');
+    expect(h.diasSemPostar).toBe(0);
+  });
+
+  it('item da fila: a primeira ação, tipo instagram, faixa 6, não marcável', () => {
+    const item = itemDoInstagram(dados([reel('ultimo', '2026-10-28', 900), ...base]), '2026-11-03');
+    expect(item).toMatchObject({
+      chave: 'instagram:hoje',
+      tipo: 'instagram',
+      titulo: '6 dias sem postar no Instagram.',
+      faixa: 6,
+      marcavel: false,
+    });
+    expect(itemDoInstagram(dados(base.map((p, i) => ({ ...p, publicadoEm: `2026-11-0${i + 1}T15:00:00Z` }))), '2026-11-03')).toBeNull();
   });
 });

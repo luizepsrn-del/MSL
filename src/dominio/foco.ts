@@ -30,7 +30,7 @@ import { distanciaEmDias } from './rotina';
  * agora" com quarenta itens é uma lista de tudo, e volta a ser um painel.
  */
 
-export type TipoDoFoco = 'tarefa' | 'rotina' | 'lancamento' | 'meta' | 'projeto' | 'peca';
+export type TipoDoFoco = 'tarefa' | 'rotina' | 'lancamento' | 'meta' | 'projeto' | 'peca' | 'instagram';
 
 export interface ItemDoFoco {
   /** único na lista */

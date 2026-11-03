@@ -1258,6 +1258,7 @@ function LinhaDoFoco({
     meta: '/app/metas',
     projeto: '/app/projetos',
     peca: '/app/criacao',
+    instagram: '/app/criacao?aba=instagram',
   };
 
   /** O ícone do tipo, para quem não tem caixinha. */
@@ -1268,6 +1269,7 @@ function LinhaDoFoco({
     meta: 'target',
     projeto: 'layers',
     peca: 'pen-line',
+    instagram: 'camera',
   };
 
   const corpo = (
