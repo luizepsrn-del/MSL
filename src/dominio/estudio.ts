@@ -8,9 +8,9 @@ import {
   type DadosDoInstagram,
   type FormatoDoPost,
   type PostDoInstagram,
-} from './instagram';
-import { diaLocalDe, somarDias } from './rotina';
-import { formatarNumero } from '../formato';
+} from './instagram.ts';
+import { diaLocalDe, somarDias } from './rotina.ts';
+import { formatarNumero } from '../formato/index.ts';
 
 /**
  * O Estúdio: referências de outros criadores e a geração de posts.

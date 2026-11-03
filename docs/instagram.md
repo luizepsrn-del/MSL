@@ -48,3 +48,21 @@ volte. Se a tela pedir o *ID da conta*, o do perfil é `17841400224855713`.
 - **"faltam as variáveis da Meta"** — passo 2 ou 3.
 - **A Meta reclama do redirect_uri** — passo 1, o endereço precisa ser idêntico.
 - **"A Meta deixou de aceitar a conexão"** — o token caiu; conecte de novo.
+
+## Estúdio (referências e geração)
+
+- **Perfis de referência:** `GET /api/instagram-referencia?usuario=<@>` lê pela
+  `business_discovery` da Graph (só funciona com o login do Facebook, que é o
+  do MSL) o perfil e até 25 posts de outra conta **profissional**. Fica 6 h em
+  cache (`estudio-ref:<usuario>`). Se a Meta recusar com código 10/200, falta
+  `pages_read_engagement` na configuração do Login para Empresas: adicione e
+  reconecte em Ajustes.
+- **Geração:** `POST /api/instagram-gerar` com `{ formato, tema, referencias, ajuste? }`.
+  Chama a Messages API do Claude com o contexto montado por
+  `src/dominio/estudio.ts` (seus melhores posts do formato, o gargalo do
+  funil, as referências com o porquê).
+- **Variáveis na Vercel:** `ANTHROPIC_API_KEY` (obrigatória para gerar) e
+  `ESTUDIO_MODELO` (opcional; padrão `claude-sonnet-5-5`).
+- **Limite:** 30 gerações por dia por usuário (`estudio:AAAA-MM-DD:<usuarioId>`).
+- **Nada de prompt nem resposta é guardado.** Só a peça que eu salvar, com
+  `geradaPorIa` e `referenciasUsadas`.

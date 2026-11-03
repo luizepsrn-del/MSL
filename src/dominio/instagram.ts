@@ -1,6 +1,6 @@
-import { diaLocalDe, somarDias, distanciaEmDias } from './rotina';
-import type { ItemDoFoco } from './foco';
-import { formatarNumero } from '../formato';
+import { diaLocalDe, somarDias, distanciaEmDias } from './rotina.ts';
+import type { ItemDoFoco } from './foco.ts';
+import { formatarNumero } from '../formato/index.ts';
 
 /**
  * O Instagram, do ponto de vista do que eu faço com os números.
