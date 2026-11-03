@@ -31,6 +31,7 @@ import { limparCache } from '../dados/agendaExterna';
 import { JORNADA_PADRAO } from '../dominio/plano';
 import { horaValida } from '../dominio/calendario';
 import { useGoogle } from '../dados/google';
+import { useInstagram } from '../dados/instagram';
 import { diaLocal } from '../dados/esquema';
 
 /**
@@ -228,6 +229,7 @@ export function Ajustes() {
       />
 
       <ContaDoGoogle />
+      <ContaDoInstagram />
 
       <AgendaDoGoogle
         atual={banco.preferencias?.agendaExterna?.url ?? ''}
@@ -733,6 +735,120 @@ function ContaDoGoogle() {
             Google.
           </p>
         )}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Conectar o Instagram — só leitura.
+ *
+ * O MSL lê o perfil, os posts e as métricas; não publica nem responde nada.
+ * O token mora no servidor, como a credencial do Google.
+ */
+function ContaDoInstagram() {
+  const instagram = useInstagram();
+  const [contaId, setContaId] = React.useState('');
+  const { estado, dados } = instagram;
+
+  const subtitulo =
+    estado === 'pronto' && dados
+      ? `@${dados.perfil.usuario} · ${formatarNumero(dados.perfil.seguidores)} seguidores`
+      : estado === 'carregando'
+        ? 'Verificando…'
+        : estado === 'sem-conta'
+          ? 'Conectado, falta a conta'
+          : 'Não conectado';
+
+  const texto = (conteudo: React.ReactNode) => (
+    <p style={{ font: 'var(--type-body)', color: 'var(--text-muted)', lineHeight: 'var(--lh-normal)' }}>
+      {conteudo}
+    </p>
+  );
+
+  return (
+    <Card title="Instagram" subtitle={subtitulo}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-8)' }}>
+        {estado === 'pronto' &&
+          texto(
+            <>
+              As métricas dos posts aparecem na <strong>Criação</strong>, na aba Instagram. O MSL só
+              lê: não publica e não responde nada por você.
+            </>,
+          )}
+        {estado === 'desconectado' &&
+          texto(
+            <>
+              Ligue o seu Instagram para ver alcance, salvamentos e o que postar a seguir, dentro da
+              Criação. A configuração do app da Meta está em <code>docs/instagram.md</code>.
+            </>,
+          )}
+        {estado === 'acesso-perdido' &&
+          texto(
+            <>
+              A Meta deixou de aceitar a conexão — o token expirou ou foi retirado. É só clicar em{' '}
+              <strong>Conectar de novo</strong> e autorizar.
+            </>,
+          )}
+        {estado === 'sem-conta' && (
+          <>
+            {texto(
+              <>
+                A Meta não disse qual conta do Instagram este login alcança. Informe o ID da conta
+                profissional — só números, e não é senha.
+              </>,
+            )}
+            <div style={{ display: 'flex', gap: 'var(--sp-6)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 var(--grid-min)', minWidth: 0 }}>
+                <Field label="ID da conta do Instagram" htmlFor="instagram-conta">
+                  <TextInput
+                    id="instagram-conta"
+                    value={contaId}
+                    onChange={setContaId}
+                    placeholder="17841400000000000"
+                    size="lg"
+                    fullWidth
+                  />
+                </Field>
+              </div>
+              <Button
+                variant="secondary"
+                size="lg"
+                disabled={!contaId.trim()}
+                onClick={() => void instagram.definirConta(contaId.trim())}
+              >
+                Salvar
+              </Button>
+            </div>
+          </>
+        )}
+
+        {instagram.erro && estado !== 'desconectado' && estado !== 'sem-conta' && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-6)' }}>
+            <span style={{ color: 'var(--orange-500)', display: 'flex', flex: '0 0 auto' }}>
+              <Icon name="alert-triangle" size={20} />
+            </span>
+            <span style={{ font: 'var(--type-body)', color: 'var(--orange-500)', lineHeight: 'var(--lh-normal)', minWidth: 0 }}>
+              {instagram.erro}
+            </span>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 'var(--sp-6)', flexWrap: 'wrap' }}>
+          {estado === 'pronto' || estado === 'sem-conta' ? (
+            <Button variant="ghost" size="lg" onClick={() => void instagram.desconectar()}>
+              Desconectar
+            </Button>
+          ) : estado === 'erro' ? (
+            <Button variant="secondary" size="lg" iconLeft="refresh-cw" onClick={() => void instagram.atualizar()}>
+              Tentar de novo
+            </Button>
+          ) : estado === 'carregando' ? null : (
+            <Button variant="primary" size="lg" iconRight="arrow-right" onClick={() => void instagram.conectar()}>
+              {estado === 'acesso-perdido' ? 'Conectar de novo' : 'Conectar'}
+            </Button>
+          )}
+        </div>
       </div>
     </Card>
   );
