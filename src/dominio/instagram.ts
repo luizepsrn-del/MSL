@@ -400,8 +400,10 @@ export function recomendar(
 export interface DegrauDoFunil {
   nome: string;
   total: number;
-  /** total sobre o degrau de cima; nulo no primeiro */
+  /** total sobre `sobre`; nulo no primeiro */
   taxa: number | null;
+  /** o degrau de referência da taxa, para a tela dizer "de quem…" */
+  sobre: string | null;
 }
 
 export interface Funil {
@@ -413,33 +415,45 @@ export interface Funil {
 }
 
 /**
- * Do alcance ao seguidor, somado sobre os posts de feed que têm visitas.
+ * Do alcance ao seguidor, somado sobre os posts de feed que têm **todas** as
+ * métricas do funil.
  *
  * Reels ficam de fora porque a Meta não informa visitas nem seguidores para
- * eles: somá-los poria alcance no topo sem a parte de baixo correspondente, e
- * o funil acusaria uma queda que é só falta de dado.
+ * eles; e um post com salvos ou seguidores recusados também fica, porque somar
+ * a falta como zero inventaria um gargalo (sem dado não é zero).
+ *
+ * Os degraus não são subconjuntos uns dos outros — quem visita o perfil não
+ * precisou salvar —, então cada taxa é sobre o degrau que de fato a antecede:
+ * interações e visitas sobre o alcance, guardaram sobre interações, seguiram
+ * sobre visitas. Assim nenhuma taxa passa de 100% por construção.
  */
 export function funil(posts: PostDoInstagram[]): Funil | null {
   const comDado = posts.filter(
-    (p) => p.formato !== 'reels' && p.alcance !== undefined && p.visitasAoPerfil !== undefined,
+    (p) =>
+      p.formato !== 'reels' &&
+      p.alcance !== undefined &&
+      p.visitasAoPerfil !== undefined &&
+      p.salvamentos !== undefined &&
+      p.compartilhamentos !== undefined &&
+      p.seguidoresGanhos !== undefined,
   );
   if (comDado.length < MINIMO_POR_FORMATO) return null;
 
   const somar = (f: (p: PostDoInstagram) => number) => comDado.reduce((t, p) => t + f(p), 0);
-  const guardaram = (p: PostDoInstagram) => (p.salvamentos ?? 0) + (p.compartilhamentos ?? 0);
-  const totais: [string, number][] = [
-    ['Alcance', somar((p) => p.alcance!)],
-    ['Interações', somar((p) => p.curtidas + p.comentarios + guardaram(p))],
-    ['Guardaram', somar(guardaram)],
-    ['Visitaram o perfil', somar((p) => p.visitasAoPerfil!)],
-    ['Seguiram', somar((p) => p.seguidoresGanhos ?? 0)],
+  const guardaram = (p: PostDoInstagram) => p.salvamentos! + p.compartilhamentos!;
+  const passos: [string, number, number | null][] = [
+    ['Alcance', somar((p) => p.alcance!), null],
+    ['Interações', somar((p) => p.curtidas + p.comentarios + guardaram(p)), 0],
+    ['Guardaram', somar(guardaram), 1],
+    ['Visitaram o perfil', somar((p) => p.visitasAoPerfil!), 0],
+    ['Seguiram', somar((p) => p.seguidoresGanhos!), 3],
   ];
 
-  const degraus = totais.map(([nome, total], i) => ({
-    nome,
-    total,
-    taxa: i === 0 ? null : totais[i - 1][1] > 0 ? total / totais[i - 1][1] : null,
-  }));
+  const degraus = passos.map(([nome, total, base]) => {
+    if (base === null) return { nome, total, taxa: null, sobre: null };
+    const [nomeDaBase, totalDaBase] = passos[base];
+    return { nome, total, taxa: totalDaBase > 0 ? Math.min(1, total / totalDaBase) : null, sobre: nomeDaBase };
+  });
   let gargalo = 1;
   for (let i = 2; i < degraus.length; i++) {
     const t = degraus[i].taxa;

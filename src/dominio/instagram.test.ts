@@ -222,8 +222,23 @@ describe('funil', () => {
     expect(f.degraus.map((d) => d.total)).toEqual([3000, 210, 30, 60, 3]);
     expect(f.degraus[0].taxa).toBeNull();
     expect(f.degraus[1].taxa).toBeCloseTo(0.07);
-    // seguiram / visitaram = 3/60 = 5%: a menor taxa
-    expect(f.gargalo).toBe(4);
+    // visitaram / alcance = 60/3000 = 2%: a menor taxa
+    expect(f.degraus[3]).toMatchObject({ taxa: 0.02, sobre: 'Alcance' });
+    expect(f.degraus[4]).toMatchObject({ taxa: 0.05, sobre: 'Visitaram o perfil' });
+    expect(f.gargalo).toBe(3);
+  });
+
+  it('nenhuma taxa passa de 100%', () => {
+    const f = funil([feed('a', 1000, 500, 1), feed('b', 1000, 500, 1), feed('c', 1000, 500, 1)])!;
+    for (const d of f.degraus) expect(d.taxa ?? 0).toBeLessThanOrEqual(1);
+  });
+
+  it('post com métrica recusada fica de fora em vez de virar zero', () => {
+    const semSalvos = post({
+      id: 'x', formato: 'carrossel', publicadoEm: '2026-10-20T15:00:00Z',
+      alcance: 1000, curtidas: 50, comentarios: 10, visitasAoPerfil: 20, seguidoresGanhos: 1,
+    });
+    expect(funil([feed('a', 1000, 20, 1), feed('b', 1000, 20, 1), semSalvos])).toBeNull();
   });
 
   it('Reels ficam de fora: a Meta não informa visitas para eles', () => {

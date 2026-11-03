@@ -215,7 +215,7 @@ test.describe('Criação · Instagram', () => {
     await expect(page.getByText('Do alcance ao seguidor')).toHaveCount(0);
     await page.getByRole('button', { name: '90 dias' }).click();
     const funil = page.getByRole('region', { name: 'Funil' });
-    await expect(funil.getByText('Visitaram o perfil')).toBeVisible();
+    await expect(funil.getByText('Visitaram o perfil', { exact: true })).toBeVisible();
     await expect(funil.getByText('maior queda')).toHaveCount(1);
     await expect(funil.getByText(/Reels ficam de fora/)).toBeVisible();
   });

@@ -301,7 +301,9 @@ function Foto({ perfil, tamanho }: { perfil: PerfilDoInstagram; tamanho: number 
   const [falhou, setFalhou] = React.useState(false);
   // O @ costuma começar por sublinhado ou ponto: a inicial é a primeira letra.
   const inicial = (perfil.usuario.replace(/[^\p{L}\p{N}]/gu, '').charAt(0) || '?').toUpperCase();
-  const anel = tamanho >= 60 ? 3 : 2;
+  const grande = tamanho >= 60;
+  const anel = grande ? 'var(--bw-tab)' : 'var(--bw-focus)';
+  const letra = tamanho >= 100 ? 'var(--fs-title)' : grande ? 'var(--fs-heading)' : 'var(--fs-xs)';
   return (
     <span
       style={{
@@ -311,7 +313,7 @@ function Foto({ perfil, tamanho }: { perfil: PerfilDoInstagram; tamanho: number 
         padding: anel,
         borderRadius: '50%',
         background: 'var(--gradient-primary)',
-        boxShadow: tamanho >= 60 ? 'var(--glow-accent-strong)' : undefined,
+        boxShadow: grande ? 'var(--glow-accent-strong)' : undefined,
         display: 'inline-flex',
         boxSizing: 'border-box',
       }}
@@ -320,13 +322,13 @@ function Foto({ perfil, tamanho }: { perfil: PerfilDoInstagram; tamanho: number 
         style={{
           flex: 1,
           borderRadius: '50%',
-          border: `${anel}px solid var(--surface-card)`,
+          border: `${anel} solid var(--surface-card)`,
           background: 'var(--surface-raised)',
           overflow: 'hidden',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          font: `var(--fw-semibold) ${Math.round(tamanho / 2.6)}px/1 var(--font-core)`,
+          font: `var(--fw-semibold) ${letra}/1 var(--font-core)`,
           color: 'var(--text-heading)',
         }}
       >
@@ -414,6 +416,7 @@ function CabecalhoDoPerfil({
       {longa && (
         <button
           type="button"
+          aria-expanded={aberta}
           onClick={() => setAberta((a) => !a)}
           style={{
             alignSelf: 'flex-start',
@@ -736,6 +739,13 @@ function FaixaDeNumeros({ r, a, temAnterior, desktop }: { r: Resumo; a: Resumo; 
   );
 }
 
+/** Como a tela diz sobre o que é cada taxa. */
+const SOBRE: Record<string, string> = {
+  Alcance: 'de quem foi alcançado',
+  Interações: 'das interações',
+  'Visitaram o perfil': 'de quem visitou o perfil',
+};
+
 const pct = (t: number) => `${formatarNumero(Math.round(t * 1000) / 10)}%`;
 
 function BlocoFunil({ funil: f, anterior }: { funil: Funil; anterior: Funil | null }) {
@@ -757,7 +767,7 @@ function BlocoFunil({ funil: f, anterior }: { funil: Funil; anterior: Funil | nu
                   <span style={NEGRITO('var(--fs-lg)')}>{formatarNumero(d.total)}</span>
                   {d.taxa !== null && (
                     <span style={TEXTO}>
-                      {pct(d.taxa)} do degrau de cima
+                      {pct(d.taxa)} {SOBRE[d.sobre ?? ''] ?? ''}
                       {pp !== null &&
                         Math.abs(pp) >= 0.05 &&
                         ` · ${pp > 0 ? '+' : '−'}${formatarNumero(Math.round(Math.abs(pp) * 10) / 10)} p.p.`}
@@ -848,7 +858,7 @@ function Ranking({
                 style={{
                   ...NEGRITO('var(--fs-lg)', i === 0 ? 'var(--purple-300)' : 'var(--text-subtle)'),
                   flex: '0 0 auto',
-                  width: 24,
+                  width: 'var(--sp-10)',
                   textAlign: 'center',
                 }}
               >
@@ -924,7 +934,14 @@ function Galeria({
             href={post.link}
             target="_blank"
             rel="noreferrer"
-            aria-label={`Abrir post: ${legendaCurta(post.legenda, 40)}`}
+            aria-label={[
+              `Abrir post: ${legendaCurta(post.legenda, 40) || NOME_CURTO[post.formato]}`,
+              valor === undefined ? 'sem dado' : `${formatarNumero(valor)} ${unidadeDa(metrica)}`,
+              razao !== null ? `${vezes(razao)} a mediana` : '',
+              destaque ? 'melhor do período' : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
             style={{
               display: 'flex',
               flexDirection: 'column',
