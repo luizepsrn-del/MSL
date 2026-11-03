@@ -15,6 +15,8 @@ import {
   type Modelo,
   type Regra,
   type Peca,
+  type PerfilDeReferencia,
+  type Referencia,
   type Rotulo,
   type MarcacaoDeEvento,
   type EstadoTarefa,
@@ -109,6 +111,13 @@ interface Acoes {
   criarPeca(dados: Omit<Peca, keyof BaseRegistro>): Promise<void>;
   editarPeca(id: string, mudanca: Edicao<Peca>): Promise<void>;
   removerPeca(id: string): Promise<void>;
+  /** o @ já cadastrado não entra duas vezes */
+  adicionarPerfilDeReferencia(usuario: string): Promise<void>;
+  /** sai o perfil e saem os posts guardados dele */
+  removerPerfilDeReferencia(id: string): Promise<void>;
+  /** o mesmo post guardado de novo só troca o porquê */
+  guardarReferencia(dados: Omit<Referencia, keyof BaseRegistro>): Promise<void>;
+  removerReferencia(id: string): Promise<void>;
   /** carimba a saída: publicar é uma decisão, não um campo qualquer */
   publicarPeca(id: string): Promise<void>;
   criarRotulo(dados: Omit<Rotulo, keyof BaseRegistro>): Promise<void>;
@@ -591,6 +600,46 @@ export function ProvedorBanco({
         const atual = banco.pecas.find((p) => p.id === id);
         if (atual) validarPeca({ ...atual, ...mudanca } as Peca);
         await gravar({ ...banco, pecas: editarNaLista(banco.pecas, id, mudanca, agora()) });
+      },
+
+      async adicionarPerfilDeReferencia(usuario) {
+        if (banco.perfisDeReferencia.some((p) => p.usuario === usuario)) return;
+        const t = agora();
+        const perfil: PerfilDeReferencia = { usuario, id: novoId(), criadoEm: t, alteradoEm: t };
+        await gravar({ ...banco, perfisDeReferencia: [...banco.perfisDeReferencia, perfil] });
+      },
+
+      async removerPerfilDeReferencia(id) {
+        const perfil = banco.perfisDeReferencia.find((p) => p.id === id);
+        if (!perfil) return;
+        const t = agora();
+        let atual = banco;
+        const tirado = removerRegistro(atual, 'perfisDeReferencia', atual.perfisDeReferencia, id, t);
+        atual = { ...atual, perfisDeReferencia: tirado.lista, removidos: tirado.removidos };
+        for (const r of atual.referencias.filter((x) => x.usuario === perfil.usuario)) {
+          const sem = removerRegistro(atual, 'referencias', atual.referencias, r.id, t);
+          atual = { ...atual, referencias: sem.lista, removidos: sem.removidos };
+        }
+        await gravar(atual);
+      },
+
+      async guardarReferencia(dados) {
+        const existente = banco.referencias.find((r) => r.postId === dados.postId);
+        if (existente) {
+          await gravar({
+            ...banco,
+            referencias: editarNaLista(banco.referencias, existente.id, { porQue: dados.porQue }, agora()),
+          });
+          return;
+        }
+        const t = agora();
+        const referencia: Referencia = { ...dados, id: novoId(), criadoEm: t, alteradoEm: t };
+        await gravar({ ...banco, referencias: [...banco.referencias, referencia] });
+      },
+
+      async removerReferencia(id) {
+        const { lista, removidos } = removerRegistro(banco, 'referencias', banco.referencias, id, agora());
+        await gravar({ ...banco, referencias: lista, removidos });
       },
 
       async removerPeca(id) {
