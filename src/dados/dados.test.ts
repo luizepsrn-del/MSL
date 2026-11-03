@@ -193,6 +193,23 @@ describe('migração', () => {
     expect(banco.lancamentos).toEqual([]);
   });
 
+  it('18 → 19: a peça ganha o post do Instagram sem mudar nada do que já tinha', () => {
+    const peca = {
+      id: 'p1',
+      criadoEm: '2026-10-01T00:00:00.000Z',
+      alteradoEm: '2026-10-01T00:00:00.000Z',
+      titulo: 'Mentalista',
+      tipo: 'carrossel',
+      estado: 'publicado',
+      contexto: 'profissional',
+      corpo: 'texto',
+    };
+    const banco = migrar({ versao: 18, pecas: [peca] });
+    expect(banco.versao).toBe(19);
+    expect(banco.pecas).toEqual([peca]);
+    expect(banco.pecas[0].instagramPostId).toBeUndefined();
+  });
+
   it('é idempotente — migrar duas vezes dá o mesmo banco', () => {
     const uma = migrar({ rotinas: [], execucoes: [] });
     const duas = migrar(uma);

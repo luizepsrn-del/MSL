@@ -195,6 +195,13 @@ export const MIGRACOES: Record<number, Migracao> = {
     marcacoes: Array.isArray(dados.marcacoes) ? dados.marcacoes : [],
     versao: 18,
   }),
+
+  /**
+   * 18 → 19: a peça pode guardar o post do Instagram em que virou.
+   *
+   * Um campo opcional e nada para preencher: peça sem post continua igual.
+   */
+  18: (dados) => ({ ...dados, versao: 19 }),
 };
 
 export class ErroDeMigracao extends Error {

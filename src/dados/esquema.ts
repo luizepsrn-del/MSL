@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 18;
+export const VERSAO_ESQUEMA = 19;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -502,6 +502,14 @@ export interface Peca extends Registro {
   /** projeto a que pertence, ou ausente */
   projetoId?: string;
   rotuloId?: string;
+  /**
+   * O post do Instagram em que esta peça virou — o ID da mídia na Meta.
+   *
+   * Só faz sentido numa peça `publicado`. Os números do post não moram aqui:
+   * pertencem ao Instagram e são lidos na hora, porque uma cópia guardada
+   * envelhece. Guardar o ID é o que basta para achá-los.
+   */
+  instagramPostId?: string;
 }
 
 /* ── Regras ──────────────────────────────────────────────────────────────── */
