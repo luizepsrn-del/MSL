@@ -245,3 +245,28 @@ describe('a frase sobre o dia', () => {
     expect(comoEstaODia(b, HOJE)).toBe('1 coisa pedindo você.');
   });
 });
+
+describe('itens de fora do banco', () => {
+  const extra = {
+    chave: 'instagram:hoje',
+    tipo: 'instagram' as const,
+    id: 'instagram',
+    titulo: '6 dias sem postar no Instagram.',
+    motivo: 'Instagram',
+    faixa: 6,
+    marcavel: false,
+  };
+
+  it('entram na ordem das faixas, depois das tarefas', () => {
+    const banco: Banco = { ...bancoVazio(), tarefas: [tarefa({ titulo: 'Ligar para o cliente', prazo: '2026-11-03' })] };
+    const fila = precisaDeVoce(banco, '2026-11-03', LIMITE_DO_FOCO, [extra]);
+    expect(fila.map((i) => i.chave)).toEqual(['tarefa:Ligar para o cliente', 'instagram:hoje']);
+  });
+
+  it('respeitam o limite: a fila cheia não cresce', () => {
+    const tarefas = Array.from({ length: LIMITE_DO_FOCO }, (_, i) => tarefa({ titulo: `T${i}`, prazo: '2026-11-03' }));
+    const fila = precisaDeVoce({ ...bancoVazio(), tarefas }, '2026-11-03', LIMITE_DO_FOCO, [extra]);
+    expect(fila).toHaveLength(LIMITE_DO_FOCO);
+    expect(fila.some((i) => i.tipo === 'instagram')).toBe(false);
+  });
+});

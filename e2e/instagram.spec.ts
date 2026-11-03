@@ -289,3 +289,28 @@ test.describe('Criação · Instagram', () => {
     await expect(page.getByRole('link', { name: 'Ir para Ajustes' })).toBeVisible();
   });
 });
+
+test.describe('Início · Instagram', () => {
+  test('dias sem postar viram um item na fila que leva à aba', async ({ page }) => {
+    await semear(page);
+    await metaFalsa(page, 'pronto');
+    // Só os posts de mais de uma semana: o último tem 9 dias.
+    const antigos = POSTS.filter((p) => Date.now() - Date.parse(p.publicadoEm) > 7 * 86_400_000);
+    await page.route('**/api/instagram', (rota) => rota.fulfill({ json: { ...DADOS, posts: antigos } }));
+    await page.goto('/app');
+    const item = page.getByText('9 dias sem postar no Instagram.');
+    await expect(item).toBeVisible();
+    await expect(item).toHaveCount(1);
+    await item.click();
+    await expect(page).toHaveURL(/\/app\/criacao\?aba=instagram/);
+  });
+
+  test('sem conexão, a fila não ganha nada', async ({ page }) => {
+    await semear(page);
+    await metaFalsa(page, 'desconectado');
+    const lida = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/instagram');
+    await page.goto('/app');
+    await lida;
+    await expect(page.getByText(/sem postar no Instagram/)).toHaveCount(0);
+  });
+});
