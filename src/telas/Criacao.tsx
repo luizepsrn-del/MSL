@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Card,
   Button,
@@ -45,6 +46,8 @@ import { diaValido } from '../dominio/rotina';
 import { formatarNumero } from '../formato';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 import { GRADE_DE_TILES, TRILHO_DE_TILES, ITEM_TRILHO } from '../casca/trilho';
+import { PainelDoInstagram, useNumerosDosPosts } from './PainelDoInstagram';
+import type { PostDoInstagram } from '../dominio/instagram';
 
 /**
  * Criação — onde o que eu escrevo mora.
@@ -115,7 +118,49 @@ async function copiar(texto: string): Promise<boolean> {
 
 /* ── A tela ──────────────────────────────────────────────────────────────── */
 
+/**
+ * A Criação tem duas abas: as peças (o que eu escrevo) e o Instagram (o que
+ * aconteceu com o que saiu). A aba vai na consulta, `?aba=instagram`, porque
+ * as rotas do produto são `/app/:pilar` — e assim ela tem endereço próprio.
+ */
 export function Criacao() {
+  const [parametros, setParametros] = useSearchParams();
+  const aba = parametros.get('aba') === 'instagram' ? 'instagram' : 'pecas';
+  const ir = (destino: 'pecas' | 'instagram') =>
+    setParametros(destino === 'instagram' ? { aba: 'instagram' } : {}, { replace: true });
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--card-gap)' }}>
+      <div role="group" aria-label="Abas da Criação" style={{ display: 'flex', gap: 'var(--sp-4)' }}>
+        <Button
+          variant={aba === 'pecas' ? 'primary' : 'ghost'}
+          iconLeft="pencil"
+          onClick={() => ir('pecas')}
+        >
+          Peças
+        </Button>
+        <Button
+          variant={aba === 'instagram' ? 'primary' : 'ghost'}
+          iconLeft="instagram"
+          onClick={() => ir('instagram')}
+        >
+          Instagram
+        </Button>
+      </div>
+      {aba === 'instagram' ? <PainelDoInstagram /> : <Pecas />}
+    </div>
+  );
+}
+
+/**
+ * Os números do post ligado, lidos uma vez para a lista inteira — e só quando
+ * alguma peça está ligada, para a aba Peças não falar com a Meta à toa.
+ */
+function ComNumeros({ children }: { children: (numeros: Map<string, PostDoInstagram>) => React.ReactNode }) {
+  return <>{children(useNumerosDosPosts())}</>;
+}
+
+function Pecas() {
   const { banco, hoje, criarPeca, editarPeca, removerPeca, publicarPeca } = useBanco();
   const desktop = useLarguraDesktop() !== false;
 
@@ -234,18 +279,23 @@ export function Criacao() {
         {visiveis.length === 0 ? (
           <Vazio temFiltro={banco.pecas.length > 0} />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
-            {visiveis.map((p) => (
-              <LinhaDaPeca
-                key={p.id}
-                peca={p}
-                hoje={hoje}
-                aoAbrir={() => setEditando(p)}
-                aoPublicar={() => publicarPeca(p.id)}
-                aoRemover={() => removerPeca(p.id)}
-              />
-            ))}
-          </div>
+          <ListaDePecas temLigada={banco.pecas.some((p) => p.instagramPostId)}>
+            {(numeros) => (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+                {visiveis.map((p) => (
+                  <LinhaDaPeca
+                    key={p.id}
+                    peca={p}
+                    hoje={hoje}
+                    numeros={p.instagramPostId ? numeros.get(p.instagramPostId) : undefined}
+                    aoAbrir={() => setEditando(p)}
+                    aoPublicar={() => publicarPeca(p.id)}
+                    aoRemover={() => removerPeca(p.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </ListaDePecas>
         )}
       </Card>
 
@@ -271,6 +321,18 @@ export function Criacao() {
       )}
     </div>
   );
+}
+
+const SEM_NUMEROS = new Map<string, PostDoInstagram>();
+
+function ListaDePecas({
+  temLigada,
+  children,
+}: {
+  temLigada: boolean;
+  children: (numeros: Map<string, PostDoInstagram>) => React.ReactNode;
+}) {
+  return temLigada ? <ComNumeros>{children}</ComNumeros> : <>{children(SEM_NUMEROS)}</>;
 }
 
 function Vazio({ temFiltro }: { temFiltro: boolean }) {
@@ -307,12 +369,15 @@ function Vazio({ temFiltro }: { temFiltro: boolean }) {
 function LinhaDaPeca({
   peca,
   hoje,
+  numeros,
   aoAbrir,
   aoPublicar,
   aoRemover,
 }: {
   peca: Peca;
   hoje: string;
+  /** o post ligado, quando a peça está ligada e o post veio na leitura */
+  numeros?: PostDoInstagram;
   aoAbrir: () => void;
   aoPublicar: () => void;
   aoRemover: () => void;
@@ -374,6 +439,13 @@ function LinhaDaPeca({
           {c.palavras > 0 && ` · ${formatarNumero(c.palavras)} palavras`}
           {c.slides > 0 && ` · ${c.slides} slides`}
         </span>
+        {numeros && (
+          <span style={{ display: 'block', font: 'var(--type-body)', color: 'var(--purple-400)' }}>
+            Instagram: {numeros.alcance === undefined ? 'alcance sem dado' : `${formatarNumero(numeros.alcance)} de alcance`}
+            {numeros.salvamentos !== undefined && ` · ${formatarNumero(numeros.salvamentos)} salvos`}
+            {numeros.compartilhamentos !== undefined && ` · ${formatarNumero(numeros.compartilhamentos)} compartilhamentos`}
+          </span>
+        )}
       </button>
 
       <Badge tone={TOM_DO_ESTADO[peca.estado]} dot={false}>
