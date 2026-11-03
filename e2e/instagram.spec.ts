@@ -76,6 +76,15 @@ async function metaFalsa(page: Page, inicial: Situacao) {
   await page.route('**/api/instagram', (rota) =>
     estado.situacao === 'pronto' ? rota.fulfill({ json: DADOS }) : rota.fulfill(respostaDeErro[estado.situacao]),
   );
+  await page.route('**/api/instagram-estado', (rota) =>
+    rota.fulfill({
+      json: {
+        conectado: estado.situacao !== 'desconectado',
+        conectadoEm: null,
+        contaId: estado.situacao === 'sem-conta' ? null : '17841400224855713',
+      },
+    }),
+  );
   await page.route('**/api/instagram-conta', (rota) => {
     estado.contaRecebida = JSON.parse(rota.request().postData() ?? '{}').contaId ?? '';
     estado.situacao = 'pronto';
@@ -108,14 +117,19 @@ test.describe('Ajustes', () => {
     await page.getByLabel('ID da conta do Instagram').fill('17841400224855713');
     await page.getByRole('button', { name: 'Salvar' }).last().click();
     await expect.poll(() => meta.contaRecebida).toBe('17841400224855713');
-    await expect(page.getByText('@_luizpereira_ · 2.242 seguidores')).toBeVisible();
+    await expect(page.getByText('Conectado, só leitura')).toBeVisible();
   });
 
-  test('conectado mostra a conta', async ({ page }) => {
+  test('conectado diz que está conectado, sem ler a Meta inteira', async ({ page }) => {
     await semear(page);
     await metaFalsa(page, 'pronto');
+    let leituras = 0;
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/instagram') leituras += 1;
+    });
     await page.goto('/app/ajustes');
-    await expect(page.getByText('@_luizpereira_ · 2.242 seguidores')).toBeVisible();
+    await expect(page.getByText('Conectado, só leitura')).toBeVisible();
+    expect(leituras).toBe(0);
   });
 });
 

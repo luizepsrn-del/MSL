@@ -5,6 +5,8 @@ import {
   porFormato,
   recomendar,
   LIMITE_DE_RECOMENDACOES,
+  anteriorCompleto,
+  variacao,
   type PostDoInstagram,
 } from './instagram';
 
@@ -153,5 +155,42 @@ describe('recomendar', () => {
     const r = recomendar(carrosseis(8, 400), anterior, hoje, 30).find((x) => x.tipo === 'ritmo');
     expect(r).toBeDefined();
     expect(r!.evidencia).toMatch(/semana/);
+  });
+});
+
+describe('anteriorCompleto', () => {
+  const hoje = '2026-11-03';
+  const perfil = (totalDePosts: number) => ({ usuario: 'x', seguidores: 1, totalDePosts });
+  const p = (dia: string) => post({ id: dia, formato: 'imagem', publicadoEm: `${dia}T15:00:00Z` });
+
+  it('com todos os posts lidos, o anterior vale', () => {
+    expect(anteriorCompleto({ perfil: perfil(2), posts: [p('2026-10-30'), p('2026-10-01')], lidoEm: 'x' }, 30, hoje)).toBe(true);
+  });
+
+  it('se a leitura parou no teto antes de cobrir o anterior, o anterior não vale', () => {
+    // 200 posts no perfil, e o mais antigo lido é de 20 dias atrás: o período
+    // anterior de 30 dias (de 60 a 30 dias atrás) não foi lido.
+    expect(anteriorCompleto({ perfil: perfil(200), posts: [p('2026-10-30'), p('2026-10-14')], lidoEm: 'x' }, 30, hoje)).toBe(false);
+  });
+
+  it('se a leitura parou no teto mas já passou do início do anterior, vale', () => {
+    expect(anteriorCompleto({ perfil: perfil(200), posts: [p('2026-10-30'), p('2026-08-01')], lidoEm: 'x' }, 30, hoje)).toBe(true);
+  });
+
+  it("'tudo' não tem anterior", () => {
+    expect(anteriorCompleto({ perfil: perfil(1), posts: [p('2026-10-30')], lidoEm: 'x' }, 'tudo', hoje)).toBe(false);
+  });
+});
+
+describe('variacao', () => {
+  it('queda é queda: o tom diz caiu', () => {
+    expect(variacao(800, 2000, true)).toEqual({ texto: '−1.200 vs anterior', tom: 'caiu' });
+  });
+  it('alta é alta', () => {
+    expect(variacao(2000, 800, true)).toEqual({ texto: '+1.200 vs anterior', tom: 'subiu' });
+  });
+  it('sem anterior ou sem dado, não há variação', () => {
+    expect(variacao(800, 2000, false)).toBeUndefined();
+    expect(variacao(null, 2000, true)).toBeUndefined();
   });
 });

@@ -43,8 +43,11 @@ const METRICAS = [
 ] as const;
 
 const LIMITE_DA_CHAMADA_MS = 15_000;
+
+/** Os códigos da Graph que querem dizer "esta métrica não existe para este post". */
+const METRICA_RECUSADA = new Set([10, 100, 200]);
 /** Quantos posts pedem métricas ao mesmo tempo. */
-const POSTS_EM_PARALELO = 10;
+const POSTS_EM_PARALELO = 5;
 
 export interface AmbienteDoInstagram {
   META_APP_ID?: string;
@@ -81,11 +84,14 @@ export class InstagramNaoConfigurado extends Error {
 export class ErroDoInstagram extends Error {
   readonly estado: number;
   readonly codigo?: 'token-recusado' | 'meta';
-  constructor(mensagem: string, estado = 502, codigo: 'token-recusado' | 'meta' = 'meta') {
+  /** o `error.code` da Graph, quando veio um */
+  readonly codigoDaGraph?: number;
+  constructor(mensagem: string, estado = 502, codigo: 'token-recusado' | 'meta' = 'meta', codigoDaGraph?: number) {
     super(mensagem);
     this.name = 'ErroDoInstagram';
     this.estado = estado;
     this.codigo = codigo;
+    this.codigoDaGraph = codigoDaGraph;
   }
 }
 
@@ -126,8 +132,8 @@ async function graph<T>(
   if (!resposta.ok || dados.error) {
     const codigo = dados.error?.code;
     const mensagem = dados.error?.message ?? `A Meta respondeu ${resposta.status}.`;
-    if (codigo === 190) throw new ErroDoInstagram(mensagem, 401, 'token-recusado');
-    throw new ErroDoInstagram(mensagem);
+    if (codigo === 190) throw new ErroDoInstagram(mensagem, 401, 'token-recusado', codigo);
+    throw new ErroDoInstagram(mensagem, 502, 'meta', codigo);
   }
   return dados;
 }
@@ -288,10 +294,13 @@ async function metrica(
     const valor = item?.values?.[0]?.value ?? item?.total_value?.value;
     return typeof valor === 'number' ? valor : undefined;
   } catch (erro) {
-    // Token caído derruba tudo; qualquer outra recusa é "sem dado" desta
-    // métrica — a Meta não entrega visitas para Reels, por exemplo.
-    if (erro instanceof ErroDoInstagram && erro.codigo === 'token-recusado') throw erro;
-    return undefined;
+    // Só a recusa da métrica é "sem dado": a Meta não entrega visitas para
+    // Reels, por exemplo (código 100), ou a permissão não cobre aquela
+    // métrica (10, 200). Limite de uso, queda e tempo esgotado derrubam a
+    // leitura — virar "sem dado" aqui iria para o cache e deixaria a tela
+    // vazia por uma hora, como se o post não tivesse número nenhum.
+    if (erro instanceof ErroDoInstagram && METRICA_RECUSADA.has(erro.codigoDaGraph ?? -1)) return undefined;
+    throw erro;
   }
 }
 

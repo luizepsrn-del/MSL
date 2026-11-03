@@ -116,6 +116,12 @@ export function situacaoDoErro(erro: unknown): 'desconectado' | 'sem-conta' | 'a
   return 'erro';
 }
 
+/** O estado da conexão, como `/api/instagram-estado` o devolve. */
+export function situacaoDaConexao(e: { conectado: boolean; contaId: string | null }): 'desconectado' | 'sem-conta' | 'pronto' {
+  if (!e.conectado) return 'desconectado';
+  return e.contaId ? 'pronto' : 'sem-conta';
+}
+
 export interface Instagram {
   estado: EstadoDoInstagram;
   dados?: DadosDoInstagram;
@@ -127,7 +133,13 @@ export interface Instagram {
   definirConta(contaId: string): Promise<void>;
 }
 
-export function useInstagram(): Instagram {
+/**
+ * `soEstado`: só pergunta ao servidor se há conexão e conta — é o que Ajustes
+ * precisa. A leitura inteira (perfil, posts e métricas) é da aba Instagram;
+ * fazê-la para desenhar um cartão de configuração era pagar dezenas de
+ * chamadas à Meta para mostrar uma linha.
+ */
+export function useInstagram({ soEstado = false }: { soEstado?: boolean } = {}): Instagram {
   const [estado, setEstado] = React.useState<EstadoDoInstagram>('carregando');
   const [dados, setDados] = React.useState<DadosDoInstagram>();
   const [erro, setErro] = React.useState<string>();
@@ -136,6 +148,12 @@ export function useInstagram(): Instagram {
   const ler = React.useCallback(async (forcar: boolean) => {
     setAtualizando(true);
     try {
+      if (soEstado) {
+        const e = await falarComInstagram<{ conectado: boolean; contaId: string | null }>('/api/instagram-estado');
+        setErro(undefined);
+        setEstado(situacaoDaConexao(e));
+        return;
+      }
       const lidos = await falarComInstagram<unknown>(
         forcar ? '/api/instagram?atualizar=1' : '/api/instagram',
       );
@@ -153,7 +171,7 @@ export function useInstagram(): Instagram {
     } finally {
       setAtualizando(false);
     }
-  }, []);
+  }, [soEstado]);
 
   React.useEffect(() => {
     void ler(false);

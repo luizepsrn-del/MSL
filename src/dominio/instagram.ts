@@ -124,6 +124,22 @@ export function dividirPorPeriodo(
   return { atual, anterior };
 }
 
+/**
+ * O período anterior foi lido inteiro?
+ *
+ * O servidor para num teto de posts, e não de dias. Com muitos posts, o mais
+ * antigo lido pode ser de depois do começo do período anterior — e aí o
+ * anterior parece vazio ou magro, e toda comparação sai a favor de agora.
+ * Quando não dá para garantir, não se compara.
+ */
+export function anteriorCompleto(dados: DadosDoInstagram, periodo: Periodo, hoje: string): boolean {
+  if (periodo === 'tudo') return false;
+  if (dados.posts.length >= dados.perfil.totalDePosts) return true;
+  const dias = dados.posts.map((p) => diaLocalDe(p.publicadoEm)).sort();
+  const maisAntigo = dias[0];
+  return maisAntigo !== undefined && maisAntigo < somarDias(hoje, -2 * periodo);
+}
+
 /* ── Resumo ──────────────────────────────────────────────────────────────── */
 
 export interface Resumo {
@@ -157,6 +173,24 @@ export function porFormato(
     return { posts: doFormato.length, alcanceMedio: media(definidos(doFormato.map((p) => p.alcance))) };
   };
   return { reels: de('reels'), carrossel: de('carrossel'), imagem: de('imagem') };
+}
+
+/**
+ * A variação contra o período anterior, em valor, com o sentido explícito —
+ * para a tela não pintar uma queda com a cor de sucesso.
+ */
+export function variacao(
+  atual: number | null,
+  anterior: number | null,
+  temAnterior: boolean,
+): { texto: string; tom: 'subiu' | 'caiu' | 'igual' } | undefined {
+  if (!temAnterior || atual === null || anterior === null) return undefined;
+  const d = Math.round(atual - anterior);
+  if (d === 0) return { texto: 'igual ao anterior', tom: 'igual' };
+  return {
+    texto: `${d > 0 ? '+' : '−'}${formatarNumero(Math.abs(d))} vs anterior`,
+    tom: d > 0 ? 'subiu' : 'caiu',
+  };
 }
 
 /* ── Recomendações ───────────────────────────────────────────────────────── */

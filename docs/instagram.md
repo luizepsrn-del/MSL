@@ -4,6 +4,11 @@ O MSL lê o Instagram pelo app **Métricas Adt** da Meta (App ID
 `1619333876341872`), com o produto Instagram em *login unificado*. A
 configuração de login já existe: `config_id` `1675370737517616`.
 
+A configuração emite **token de usuário do sistema (SUAT), que não expira** —
+conferido no painel, em *Prévia* da configuração. Se um dia ela for trocada por
+uma de token de usuário comum, o token passa a durar horas e o MSL vai pedir
+para conectar de novo a cada visita.
+
 Faz-se uma vez. Depois disso, conectar é um clique em **Ajustes → Instagram**.
 
 ## 1. O endereço de volta, no painel da Meta

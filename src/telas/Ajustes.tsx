@@ -747,13 +747,13 @@ function ContaDoGoogle() {
  * O token mora no servidor, como a credencial do Google.
  */
 function ContaDoInstagram() {
-  const instagram = useInstagram();
+  const instagram = useInstagram({ soEstado: true });
   const [contaId, setContaId] = React.useState('');
-  const { estado, dados } = instagram;
+  const { estado } = instagram;
 
   const subtitulo =
-    estado === 'pronto' && dados
-      ? `@${dados.perfil.usuario} · ${formatarNumero(dados.perfil.seguidores)} seguidores`
+    estado === 'pronto'
+      ? 'Conectado, só leitura'
       : estado === 'carregando'
         ? 'Verificando…'
         : estado === 'sem-conta'

@@ -202,6 +202,16 @@ reading its test is how the system starts lying.
   `semente` never enters the queue — it is raw material, and an idea that turns
   into nagging is the shortest path to not writing ideas down.
 
+- **Instagram metrics never enter the bank.** Only the token (server, in the
+  `Armazem`) and `Peca.instagramPostId` are stored; numbers are read from Meta
+  on each visit, behind a one-hour server cache. **No data is not zero**: Meta
+  omits profile visits and follows for Reels, and a missing metric stays
+  `undefined` and leaves the average. A previous period the read did not fully
+  cover (the server stops at `TETO_DE_POSTS`) is not compared at all —
+  `anteriorCompleto` in `src/dominio/instagram.ts`. Only Graph codes 10, 100 and
+  200 on an insight mean "no data"; rate limits and outages fail the read, so
+  an empty screen never sits in the cache for an hour.
+
 Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `criacao`, `metas`, `pedir`, `regras`, `ajustes`. Each has its own URL.
 `/design-system` is the library showcase.
 

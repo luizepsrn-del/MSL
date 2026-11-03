@@ -5,6 +5,7 @@ import {
   ErroDoInstagramNoCliente,
   METODO_INSTAGRAM,
   dadosValidos,
+  situacaoDaConexao,
 } from './instagram';
 
 const erro = (estado: number, codigo?: string) => new ErroDoInstagramNoCliente('x', estado, codigo);
@@ -80,5 +81,13 @@ describe('falarComInstagram', () => {
       '/api/instagram-conta': 'POST',
       '/api/instagram-desconectar': 'POST',
     });
+  });
+});
+
+describe('situacaoDaConexao', () => {
+  it('lê o estado sem ir à Meta', () => {
+    expect(situacaoDaConexao({ conectado: false, contaId: null })).toBe('desconectado');
+    expect(situacaoDaConexao({ conectado: true, contaId: null })).toBe('sem-conta');
+    expect(situacaoDaConexao({ conectado: true, contaId: '17841400224855713' })).toBe('pronto');
   });
 });

@@ -178,6 +178,17 @@ describe('a leitura', () => {
     expect(pedidos.some((p) => p.pathname.includes('/velho/insights'))).toBe(false);
   });
 
+  it('limite de uso da Meta numa métrica derruba a leitura, em vez de virar sem dado e ficar no cache', async () => {
+    const { buscar } = contaComPosts(2, (url) =>
+      url.pathname.endsWith('/insights') && url.searchParams.get('metric') === 'reach'
+        ? { status: 400, corpo: { error: { message: 'limite', code: 4 } } }
+        : undefined,
+    );
+    const erro = await lerDados('tk', CONTA, AGORA, buscar).catch((e) => e);
+    expect(erro).toBeInstanceOf(ErroDoInstagram);
+    expect(erro.codigo).toBe('meta');
+  });
+
   it('token recusado (190) vira token-recusado com 401', async () => {
     const { buscar } = meta(() => recusa(190));
     const erro = await lerDados('tk', CONTA, AGORA, buscar).catch((e) => e);

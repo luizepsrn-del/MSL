@@ -14,6 +14,8 @@ import { useBanco } from '../dados/BancoContexto';
 import { useInstagram, type Instagram } from '../dados/instagram';
 import {
   dividirPorPeriodo,
+  anteriorCompleto,
+  variacao,
   resumir,
   porFormato,
   recomendar,
@@ -49,14 +51,6 @@ const COLUNA: React.CSSProperties = { display: 'flex', flexDirection: 'column', 
 
 const fmt = (v: number | null, casas = 0) =>
   v === null ? '—' : formatarNumero(casas ? Math.round(v * 10 ** casas) / 10 ** casas : Math.round(v));
-
-/** A variação contra o período anterior, em valor; some quando não há anterior. */
-function variacao(atual: number | null, anterior: number | null, temAnterior: boolean): string | undefined {
-  if (!temAnterior || atual === null || anterior === null) return undefined;
-  const d = Math.round(atual - anterior);
-  if (d === 0) return 'igual ao anterior';
-  return `${d > 0 ? '+' : '−'}${formatarNumero(Math.abs(d))} vs anterior`;
-}
 
 /** Seis cartões em duas linhas de três: na grade solta, o sexto sobrava sozinho. */
 const GRADE_DE_SEIS: React.CSSProperties = {
@@ -144,8 +138,12 @@ function Painel({ instagram, dados }: { instagram: Instagram; dados: DadosDoInst
   const [ligando, setLigando] = React.useState<PostDoInstagram | null>(null);
   const [aviso, setAviso] = React.useState<string | null>(null);
 
-  const { atual, anterior } = dividirPorPeriodo(dados.posts, periodo, hoje);
-  const temAnterior = periodo !== 'tudo' && anterior.length > 0;
+  const divisao = dividirPorPeriodo(dados.posts, periodo, hoje);
+  const atual = divisao.atual;
+  // Anterior lido pela metade não entra em comparação nenhuma: nem nos
+  // cartões, nem no ritmo. Melhor não comparar do que comparar a favor.
+  const anterior = anteriorCompleto(dados, periodo, hoje) ? divisao.anterior : [];
+  const temAnterior = anterior.length > 0;
   const r = resumir(atual);
   const a = resumir(anterior);
   const formatos = porFormato(atual);
@@ -276,20 +274,26 @@ function Painel({ instagram, dados }: { instagram: Instagram; dados: DadosDoInst
 }
 
 function Cartoes({ r, a, temAnterior, desktop }: { r: Resumo; a: Resumo; temAnterior: boolean; desktop: boolean }) {
+  // Queda em laranja, alta e empate em verde: a cor tem de dizer o sentido.
+  const delta = (atual: number | null, antes: number | null) => {
+    const v = variacao(atual, antes, temAnterior);
+    return v
+      ? { delta: v.texto, deltaTone: (v.tom === 'caiu' ? 'delay' : 'delivered') as 'delay' | 'delivered' }
+      : {};
+  };
   return (
     <div style={desktop ? GRADE_DE_SEIS : TRILHO_DE_TILES}>
       <StatCard glow style={ITEM_TRILHO} icon="eye" value={fmt(r.alcanceMedio)} label="Alcance médio por post"
-        delta={variacao(r.alcanceMedio, a.alcanceMedio, temAnterior)} />
-      <StatCard style={ITEM_TRILHO} icon="image" value={fmt(r.posts)} label="Posts"
-        delta={variacao(r.posts, a.posts, temAnterior)} />
+        {...delta(r.alcanceMedio, a.alcanceMedio)} />
+      <StatCard style={ITEM_TRILHO} icon="image" value={fmt(r.posts)} label="Posts" {...delta(r.posts, a.posts)} />
       <StatCard style={ITEM_TRILHO} icon="bookmark" value={fmt(r.salvamentosMedios, 1)} label="Salvamentos por post"
-        delta={variacao(r.salvamentosMedios, a.salvamentosMedios, temAnterior)} />
+        {...delta(r.salvamentosMedios, a.salvamentosMedios)} />
       <StatCard style={ITEM_TRILHO} icon="share-2" value={fmt(r.compartilhamentosMedios, 1)} label="Compartilhamentos por post"
-        delta={variacao(r.compartilhamentosMedios, a.compartilhamentosMedios, temAnterior)} />
+        {...delta(r.compartilhamentosMedios, a.compartilhamentosMedios)} />
       <StatCard style={ITEM_TRILHO} icon="user-round" value={fmt(r.visitasAoPerfil)} label="Visitas ao perfil"
-        delta={variacao(r.visitasAoPerfil, a.visitasAoPerfil, temAnterior)} />
+        {...delta(r.visitasAoPerfil, a.visitasAoPerfil)} />
       <StatCard style={ITEM_TRILHO} icon="user-plus" value={fmt(r.seguidoresGanhos)} label="Seguidores ganhos"
-        delta={variacao(r.seguidoresGanhos, a.seguidoresGanhos, temAnterior)} />
+        {...delta(r.seguidoresGanhos, a.seguidoresGanhos)} />
     </div>
   );
 }
