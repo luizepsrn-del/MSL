@@ -63,7 +63,7 @@ envelhece — a mesma regra dos eventos do Google. Só se grava:
 - no servidor: o token e o ID da conta, por conta do MSL;
 - no banco: o campo novo da peça (abaixo).
 
-`GET /api/instagram?periodo=30|90|tudo` devolve o perfil e os posts com métricas.
+`GET /api/instagram` devolve o perfil e os posts com métricas; o filtro de período é feito no cliente, sobre a mesma resposta em cache.
 O servidor guarda em cache a última leitura por ~1 hora (chave com expiração no
 `Armazem`); `?atualizar=1` ignora o cache.
 
@@ -93,7 +93,7 @@ Ligar um post a uma peça só é oferecido para peças `publicado`.
 ## A tela
 
 A Criação ganha duas abas: **Peças** (inalterada) e **Instagram**, com URL
-própria (`/app/criacao/instagram`).
+própria (`/app/criacao?aba=instagram` — as rotas do produto são `/app/:pilar`, então a aba vai na consulta, não no caminho).
 
 1. Cabeçalho: @conta, seguidores, "atualizado há X", botão **Atualizar**.
    Sem conexão: aviso com **Conectar** (leva a Ajustes).
