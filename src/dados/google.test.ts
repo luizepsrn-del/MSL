@@ -197,22 +197,24 @@ describe('o cache dos eventos', () => {
 });
 
 describe('o método de cada rota', () => {
-  it('bate com o que a função da Vercel exporta', () => {
+  it('bate com o que a função da Vercel aceita', () => {
     // O contrário já custou: o cliente mandava POST em `/api/google-estado`,
-    // que só exporta GET, e a resposta era 405. A interceptação do Playwright
+    // que só aceita GET, e a resposta era 405. A interceptação do Playwright
     // responde a qualquer método, então quem pegou foi o endereço publicado.
+    // As rotas moram todas em `api/google.ts` (limite de funções do plano
+    // Hobby); a tabela de lá diz o método de cada uma.
+    const fonte = readFileSync('api/google.ts', 'utf8');
     for (const [caminho, metodo] of Object.entries(METODO)) {
-      const arquivo = `api/${caminho.replace('/api/', '')}.ts`;
-      const fonte = readFileSync(arquivo, 'utf8');
-      expect(fonte, arquivo).toContain(`export const ${metodo} =`);
+      const nome = caminho.replace('/api/google-', '');
+      expect(fonte, caminho).toMatch(new RegExp(`\\b${nome}: \\{ ${metodo}:`));
     }
   });
 
-  it('cobre todas as rotas do Google que existem em api/', () => {
+  it('cobre todas as rotas do Google que a função atende', () => {
     // Rota nova sem entrada na tabela cairia no POST padrão, calada.
-    const daPasta = readFileSync('src/servidor/api.test.ts', 'utf8');
+    const fonte = readFileSync('api/google.ts', 'utf8');
     for (const nome of ['estado', 'conectar', 'sincronizar', 'desconectar', 'evento']) {
-      expect(daPasta).toContain(`'google-${nome}.ts'`);
+      expect(fonte).toContain(`${nome}: {`);
       expect(METODO).toHaveProperty(`/api/google-${nome}`);
     }
   });

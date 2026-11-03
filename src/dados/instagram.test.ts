@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   falarComInstagram,
   situacaoDoErro,
@@ -89,5 +90,15 @@ describe('situacaoDaConexao', () => {
     expect(situacaoDaConexao({ conectado: false, contaId: null })).toBe('desconectado');
     expect(situacaoDaConexao({ conectado: true, contaId: null })).toBe('sem-conta');
     expect(situacaoDaConexao({ conectado: true, contaId: '17841400224855713' })).toBe('pronto');
+  });
+});
+
+describe('o método de cada rota', () => {
+  it('bate com a tabela da função da Vercel', () => {
+    const fonte = readFileSync('api/instagram.ts', 'utf8');
+    for (const [caminho, metodo] of Object.entries(METODO_INSTAGRAM)) {
+      const nome = caminho === '/api/instagram' ? "''" : caminho.replace('/api/instagram-', '');
+      expect(fonte, caminho).toContain(`${nome}: { ${metodo}:`);
+    }
   });
 });

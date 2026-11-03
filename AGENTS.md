@@ -212,6 +212,14 @@ reading its test is how the system starts lying.
   200 on an insight mean "no data"; rate limits and outages fail the read, so
   an empty screen never sits in the cache for an hour.
 
+- **At most 12 functions in `api/` — the Vercel Hobby limit.** One more and
+  the whole build is refused, nothing published. Each provider is one function
+  (`api/google.ts`, `api/instagram.ts`) dispatching through
+  `src/servidor/despacho.ts`; `vercel.json` rewrites the public paths
+  (`/api/google-callback`, `/api/instagram-estado`) to it, so the addresses
+  registered at Google and Meta never change. `src/servidor/api.test.ts`
+  fails past 12.
+
 Routes: `/app/<pilar>` is the product — `inicio`, `rotina`, `tarefas`, `calendario`, `projetos`, `financeiro`, `criacao`, `metas`, `pedir`, `regras`, `ajustes`. Each has its own URL.
 `/design-system` is the library showcase.
 

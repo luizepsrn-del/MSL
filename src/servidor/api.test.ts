@@ -27,18 +27,8 @@ const FUNCOES = readdirSync('api')
 const METODOS: Record<string, string[]> = {
   'cadastro.ts': ['POST'],
   'entrar.ts': ['POST'],
-  'google-callback.ts': ['GET'],
-  'google-conectar.ts': ['POST'],
-  'google-desconectar.ts': ['POST'],
-  'google-estado.ts': ['GET'],
-  'google-evento.ts': ['POST'],
-  'google-sincronizar.ts': ['POST'],
-  'instagram.ts': ['GET'],
-  'instagram-callback.ts': ['GET'],
-  'instagram-conectar.ts': ['POST'],
-  'instagram-conta.ts': ['POST'],
-  'instagram-desconectar.ts': ['POST'],
-  'instagram-estado.ts': ['GET'],
+  'google.ts': ['GET', 'POST'],
+  'instagram.ts': ['GET', 'POST'],
   'agenda.ts': ['POST'],
   'sair.ts': ['POST'],
   'saude.ts': ['GET'],
@@ -51,6 +41,14 @@ describe('as funções da Vercel', () => {
     // A Vercel exclui da publicação os arquivos com underline. Eles sumiam do
     // pacote e a função quebrava ao carregar, sem pista nenhuma.
     expect(FUNCOES.filter((a) => a.startsWith('_'))).toEqual([]);
+  });
+
+  it('cabe no plano Hobby da Vercel: no máximo 12 funções por implantação', () => {
+    // Passar disso recusa o build inteiro, sem publicar nada. Foi assim que a
+    // prévia do Instagram (19 funções) e a dos eventos do Google (13) caíram:
+    // cada provedor agora é uma função só, e o vercel.json reescreve os
+    // endereços públicos (/api/google-callback etc.) para ela.
+    expect(FUNCOES.length).toBeLessThanOrEqual(12);
   });
 
   it('a lista de funções é a esperada', () => {
