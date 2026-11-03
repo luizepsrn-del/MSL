@@ -1,4 +1,5 @@
-import { diaLocalDe, somarDias } from './rotina';
+import { diaLocalDe, somarDias, distanciaEmDias } from './rotina';
+import type { ItemDoFoco } from './foco';
 import { formatarNumero } from '../formato';
 
 /**
@@ -38,8 +39,15 @@ export interface PostDoInstagram {
 
 export interface PerfilDoInstagram {
   usuario: string;
+  /** nome de exibição */
+  nome?: string;
+  bio?: string;
+  /** URL da foto de perfil; expira em alguns dias, por isso vem do cache e nunca do banco */
+  foto?: string;
   seguidores: number;
+  seguindo?: number;
   totalDePosts: number;
+  site?: string;
 }
 
 export interface DadosDoInstagram {
@@ -49,7 +57,7 @@ export interface DadosDoInstagram {
   lidoEm: string;
 }
 
-export type Periodo = 30 | 90 | 'tudo';
+export type Periodo = 7 | 30 | 90 | 'tudo';
 
 export const LIMITE_DE_RECOMENDACOES = 5;
 
@@ -71,7 +79,7 @@ function media(valores: number[]): number | null {
   return valores.length ? valores.reduce((a, b) => a + b, 0) / valores.length : null;
 }
 
-function mediana(valores: number[]): number | null {
+export function mediana(valores: number[]): number | null {
   if (!valores.length) return null;
   const o = [...valores].sort((a, b) => a - b);
   const meio = Math.floor(o.length / 2);
@@ -88,7 +96,7 @@ const soma = (valores: number[]): number | null =>
   valores.length ? valores.reduce((a, b) => a + b, 0) : null;
 
 const n = (v: number) => formatarNumero(Math.round(v));
-const vezes = (r: number) => `${formatarNumero(Math.round(r * 10) / 10)}×`;
+export const vezes = (r: number) => `${formatarNumero(Math.round(r * 10) / 10)}×`;
 
 /** A primeira linha da legenda, curta o bastante para caber numa frase. */
 export function legendaCurta(legenda: string, limite = 60): string {
@@ -385,4 +393,191 @@ export function recomendar(
     .filter((r): r is Recomendacao => r !== null)
     .sort((a, b) => b.peso - a.peso)
     .slice(0, LIMITE_DE_RECOMENDACOES);
+}
+
+/* ── Funil ───────────────────────────────────────────────────────────────── */
+
+export interface DegrauDoFunil {
+  nome: string;
+  total: number;
+  /** total sobre `sobre`; nulo no primeiro */
+  taxa: number | null;
+  /** o degrau de referência da taxa, para a tela dizer "de quem…" */
+  sobre: string | null;
+}
+
+export interface Funil {
+  degraus: DegrauDoFunil[];
+  /** índice do degrau de menor taxa — onde mais gente se perde */
+  gargalo: number;
+  /** quantos posts entraram na conta */
+  posts: number;
+}
+
+/**
+ * Do alcance ao seguidor, somado sobre os posts de feed que têm **todas** as
+ * métricas do funil.
+ *
+ * Reels ficam de fora porque a Meta não informa visitas nem seguidores para
+ * eles; e um post com salvos ou seguidores recusados também fica, porque somar
+ * a falta como zero inventaria um gargalo (sem dado não é zero).
+ *
+ * Os degraus não são subconjuntos uns dos outros — quem visita o perfil não
+ * precisou salvar —, então cada taxa é sobre o degrau que de fato a antecede:
+ * interações e visitas sobre o alcance, guardaram sobre interações, seguiram
+ * sobre visitas. Assim nenhuma taxa passa de 100% por construção.
+ */
+export function funil(posts: PostDoInstagram[]): Funil | null {
+  const comDado = posts.filter(
+    (p) =>
+      p.formato !== 'reels' &&
+      p.alcance !== undefined &&
+      p.visitasAoPerfil !== undefined &&
+      p.salvamentos !== undefined &&
+      p.compartilhamentos !== undefined &&
+      p.seguidoresGanhos !== undefined,
+  );
+  if (comDado.length < MINIMO_POR_FORMATO) return null;
+
+  const somar = (f: (p: PostDoInstagram) => number) => comDado.reduce((t, p) => t + f(p), 0);
+  const guardaram = (p: PostDoInstagram) => p.salvamentos! + p.compartilhamentos!;
+  const passos: [string, number, number | null][] = [
+    ['Alcance', somar((p) => p.alcance!), null],
+    ['Interações', somar((p) => p.curtidas + p.comentarios + guardaram(p)), 0],
+    ['Guardaram', somar(guardaram), 1],
+    ['Visitaram o perfil', somar((p) => p.visitasAoPerfil!), 0],
+    ['Seguiram', somar((p) => p.seguidoresGanhos!), 3],
+  ];
+
+  const degraus = passos.map(([nome, total, base]) => {
+    if (base === null) return { nome, total, taxa: null, sobre: null };
+    const [nomeDaBase, totalDaBase] = passos[base];
+    return { nome, total, taxa: totalDaBase > 0 ? Math.min(1, total / totalDaBase) : null, sobre: nomeDaBase };
+  });
+  let gargalo = 1;
+  for (let i = 2; i < degraus.length; i++) {
+    const t = degraus[i].taxa;
+    const g = degraus[gargalo].taxa;
+    if (t !== null && (g === null || t < g)) gargalo = i;
+  }
+  return { degraus, gargalo, posts: comDado.length };
+}
+
+/* ── Hoje ────────────────────────────────────────────────────────────────── */
+
+export interface Hoje {
+  /** posts de hoje e de ontem, com o alcance em vezes a mediana do formato */
+  novos: { post: PostDoInstagram; razao: number | null }[];
+  diasSemPostar: number | null;
+  /** no máximo duas, da mais forte para a mais fraca */
+  acoes: string[];
+}
+
+/** Forte o bastante para pedir ação. */
+const FORTE = 2;
+/** Dias sem postar a partir dos quais a pausa vira aviso. */
+const DIAS_PARA_AVISAR = 5;
+
+const NOME_SINGULAR: Record<FormatoDoPost, string> = {
+  reels: 'Reel',
+  carrossel: 'carrossel',
+  imagem: 'post',
+};
+
+/**
+ * O que aconteceu desde ontem, e o que fazer com isso.
+ *
+ * A razão de um post novo é contra a mediana do **mesmo formato** nos últimos
+ * 90 dias, sem contar ele mesmo — um Reel comparado a carrosséis pareceria
+ * sempre um fenômeno.
+ */
+export function hoje(dados: DadosDoInstagram, dia: string): Hoje {
+  const comDia = dados.posts
+    .map((post) => ({ post, dia: diaLocalDe(post.publicadoEm) }))
+    .filter((x) => x.dia <= dia);
+
+  const ontem = somarDias(dia, -1);
+  const inicio90 = somarDias(dia, -90);
+
+  const novos = comDia
+    .filter((x) => x.dia >= ontem)
+    .map(({ post }) => {
+      const pares = comDia
+        .filter((x) => x.post.id !== post.id && x.post.formato === post.formato && x.dia >= inicio90)
+        .map((x) => x.post.alcance)
+        .filter((a): a is number => a !== undefined);
+      const med = pares.length >= MINIMO_POR_FORMATO ? mediana(pares) : null;
+      const razao = med && post.alcance !== undefined ? post.alcance / med : null;
+      return { post, razao };
+    });
+
+  const maisRecente = comDia.map((x) => x.dia).sort().at(-1);
+  const diasSemPostar = maisRecente ? distanciaEmDias(maisRecente, dia) : null;
+
+  const acoes: string[] = [];
+  const forte = [...novos].filter((n) => n.razao !== null && n.razao >= FORTE).sort((a, b) => b.razao! - a.razao!)[0];
+  if (forte) {
+    const quando = diaLocalDe(forte.post.publicadoEm) === dia ? 'de hoje' : 'de ontem';
+    acoes.push(
+      `Seu ${NOME_SINGULAR[forte.post.formato]} ${quando} está com ${vezes(forte.razao!)} o alcance normal. ` +
+        'Responda os comentários enquanto está quente.',
+    );
+  }
+  if (diasSemPostar !== null && diasSemPostar >= DIAS_PARA_AVISAR) {
+    acoes.push(`${diasSemPostar} dias sem postar no Instagram.`);
+  }
+  return { novos, diasSemPostar, acoes: acoes.slice(0, 2) };
+}
+
+/**
+ * O Instagram na fila do Início: a primeira ação do dia, e só ela.
+ *
+ * Um item, nunca mais: a fila é instrução, e o painel inteiro já mora na aba.
+ */
+export function itemDoInstagram(dados: DadosDoInstagram, dia: string): ItemDoFoco | null {
+  const acao = hoje(dados, dia).acoes[0];
+  if (!acao) return null;
+  return {
+    chave: 'instagram:hoje',
+    tipo: 'instagram',
+    id: 'instagram',
+    titulo: acao,
+    motivo: 'Instagram',
+    faixa: 6,
+    marcavel: false,
+  };
+}
+
+/* ── Ranking ─────────────────────────────────────────────────────────────── */
+
+export type MetricaDoRanking = 'alcance' | 'guardados' | 'visitas' | 'seguidores';
+
+export const VALOR_DA_METRICA: Record<MetricaDoRanking, (p: PostDoInstagram) => number | undefined> = {
+  alcance: (p) => p.alcance,
+  guardados: (p) =>
+    p.salvamentos === undefined && p.compartilhamentos === undefined
+      ? undefined
+      : (p.salvamentos ?? 0) + (p.compartilhamentos ?? 0),
+  visitas: (p) => p.visitasAoPerfil,
+  seguidores: (p) => p.seguidoresGanhos,
+};
+
+export interface PosicaoNoRanking {
+  post: PostDoInstagram;
+  valor: number | undefined;
+  /** valor em vezes a mediana do período; nulo com pouco dado ou mediana zero */
+  razao: number | null;
+}
+
+/** Os posts do maior para o menor na métrica; sem dado vai para o fim. */
+export function rankear(posts: PostDoInstagram[], metrica: MetricaDoRanking): PosicaoNoRanking[] {
+  const valor = VALOR_DA_METRICA[metrica];
+  const comDado = definidos(posts.map(valor));
+  const med = comDado.length >= MINIMO_POR_FORMATO ? mediana(comDado) : null;
+  return posts
+    .map((post) => {
+      const v = valor(post);
+      return { post, valor: v, razao: med && v !== undefined ? v / med : null };
+    })
+    .sort((a, b) => (b.valor ?? -1) - (a.valor ?? -1));
 }

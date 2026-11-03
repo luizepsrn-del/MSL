@@ -55,6 +55,8 @@ import { montarODia, resumirPlano, duracao, JORNADA_PADRAO } from '../dominio/pl
 import { somarMinutos as somarMinutosNaHora } from '../dominio/google';
 import { oQueAsRegrasQuerem } from '../dominio/regra';
 import { useAgendaExterna } from '../dados/agendaExterna';
+import { useInstagram } from '../dados/instagram';
+import { itemDoInstagram } from '../dominio/instagram';
 import { itensDoDia } from '../dominio/calendario';
 import { metasEmCurso, resumoDeMetas, emDinheiro } from '../dominio/meta';
 import {
@@ -201,7 +203,11 @@ export function Inicio() {
   const dinheiro = resumoFinanceiro(doMes, hoje);
   const evolucao = evolucaoMensal(banco, anoAtual, mesAtual, 6);
 
-  const fila = precisaDeVoce(banco, hoje);
+  // O Instagram entra com no máximo um item, e só quando a leitura deu certo:
+  // sem conexão ou com erro, a fila é a mesma de sempre.
+  const instagram = useInstagram();
+  const doInstagram = instagram.estado === 'pronto' && instagram.dados ? itemDoInstagram(instagram.dados, hoje) : null;
+  const fila = precisaDeVoce(banco, hoje, undefined, doInstagram ? [doInstagram] : []);
   const regrasQuerem = oQueAsRegrasQuerem(banco, hoje);
 
   // O dia montado: o que tem hora vira compromisso, o resto vai para a fila.
@@ -1258,6 +1264,7 @@ function LinhaDoFoco({
     meta: '/app/metas',
     projeto: '/app/projetos',
     peca: '/app/criacao',
+    instagram: '/app/criacao?aba=instagram',
   };
 
   /** O ícone do tipo, para quem não tem caixinha. */
@@ -1268,6 +1275,7 @@ function LinhaDoFoco({
     meta: 'target',
     projeto: 'layers',
     peca: 'pen-line',
+    instagram: 'camera',
   };
 
   const corpo = (

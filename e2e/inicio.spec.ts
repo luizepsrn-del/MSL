@@ -143,6 +143,8 @@ test('a ordem dos blocos pode mudar, e volta ao padrão num clique', async ({ pa
   const titulos = () =>
     page.locator('section h3').evaluateAll((els) => els.map((e) => e.textContent?.trim()));
 
+  // Ler os títulos antes do primeiro desenho dava lista vazia: espera o bloco.
+  await expect(page.getByRole('heading', { name: 'Precisa de você hoje' })).toBeVisible();
   const antes = await titulos();
   expect(antes[0]).toBe('Precisa de você hoje');
 

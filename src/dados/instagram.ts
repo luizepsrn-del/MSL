@@ -133,6 +133,27 @@ export interface Instagram {
   definirConta(contaId: string): Promise<void>;
 }
 
+/*
+ * Uma leitura só, dividida entre as telas. O Início e a aba Instagram querem
+ * os mesmos dados; sem isto, abrir os dois em seguida com o cache do servidor
+ * frio dispararia duas leituras inteiras na Meta (centenas de chamadas cada).
+ * A guardada vale alguns minutos; "Atualizar" passa por cima dela.
+ */
+const FRESCA_MS = 5 * 60_000;
+let emCurso: Promise<unknown> | null = null;
+let guardada: { dados: DadosDoInstagram; em: number } | null = null;
+
+function lerDadosCompartilhado(forcar: boolean): Promise<unknown> {
+  if (!forcar && guardada && Date.now() - guardada.em < FRESCA_MS) return Promise.resolve(guardada.dados);
+  if (!forcar && emCurso) return emCurso;
+  const leitura = falarComInstagram<unknown>(forcar ? '/api/instagram?atualizar=1' : '/api/instagram');
+  emCurso = leitura;
+  void leitura.finally(() => {
+    if (emCurso === leitura) emCurso = null;
+  }).catch(() => undefined);
+  return leitura;
+}
+
 /**
  * `soEstado`: só pergunta ao servidor se há conexão e conta — é o que Ajustes
  * precisa. A leitura inteira (perfil, posts e métricas) é da aba Instagram;
@@ -154,16 +175,16 @@ export function useInstagram({ soEstado = false }: { soEstado?: boolean } = {}):
         setEstado(situacaoDaConexao(e));
         return;
       }
-      const lidos = await falarComInstagram<unknown>(
-        forcar ? '/api/instagram?atualizar=1' : '/api/instagram',
-      );
+      const lidos = await lerDadosCompartilhado(forcar);
       if (!dadosValidos(lidos)) {
         throw new ErroDoInstagramNoCliente('A resposta do servidor veio incompleta.', 200, 'resposta-invalida');
       }
+      guardada = { dados: lidos, em: Date.now() };
       setDados(lidos);
       setErro(undefined);
       setEstado('pronto');
     } catch (e) {
+      if (!soEstado) guardada = null;
       const situacao = situacaoDoErro(e);
       setErro(e instanceof Error ? e.message : String(e));
       setEstado(situacao);
@@ -189,6 +210,7 @@ export function useInstagram({ soEstado = false }: { soEstado?: boolean } = {}):
   const desconectar = React.useCallback(async () => {
     try {
       await falarComInstagram('/api/instagram-desconectar');
+      guardada = null;
       setDados(undefined);
       setEstado('desconectado');
     } catch (e) {

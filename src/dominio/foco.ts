@@ -30,7 +30,7 @@ import { distanciaEmDias } from './rotina';
  * agora" com quarenta itens é uma lista de tudo, e volta a ser um painel.
  */
 
-export type TipoDoFoco = 'tarefa' | 'rotina' | 'lancamento' | 'meta' | 'projeto' | 'peca';
+export type TipoDoFoco = 'tarefa' | 'rotina' | 'lancamento' | 'meta' | 'projeto' | 'peca' | 'instagram';
 
 export interface ItemDoFoco {
   /** único na lista */
@@ -55,7 +55,17 @@ export const LIMITE_DO_FOCO = 7;
 
 const plural = (n: number, um: string, muitos: string) => `${n} ${n === 1 ? um : muitos}`;
 
-export function precisaDeVoce(banco: Banco, hoje: string, limite = LIMITE_DO_FOCO): ItemDoFoco[] {
+/**
+ * `extras` são itens que não moram no banco — hoje, só o do Instagram, lido da
+ * Meta no momento. Entram na mesma ordenação e no mesmo limite: um item de fora
+ * nunca empurra a fila além do que ela mostra.
+ */
+export function precisaDeVoce(
+  banco: Banco,
+  hoje: string,
+  limite = LIMITE_DO_FOCO,
+  extras: ItemDoFoco[] = [],
+): ItemDoFoco[] {
   const itens: ItemDoFoco[] = [];
 
   /* Faixa 0 e 1 e 3: as tarefas. */
@@ -179,7 +189,7 @@ export function precisaDeVoce(banco: Banco, hoje: string, limite = LIMITE_DO_FOC
     });
   }
 
-  return itens
+  return [...itens, ...extras]
     .sort((a, b) => {
       if (a.faixa !== b.faixa) return a.faixa - b.faixa;
       // Dentro da mesma faixa, a ordem do relógio; sem hora vai para o fim.

@@ -7,6 +7,10 @@ import {
   LIMITE_DE_RECOMENDACOES,
   anteriorCompleto,
   variacao,
+  funil,
+  rankear,
+  hoje,
+  itemDoInstagram,
   type PostDoInstagram,
 } from './instagram';
 
@@ -192,5 +196,140 @@ describe('variacao', () => {
   it('sem anterior ou sem dado, não há variação', () => {
     expect(variacao(800, 2000, false)).toBeUndefined();
     expect(variacao(null, 2000, true)).toBeUndefined();
+  });
+});
+
+describe('período de 7 dias', () => {
+  it('a janela começa 7 dias antes de hoje', () => {
+    const p = (id: string, dia: string) => post({ id, formato: 'imagem', publicadoEm: `${dia}T15:00:00Z` });
+    const { atual, anterior } = dividirPorPeriodo([p('a', '2026-10-28'), p('b', '2026-10-25')], 7, '2026-11-03');
+    expect(atual.map((x) => x.id)).toEqual(['a']);
+    expect(anterior.map((x) => x.id)).toEqual(['b']);
+  });
+});
+
+describe('funil', () => {
+  const feed = (id: string, alcance: number, visitas: number, seguidores: number) =>
+    post({
+      id, formato: 'carrossel', publicadoEm: '2026-10-20T15:00:00Z',
+      alcance, curtidas: 50, comentarios: 10, salvamentos: 5, compartilhamentos: 5,
+      visitasAoPerfil: visitas, seguidoresGanhos: seguidores,
+    });
+
+  it('soma os degraus dos posts de feed e aponta o gargalo', () => {
+    const f = funil([feed('a', 1000, 20, 1), feed('b', 1000, 20, 1), feed('c', 1000, 20, 1)])!;
+    expect(f.posts).toBe(3);
+    expect(f.degraus.map((d) => d.total)).toEqual([3000, 210, 30, 60, 3]);
+    expect(f.degraus[0].taxa).toBeNull();
+    expect(f.degraus[1].taxa).toBeCloseTo(0.07);
+    // visitaram / alcance = 60/3000 = 2%: a menor taxa
+    expect(f.degraus[3]).toMatchObject({ taxa: 0.02, sobre: 'Alcance' });
+    expect(f.degraus[4]).toMatchObject({ taxa: 0.05, sobre: 'Visitaram o perfil' });
+    expect(f.gargalo).toBe(3);
+  });
+
+  it('nenhuma taxa passa de 100%', () => {
+    const f = funil([feed('a', 1000, 500, 1), feed('b', 1000, 500, 1), feed('c', 1000, 500, 1)])!;
+    for (const d of f.degraus) expect(d.taxa ?? 0).toBeLessThanOrEqual(1);
+  });
+
+  it('post com métrica recusada fica de fora em vez de virar zero', () => {
+    const semSalvos = post({
+      id: 'x', formato: 'carrossel', publicadoEm: '2026-10-20T15:00:00Z',
+      alcance: 1000, curtidas: 50, comentarios: 10, visitasAoPerfil: 20, seguidoresGanhos: 1,
+    });
+    expect(funil([feed('a', 1000, 20, 1), feed('b', 1000, 20, 1), semSalvos])).toBeNull();
+  });
+
+  it('Reels ficam de fora: a Meta não informa visitas para eles', () => {
+    const reel = post({ id: 'r', formato: 'reels', publicadoEm: '2026-10-20T15:00:00Z', alcance: 99999 });
+    const f = funil([feed('a', 1000, 20, 1), feed('b', 1000, 20, 1), feed('c', 1000, 20, 1), reel])!;
+    expect(f.degraus[0].total).toBe(3000);
+  });
+
+  it('com menos de 3 posts com dado, não há funil', () => {
+    expect(funil([feed('a', 1000, 20, 1), feed('b', 1000, 20, 1)])).toBeNull();
+    expect(funil([])).toBeNull();
+  });
+});
+
+describe('hoje', () => {
+  const dados = (posts: PostDoInstagram[]) => ({
+    perfil: { usuario: '_luizpereira_', seguidores: 2242, totalDePosts: posts.length },
+    posts,
+    lidoEm: '2026-11-03T18:00:00Z',
+  });
+  const reel = (id: string, dia: string, alcance: number, hora = '15:00:00Z') =>
+    post({ id, formato: 'reels', publicadoEm: `${dia}T${hora}`, alcance });
+  const base = [reel('r1', '2026-10-10', 1000), reel('r2', '2026-10-15', 1200), reel('r3', '2026-10-20', 1100)];
+
+  it('post de ontem com 2× a mediana do formato vira ação', () => {
+    const h = hoje(dados([reel('novo', '2026-11-02', 2500), ...base]), '2026-11-03');
+    expect(h.novos).toHaveLength(1);
+    expect(h.novos[0].razao).toBeCloseTo(2500 / 1100);
+    expect(h.diasSemPostar).toBe(1);
+    expect(h.acoes[0]).toMatch(/Reel de ontem está com 2,3× o alcance normal/);
+  });
+
+  it('6 dias sem postar vira ação', () => {
+    const h = hoje(dados([reel('ultimo', '2026-10-28', 900), ...base]), '2026-11-03');
+    expect(h.novos).toEqual([]);
+    expect(h.diasSemPostar).toBe(6);
+    expect(h.acoes).toEqual(['6 dias sem postar no Instagram.']);
+  });
+
+  it('formato com menos de 3 posts: post novo sem razão e sem ação forte', () => {
+    const h = hoje(dados([reel('novo', '2026-11-03', 5000), reel('r1', '2026-10-10', 100)]), '2026-11-03');
+    expect(h.novos[0].razao).toBeNull();
+    expect(h.acoes).toEqual([]);
+  });
+
+  it('23h de São Paulo ainda é hoje', () => {
+    // 02:00 UTC do dia 4 = 23:00 do dia 3 em São Paulo
+    const h = hoje(dados([reel('noite', '2026-11-04', 900, '02:00:00Z'), ...base]), '2026-11-03');
+    expect(h.diasSemPostar).toBe(0);
+  });
+
+  it('item da fila: a primeira ação, tipo instagram, faixa 6, não marcável', () => {
+    const item = itemDoInstagram(dados([reel('ultimo', '2026-10-28', 900), ...base]), '2026-11-03');
+    expect(item).toMatchObject({
+      chave: 'instagram:hoje',
+      tipo: 'instagram',
+      titulo: '6 dias sem postar no Instagram.',
+      faixa: 6,
+      marcavel: false,
+    });
+    expect(itemDoInstagram(dados(base.map((p, i) => ({ ...p, publicadoEm: `2026-11-0${i + 1}T15:00:00Z` }))), '2026-11-03')).toBeNull();
+  });
+});
+
+describe('rankear', () => {
+  const p = (id: string, alcance?: number, extra: Partial<PostDoInstagram> = {}): PostDoInstagram => ({
+    id,
+    legenda: id,
+    formato: 'carrossel',
+    publicadoEm: '2026-10-20T12:00:00Z',
+    link: '',
+    curtidas: 0,
+    comentarios: 0,
+    alcance,
+    ...extra,
+  });
+
+  it('ordena do maior para o menor, sem dado por último, com a razão sobre a mediana', () => {
+    const r = rankear([p('a', 100), p('b'), p('c', 300), p('d', 200)], 'alcance');
+    expect(r.map((x) => x.post.id)).toEqual(['c', 'd', 'a', 'b']);
+    expect(r[0].razao).toBeCloseTo(1.5);
+    expect(r[3]).toMatchObject({ valor: undefined, razao: null });
+  });
+
+  it('menos de três com dado ou mediana zero: sem razão', () => {
+    expect(rankear([p('a', 100), p('b', 50)], 'alcance')[0].razao).toBeNull();
+    expect(rankear([p('a', 0), p('b', 0), p('c', 5)], 'alcance')[0].razao).toBeNull();
+  });
+
+  it('guardados soma salvos e compartilhamentos', () => {
+    const r = rankear([p('a', 1, { salvamentos: 2, compartilhamentos: 3 }), p('b', 1, { salvamentos: 9 })], 'guardados');
+    expect(r.map((x) => [x.post.id, x.valor])).toEqual([['b', 9], ['a', 5]]);
   });
 });
