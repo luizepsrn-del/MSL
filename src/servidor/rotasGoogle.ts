@@ -1,4 +1,5 @@
 import type { Armazem } from './armazem.ts';
+import { paginaDeVolta } from './paginaDeVolta.ts';
 import { validarSessao } from './contas.ts';
 import {
   convitePara,
@@ -116,69 +117,30 @@ export async function rotaGoogleCallback(
   const codigo = parametros.get('code') ?? '';
   const estado = parametros.get('state') ?? '';
 
-  if (erroDoGoogle) return paginaDeVolta(false, mensagemDoErro(erroDoGoogle));
+  if (erroDoGoogle) return paginaDeVolta(false, 'Não deu para conectar', mensagemDoErro(erroDoGoogle));
 
   const usuarioId = await donoDoEstado(armazem, estado);
   if (!usuarioId) {
     // Sem dono: o convite expirou, já foi usado, ou veio de outro lugar.
-    return paginaDeVolta(false, 'Esse convite de conexão não vale mais. Tente conectar de novo.');
+    return paginaDeVolta(false, 'Não deu para conectar', 'Esse convite de conexão não vale mais. Tente conectar de novo.');
   }
-  if (!codigo) return paginaDeVolta(false, 'O Google não devolveu o código da autorização.');
+  if (!codigo) return paginaDeVolta(false, 'Não deu para conectar', 'O Google não devolveu o código da autorização.');
 
   try {
     await guardarCredencial(armazem, usuarioId, codigo, voltaPara(pedido), ambiente, buscar);
-    return paginaDeVolta(true, 'Agenda conectada.');
+    return paginaDeVolta(true, 'Agenda conectada', 'Agenda conectada.');
   } catch (erro) {
     const mensagem =
       erro instanceof ErroDoGoogle || erro instanceof GoogleNaoConfigurado
         ? erro.message
         : 'Não deu para conectar.';
-    return paginaDeVolta(false, mensagem);
+    return paginaDeVolta(false, 'Não deu para conectar', mensagem);
   }
 }
 
 function mensagemDoErro(erro: string): string {
   if (erro === 'access_denied') return 'Você não autorizou o acesso à agenda.';
   return `O Google recusou: ${erro}.`;
-}
-
-/**
- * A página que fecha o ciclo.
- *
- * Sem folha externa e sem script de terceiro — ela roda no meu domínio logo
- * depois de um fluxo de credencial, e não é lugar para carregar nada de fora.
- */
-function paginaDeVolta(deuCerto: boolean, mensagem: string): Response {
-  const escapar = (t: string) =>
-    t.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-
-  return new Response(
-    `<!doctype html>
-<html lang="pt-BR">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${deuCerto ? 'Agenda conectada' : 'Não deu para conectar'}</title>
-<style>
-  body { margin:0; min-height:100dvh; display:grid; place-items:center; padding:24px;
-    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    background:#08060F; color:#EDEAF5; }
-  main { max-width:26rem; text-align:center; }
-  h1 { font-size:1.4rem; margin:0 0 .5rem; }
-  p { color:#A79FC0; margin:0 0 1.5rem; }
-  a { display:inline-block; padding:12px 20px; border-radius:12px; text-decoration:none;
-    background:#682EC7; color:#fff; font-weight:600; }
-</style>
-<main>
-  <h1>${deuCerto ? 'Pronto' : 'Não deu'}</h1>
-  <p>${escapar(mensagem)}</p>
-  <a href="/app/ajustes">Voltar ao My System Life</a>
-</main>
-</html>`,
-    {
-      status: deuCerto ? 200 : 400,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    },
-  );
 }
 
 /* ── Sincronizar ─────────────────────────────────────────────────────────── */
