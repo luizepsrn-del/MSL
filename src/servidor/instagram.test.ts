@@ -134,6 +134,36 @@ function contaComPosts(quantos: number, extra: Rota = () => undefined) {
 }
 
 describe('a leitura', () => {
+  it('traz nome, bio, foto, seguindo e site quando a Meta informa', async () => {
+    const { buscar } = contaComPosts(1, (url) =>
+      url.pathname === `/v25.0/${CONTA}`
+        ? {
+            corpo: {
+              username: '_luizpereira_',
+              name: 'Luiz Eduardo',
+              biography: 'Founder @acttus.co',
+              profile_picture_url: 'https://cdn/eu.jpg',
+              followers_count: 2243,
+              follows_count: 2225,
+              media_count: 69,
+              website: 'https://acttusco.com',
+            },
+          }
+        : undefined,
+    );
+    const dados = await lerDados('tk', CONTA, AGORA, buscar);
+    expect(dados.perfil).toEqual({
+      usuario: '_luizpereira_',
+      nome: 'Luiz Eduardo',
+      bio: 'Founder @acttus.co',
+      foto: 'https://cdn/eu.jpg',
+      seguidores: 2243,
+      seguindo: 2225,
+      totalDePosts: 69,
+      site: 'https://acttusco.com',
+    });
+  });
+
   it('traz o perfil e mapeia formato e métricas; recusa vira sem dado', async () => {
     const { buscar } = contaComPosts(2);
     const dados = await lerDados('tk', CONTA, AGORA, buscar);

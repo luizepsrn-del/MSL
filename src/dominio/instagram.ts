@@ -39,8 +39,15 @@ export interface PostDoInstagram {
 
 export interface PerfilDoInstagram {
   usuario: string;
+  /** nome de exibição */
+  nome?: string;
+  bio?: string;
+  /** URL da foto de perfil; expira em alguns dias, por isso vem do cache e nunca do banco */
+  foto?: string;
   seguidores: number;
+  seguindo?: number;
   totalDePosts: number;
+  site?: string;
 }
 
 export interface DadosDoInstagram {

@@ -330,9 +330,21 @@ export async function lerDados(
   agora: Date,
   buscar: typeof fetch = fetch,
 ): Promise<DadosDoInstagram> {
-  const perfil = await graph<{ username?: string; followers_count?: number; media_count?: number }>(
+  const perfil = await graph<{
+    username?: string;
+    name?: string;
+    biography?: string;
+    profile_picture_url?: string;
+    followers_count?: number;
+    follows_count?: number;
+    media_count?: number;
+    website?: string;
+  }>(
     `/${contaId}`,
-    { fields: 'username,followers_count,media_count' },
+    {
+      fields:
+        'username,name,biography,profile_picture_url,followers_count,follows_count,media_count,website',
+    },
     token,
     buscar,
   );
@@ -373,8 +385,15 @@ export async function lerDados(
   return {
     perfil: {
       usuario: perfil.username ?? '',
+      // Os opcionais só entram quando vêm preenchidos: um nome vazio na tela
+      // seria uma linha em branco, não "sem nome".
+      ...(perfil.name ? { nome: perfil.name } : {}),
+      ...(perfil.biography ? { bio: perfil.biography } : {}),
+      ...(perfil.profile_picture_url ? { foto: perfil.profile_picture_url } : {}),
       seguidores: perfil.followers_count ?? 0,
+      ...(perfil.follows_count !== undefined ? { seguindo: perfil.follows_count } : {}),
       totalDePosts: perfil.media_count ?? escolhidas.length,
+      ...(perfil.website ? { site: perfil.website } : {}),
     },
     posts,
     lidoEm: agora.toISOString(),
