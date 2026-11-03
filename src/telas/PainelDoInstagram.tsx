@@ -29,7 +29,7 @@ import {
 import { diaLocalDe } from '../dominio/rotina';
 import { formatarNumero, formatarDataRelativa, formatarData } from '../formato';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
-import { GRADE_DE_TILES, TRILHO_DE_TILES, ITEM_TRILHO } from '../casca/trilho';
+import { TRILHO_DE_TILES, ITEM_TRILHO } from '../casca/trilho';
 
 /**
  * A aba Instagram da Criação.
@@ -57,6 +57,13 @@ function variacao(atual: number | null, anterior: number | null, temAnterior: bo
   if (d === 0) return 'igual ao anterior';
   return `${d > 0 ? '+' : '−'}${formatarNumero(Math.abs(d))} vs anterior`;
 }
+
+/** Seis cartões em duas linhas de três: na grade solta, o sexto sobrava sozinho. */
+const GRADE_DE_SEIS: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+  gap: 'var(--card-gap)',
+};
 
 type Ordem = 'data' | 'alcance' | 'guardados' | 'visitas';
 
@@ -270,7 +277,7 @@ function Painel({ instagram, dados }: { instagram: Instagram; dados: DadosDoInst
 
 function Cartoes({ r, a, temAnterior, desktop }: { r: Resumo; a: Resumo; temAnterior: boolean; desktop: boolean }) {
   return (
-    <div style={desktop ? GRADE_DE_TILES : TRILHO_DE_TILES}>
+    <div style={desktop ? GRADE_DE_SEIS : TRILHO_DE_TILES}>
       <StatCard glow style={ITEM_TRILHO} icon="eye" value={fmt(r.alcanceMedio)} label="Alcance médio por post"
         delta={variacao(r.alcanceMedio, a.alcanceMedio, temAnterior)} />
       <StatCard style={ITEM_TRILHO} icon="image" value={fmt(r.posts)} label="Posts"

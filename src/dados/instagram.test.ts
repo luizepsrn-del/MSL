@@ -4,6 +4,7 @@ import {
   situacaoDoErro,
   ErroDoInstagramNoCliente,
   METODO_INSTAGRAM,
+  dadosValidos,
 } from './instagram';
 
 const erro = (estado: number, codigo?: string) => new ErroDoInstagramNoCliente('x', estado, codigo);
@@ -54,6 +55,21 @@ describe('falarComInstagram', () => {
     expect(e).toBeInstanceOf(ErroDoInstagramNoCliente);
     expect(e.estado).toBe(401);
     expect(e.codigo).toBe('token-recusado');
+  });
+
+  it('resposta que não é JSON (a página do app, por exemplo) é erro, não dado vazio', async () => {
+    globalThis.window = { localStorage: { getItem: () => null } } as unknown as typeof window;
+    const buscar = (async () =>
+      new Response('<!doctype html><html></html>', { status: 200, headers: { 'Content-Type': 'text/html' } })) as unknown as typeof fetch;
+    const e = (await falarComInstagram('/api/instagram', undefined, buscar).catch((x) => x)) as ErroDoInstagramNoCliente;
+    expect(e).toBeInstanceOf(ErroDoInstagramNoCliente);
+    expect(e.codigo).toBe('resposta-invalida');
+    expect(situacaoDoErro(e)).toBe('erro');
+  });
+
+  it('JSON sem perfil nem posts também não passa por dado', () => {
+    expect(dadosValidos({})).toBe(false);
+    expect(dadosValidos({ perfil: { usuario: 'x', seguidores: 1, totalDePosts: 1 }, posts: [], lidoEm: 'x' })).toBe(true);
   });
 
   it('a tabela de métodos bate com as funções em api/', () => {

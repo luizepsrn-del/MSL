@@ -89,8 +89,9 @@ test('o limite só aparece quando o texto estoura', async ({ page }) => {
 
   await page.locator('#cri-corpo').fill('a'.repeat(300));
   await expect(page.getByText('X: 20 a mais')).toBeVisible();
-  // Só o que estourou: Instagram e LinkedIn cabem 300 caracteres.
-  await expect(page.getByText(/Instagram/)).toHaveCount(0);
+  // Só o que estourou: Instagram e LinkedIn cabem 300 caracteres. Olha só o
+  // editor — a aba Instagram da Criação também tem o nome.
+  await expect(page.getByRole('dialog').getByText(/Instagram/)).toHaveCount(0);
 });
 
 test('uma peça com data aparece no calendário e na fila do dia', async ({ page }) => {

@@ -56,7 +56,21 @@ export async function falarComInstagram<T>(
     signal: AbortSignal.timeout(LIMITE_DE_ESPERA_MS),
   });
 
-  const dados = (await resposta.json().catch(() => ({}))) as T & { mensagem?: string; erro?: string };
+  const lido = await resposta.json().then(
+    (j: unknown) => ({ ok: true as const, j }),
+    () => ({ ok: false as const }),
+  );
+  if (!lido.ok || typeof lido.j !== 'object' || lido.j === null) {
+    // Não é JSON: a rota não existe neste endereço e quem respondeu foi a
+    // página do app, ou algo no caminho cortou a resposta. Aceitar `{}` como
+    // dado faria a tela ler `perfil.usuario` de nada e cair inteira.
+    throw new ErroDoInstagramNoCliente(
+      'O servidor respondeu algo que não entendi.',
+      resposta.status,
+      'resposta-invalida',
+    );
+  }
+  const dados = lido.j as T & { mensagem?: string; erro?: string };
   if (!resposta.ok) {
     throw new ErroDoInstagramNoCliente(
       dados.mensagem ?? 'Não consegui falar com o Instagram.',
@@ -65,6 +79,18 @@ export async function falarComInstagram<T>(
     );
   }
   return dados;
+}
+
+/** Só passa por dado o que tem perfil e lista de posts. */
+export function dadosValidos(d: unknown): d is DadosDoInstagram {
+  if (typeof d !== 'object' || d === null) return false;
+  const x = d as Partial<DadosDoInstagram>;
+  return (
+    typeof x.perfil === 'object' &&
+    x.perfil !== null &&
+    typeof x.perfil.usuario === 'string' &&
+    Array.isArray(x.posts)
+  );
 }
 
 export type EstadoDoInstagram =
@@ -110,9 +136,12 @@ export function useInstagram(): Instagram {
   const ler = React.useCallback(async (forcar: boolean) => {
     setAtualizando(true);
     try {
-      const lidos = await falarComInstagram<DadosDoInstagram>(
+      const lidos = await falarComInstagram<unknown>(
         forcar ? '/api/instagram?atualizar=1' : '/api/instagram',
       );
+      if (!dadosValidos(lidos)) {
+        throw new ErroDoInstagramNoCliente('A resposta do servidor veio incompleta.', 200, 'resposta-invalida');
+      }
       setDados(lidos);
       setErro(undefined);
       setEstado('pronto');

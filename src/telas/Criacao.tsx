@@ -141,7 +141,7 @@ export function Criacao() {
         </Button>
         <Button
           variant={aba === 'instagram' ? 'primary' : 'ghost'}
-          iconLeft="instagram"
+          iconLeft="camera"
           onClick={() => ir('instagram')}
         >
           Instagram
