@@ -186,7 +186,7 @@ export function montarPedido(
   const referencias = pedido.referencias.slice(0, MAXIMO_DE_REFERENCIAS).map(
     (r) =>
       `- @${r.usuario} (${r.formato}, ${formatarNumero(r.curtidas)} curtidas, ${formatarNumero(r.comentarios)} comentários). ` +
-      `Por que funciona: ${r.porQue}\n  Legenda: ${cortar(r.legenda)}`,
+      `Por que funciona: ${cortar(r.porQue, 300)}\n  Legenda: ${cortar(r.legenda)}`,
   );
 
   const montar = (meus: string[]) =>

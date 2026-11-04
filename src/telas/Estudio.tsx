@@ -102,6 +102,7 @@ function Gerar({ inicial }: { inicial: { tema: string; formato: FormatoDoEstudio
   const [gerado, setGerado] = React.useState<Gerado | null>(null);
   const [gancho, setGancho] = React.useState(0);
   const [ajuste, setAjuste] = React.useState('');
+  const salvando = React.useRef(false);
 
   const referencias = banco.referencias;
   const usadas = referencias.filter((r) => escolhidas.includes(r.id));
@@ -124,8 +125,11 @@ function Gerar({ inicial }: { inicial: { tema: string; formato: FormatoDoEstudio
     setGerando(true);
     setErro(null);
     try {
+      // Ajustar é sobre o que está na tela: se eu troquei a pílula de formato
+      // depois de gerar, o ajuste ainda é do formato gerado.
+      const ajustando = Boolean(comAjuste && gerado);
       const resultado = await gerarPost({
-        formato,
+        formato: ajustando && gerado ? gerado.formato : formato,
         tema: tema.trim(),
         referencias: usadas.map((r) => ({
           usuario: r.usuario,
@@ -148,18 +152,27 @@ function Gerar({ inicial }: { inicial: { tema: string; formato: FormatoDoEstudio
   }
 
   async function salvar() {
-    if (!gerado) return;
-    await criarPeca({
-      titulo: gerado.ganchos[gancho] ?? gerado.ganchos[0],
-      tipo: gerado.formato === 'reel' ? 'roteiro' : 'carrossel',
-      estado: 'rascunho',
-      contexto: 'profissional',
-      corpo: corpoDaPeca(gerado, gancho),
-      publicadoEm: undefined,
-      geradaPorIa: true,
-      ...(usadas.length ? { referenciasUsadas: usadas.map((r) => r.id) } : {}),
-    });
-    navegar('/app/criacao');
+    if (!gerado || salvando.current) return;
+    // Trava síncrona: dois toques rápidos chegam antes de o estado re-renderizar.
+    salvando.current = true;
+    try {
+      await criarPeca({
+        titulo: gerado.ganchos[gancho] ?? gerado.ganchos[0],
+        tipo: gerado.formato === 'reel' ? 'roteiro' : 'carrossel',
+        estado: 'rascunho',
+        contexto: 'profissional',
+        corpo: corpoDaPeca(gerado, gancho),
+        publicadoEm: undefined,
+        geradaPorIa: true,
+        ...(usadas.length ? { referenciasUsadas: usadas.map((r) => r.id) } : {}),
+      });
+      navegar('/app/criacao');
+    } catch (e) {
+      // Só solta a trava se não salvou: depois de salvar, um segundo toque
+      // ainda pode chegar antes de a tela trocar, e duplicaria a peça.
+      salvando.current = false;
+      throw e;
+    }
   }
 
   const semNumeros = instagram.estado !== 'carregando' && instagram.estado !== 'pronto';

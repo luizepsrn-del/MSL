@@ -152,6 +152,16 @@ describe('montarPedido', () => {
     expect(mensagem.length).toBeLessThanOrEqual(12000);
   });
 
+  it('o porquê também tem limite', () => {
+    const { mensagem } = montarPedido(
+      { formato: 'reel', tema: 't', referencias: [{ usuario: 'u', legenda: 'l', formato: 'reels', curtidas: 1, comentarios: 1, porQue: 'y'.repeat(20000) }] },
+      null,
+      HOJE,
+    );
+    expect(mensagem).not.toContain('y'.repeat(301));
+    expect(mensagem.length).toBeLessThanOrEqual(12000);
+  });
+
   it('termina com o esquema do formato', () => {
     expect(montarPedido({ formato: 'reel', tema: 't', referencias: [] }, null, HOJE).mensagem).toMatch(/"blocos"[\s\S]*$/);
     expect(montarPedido({ formato: 'carrossel', tema: 't', referencias: [] }, null, HOJE).mensagem).toMatch(/"cards"[\s\S]*$/);

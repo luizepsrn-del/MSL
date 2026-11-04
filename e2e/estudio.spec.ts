@@ -188,3 +188,28 @@ test('Instagram desconectado: gera e avisa que não usou seus números', async (
   await page.getByRole('button', { name: 'Gerar post' }).click();
   await expect(page.getByText('Fala um')).toBeVisible();
 });
+
+test('ajustar depois de trocar o formato ajusta o que está na tela', async ({ page }) => {
+  await semear(page);
+  const pedidos = await servidorFalso(page);
+  await page.goto('/app/criacao?aba=estudio');
+  await page.getByLabel('Tema', { exact: true }).fill('honorários');
+  await page.getByRole('button', { name: 'Gerar post' }).click();
+  await expect(page.getByText('Fala um')).toBeVisible();
+  await page.getByRole('button', { name: 'Carrossel', exact: true }).click();
+  await page.getByLabel('Pedir ajuste').fill('mais curto');
+  await page.getByRole('button', { name: 'Ajustar' }).click();
+  await expect.poll(() => pedidos.length).toBe(2);
+  expect(pedidos[1]).toMatchObject({ formato: 'reel', ajuste: { pedido: 'mais curto' } });
+});
+
+test('toque duplo em salvar cria uma peça só', async ({ page }) => {
+  await semear(page);
+  await servidorFalso(page);
+  await page.goto('/app/criacao?aba=estudio');
+  await page.getByLabel('Tema', { exact: true }).fill('honorários');
+  await page.getByRole('button', { name: 'Gerar post' }).click();
+  await expect(page.getByText('Fala um')).toBeVisible();
+  await page.getByRole('button', { name: 'Salvar como peça' }).dblclick();
+  await expect(page.getByRole('button', { name: 'Abrir Abre forte' })).toHaveCount(1);
+});
