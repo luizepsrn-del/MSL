@@ -28,6 +28,10 @@ export default defineConfig({
 
   use: {
     baseURL: BASE,
+    // O MSL vive em São Paulo e conta o dia nesse fuso. Sem isto, entre 21h e
+    // meia-noite o navegador de teste (em UTC) já está no dia seguinte, e
+    // "hoje" muda de lado no meio do teste.
+    timezoneId: 'America/Sao_Paulo',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
 

@@ -19,6 +19,8 @@ export const METODO_INSTAGRAM: Record<string, 'GET' | 'POST'> = {
   '/api/instagram-conectar': 'POST',
   '/api/instagram-conta': 'POST',
   '/api/instagram-desconectar': 'POST',
+  '/api/instagram-referencia': 'GET',
+  '/api/instagram-gerar': 'POST',
 };
 
 const LIMITE_DE_ESPERA_MS = 45_000;
@@ -41,6 +43,7 @@ export async function falarComInstagram<T>(
   caminho: string,
   corpo?: unknown,
   buscar: typeof fetch = fetch,
+  esperaMs: number = LIMITE_DE_ESPERA_MS,
 ): Promise<T> {
   const metodo = METODO_INSTAGRAM[caminho.split('?')[0]] ?? 'POST';
   const temCorpo = metodo !== 'GET';
@@ -53,7 +56,7 @@ export async function falarComInstagram<T>(
       ...(acesso ? { Authorization: `Bearer ${acesso}` } : {}),
     },
     body: temCorpo ? JSON.stringify(corpo ?? {}) : undefined,
-    signal: AbortSignal.timeout(LIMITE_DE_ESPERA_MS),
+    signal: AbortSignal.timeout(esperaMs),
   });
 
   const lido = await resposta.json().then(

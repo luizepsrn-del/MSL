@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Card,
   Button,
@@ -39,6 +39,8 @@ import { diaLocalDe } from '../dominio/rotina';
 import { formatarNumero, formatarDataRelativa, formatarData } from '../formato';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 import { TRILHO_DE_TILES, ITEM_TRILHO } from '../casca/trilho';
+import { Pilulas } from './Pilulas';
+import { enderecoDoEstudio } from './Estudio';
 
 /**
  * A aba Instagram da Criação.
@@ -153,36 +155,6 @@ function lerVista(v: string | null): Vista {
 
 /** O tom da razão sobre a mediana: verde quando dobra, laranja quando fica bem abaixo. */
 const tomDaRazao = (r: number) => (r >= 2 ? 'delivered' : r < 0.7 ? 'delay' : 'neutral') as 'delivered' | 'delay' | 'neutral';
-
-/** Uma fileira de pílulas: a escolhida em roxo cheio, as outras discretas. */
-function Pilulas<T extends string | number>({
-  rotulo,
-  opcoes,
-  valor,
-  aoEscolher,
-}: {
-  rotulo: string;
-  opcoes: { valor: T; rotulo: string; icone?: string }[];
-  valor: T;
-  aoEscolher: (v: T) => void;
-}) {
-  return (
-    <div role="group" aria-label={rotulo} style={{ display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
-      {opcoes.map((o) => (
-        <Button
-          key={String(o.valor)}
-          size="sm"
-          variant={o.valor === valor ? 'primary' : 'ghost'}
-          iconLeft={o.icone}
-          onClick={() => aoEscolher(o.valor)}
-          style={{ borderRadius: 'var(--r-pill)' }}
-        >
-          {o.rotulo}
-        </Button>
-      ))}
-    </div>
-  );
-}
 
 function Painel({ instagram, dados }: { instagram: Instagram; dados: DadosDoInstagram }) {
   const { banco, hoje: dia, criarPeca, editarPeca } = useBanco();
@@ -818,6 +790,11 @@ function Miniatura({ post, tamanho }: { post: PostDoInstagram; tamanho?: number 
   );
 }
 
+/** O tema de "fazer outro assim": o post vira o ponto de partida da geração. */
+const temaParecidoCom = (post: PostDoInstagram) =>
+  `Um post na linha deste, que foi bem: "${legendaCurta(post.legenda, 200)}"`;
+const formatoDoEstudio = (post: PostDoInstagram) => (post.formato === 'reels' ? 'reel' : 'carrossel') as 'reel' | 'carrossel';
+
 const valorDaMetrica = (v: number | undefined) => (v === undefined ? 'sem dado' : formatarNumero(v));
 const unidadeDa = (m: MetricaDoRanking) => METRICAS.find((x) => x.valor === m)!.unidade;
 
@@ -832,6 +809,7 @@ function Ranking({
   pecaDoPost: (id: string) => string | undefined;
   aoLigar: (p: PostDoInstagram) => void;
 }) {
+  const navegar = useNavigate();
   return (
     <Card title="Ranking" subtitle={`${posicoes.length} no período`}>
       <ol
@@ -893,6 +871,14 @@ function Ranking({
                   {vezes(razao)} a mediana
                 </Badge>
               )}
+              <Button
+                variant="ghost"
+                size="sm"
+                iconLeft="sparkles"
+                onClick={() => navegar(enderecoDoEstudio(temaParecidoCom(post), formatoDoEstudio(post)))}
+              >
+                Fazer outro assim
+              </Button>
               {!peca && (
                 <Button variant="ghost" size="sm" iconLeft="link" onClick={() => aoLigar(post)}>
                   Ligar a uma peça
@@ -917,6 +903,7 @@ function Galeria({
   perfil: PerfilDoInstagram;
   desktop: boolean;
 }) {
+  const navegar = useNavigate();
   const melhor = posicoes[0]?.valor !== undefined ? posicoes[0].post.id : null;
   return (
     <div
@@ -929,19 +916,8 @@ function Galeria({
       {posicoes.map(({ post, valor, razao }) => {
         const destaque = post.id === melhor;
         return (
-          <a
+          <div
             key={post.id}
-            href={post.link}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={[
-              `Abrir post: ${legendaCurta(post.legenda, 40) || NOME_CURTO[post.formato]}`,
-              valor === undefined ? 'sem dado' : `${formatarNumero(valor)} ${unidadeDa(metrica)}`,
-              razao !== null ? `${vezes(razao)} a mediana` : '',
-              destaque ? 'melhor do período' : '',
-            ]
-              .filter(Boolean)
-              .join(' · ')}
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -953,6 +929,20 @@ function Galeria({
               boxShadow: destaque ? 'var(--glow-accent)' : 'var(--shadow-card)',
               color: 'var(--text-body)',
             }}
+          >
+          <a
+            href={post.link}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={[
+              `Abrir post: ${legendaCurta(post.legenda, 40) || NOME_CURTO[post.formato]}`,
+              valor === undefined ? 'sem dado' : `${formatarNumero(valor)} ${unidadeDa(metrica)}`,
+              razao !== null ? `${vezes(razao)} a mediana` : '',
+              destaque ? 'melhor do período' : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+            style={{ display: 'flex', flexDirection: 'column', color: 'var(--text-body)', flex: 1 }}
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)', padding: 'var(--sp-4)' }}>
               <Foto perfil={perfil} tamanho={26} />
@@ -1013,6 +1003,17 @@ function Galeria({
               </span>
             </span>
           </a>
+            <span style={{ padding: '0 var(--sp-5) var(--sp-5)' }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconLeft="sparkles"
+                onClick={() => navegar(enderecoDoEstudio(temaParecidoCom(post), formatoDoEstudio(post)))}
+              >
+                Fazer outro assim
+              </Button>
+            </span>
+          </div>
         );
       })}
     </div>
@@ -1043,6 +1044,7 @@ function LinhaDaRecomendacao({
   post?: PostDoInstagram;
   aoCriarSemente: () => void;
 }) {
+  const navegar = useNavigate();
   return (
     <div style={{ display: 'flex', gap: 'var(--sp-6)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
       <span style={{ color: 'var(--purple-400)', display: 'flex', flex: '0 0 auto' }}>
@@ -1062,9 +1064,14 @@ function LinhaDaRecomendacao({
           )}
         </p>
       </div>
-      <Button variant="ghost" iconLeft="plus" onClick={aoCriarSemente}>
-        Criar semente
-      </Button>
+      <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
+        <Button variant="ghost" iconLeft="sparkles" onClick={() => navegar(enderecoDoEstudio(`${rec.texto}\n${rec.evidencia}`))}>
+          Criar com IA
+        </Button>
+        <Button variant="ghost" iconLeft="plus" onClick={aoCriarSemente}>
+          Criar semente
+        </Button>
+      </div>
     </div>
   );
 }
