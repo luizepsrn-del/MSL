@@ -100,6 +100,18 @@ describe('migração', () => {
     expect(migrar(antigo).versao).toBe(VERSAO_ESQUEMA);
   });
 
+  it('19 → 20 cria as coleções do Estúdio, vazias', () => {
+    const v19 = { ...bancoVazio(), versao: 19 } as Record<string, unknown>;
+    delete v19.perfisDeReferencia;
+    delete v19.referencias;
+    const banco = migrar(v19);
+    expect(banco.versao).toBe(20);
+    expect(banco.perfisDeReferencia).toEqual([]);
+    expect(banco.referencias).toEqual([]);
+    expect(bancoVazio().referencias).toEqual([]);
+    expect(bancoVazio().perfisDeReferencia).toEqual([]);
+  });
+
   it('completa coleção que falta em vez de quebrar', () => {
     const capenga = { versao: 0 };
     const banco = migrar(capenga);
@@ -205,7 +217,7 @@ describe('migração', () => {
       corpo: 'texto',
     };
     const banco = migrar({ versao: 18, pecas: [peca] });
-    expect(banco.versao).toBe(19);
+    expect(banco.versao).toBe(VERSAO_ESQUEMA);
     expect(banco.pecas).toEqual([peca]);
     expect(banco.pecas[0].instagramPostId).toBeUndefined();
   });

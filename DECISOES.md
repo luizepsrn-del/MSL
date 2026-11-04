@@ -310,6 +310,15 @@ confortável de vazar meu financeiro num prompt sem perceber.
 
 ---
 
+
+### Confirmado (novembro de 2026): o Estúdio também não fala com IA
+
+O Estúdio monta o prompt do próximo post (com os meus números e as
+referências guardadas), eu copio e levo para a IA que quiser, e colo a resposta
+de volta para virar peça. Chegou a existir uma versão que chamava o Claude pela
+API; foi descartada antes de publicar, por escolha do Luiz: nenhuma IA dentro
+do sistema.
+
 ## (e) Não existe campo de formulário — e isso é bloqueio
 
 ### Recomendação: criar **dois** componentes, e só dois. Preciso da sua autorização (regra 2 e regra 5).

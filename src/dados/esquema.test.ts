@@ -13,6 +13,9 @@ describe('o nome das coleções na tela', () => {
     expect(nomearColecao('rotinas', 1)).toBe('1 rotina');
     expect(nomearColecao('tarefas', 1)).toBe('1 tarefa');
     expect(nomearColecao('projetos', 0)).toBe('0 projetos');
+    expect(nomearColecao('referencias', 1)).toBe('1 referência');
+    expect(nomearColecao('perfisDeReferencia', 2)).toBe('2 perfis de referência');
+    expect(COLECOES).toEqual(expect.arrayContaining(['referencias', 'perfisDeReferencia']));
   });
 
   it('toda coleção tem nome', () => {

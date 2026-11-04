@@ -1,5 +1,5 @@
 import React from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Card,
   Button,
@@ -47,6 +47,7 @@ import { formatarNumero } from '../formato';
 import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 import { GRADE_DE_TILES, TRILHO_DE_TILES, ITEM_TRILHO } from '../casca/trilho';
 import { PainelDoInstagram, useNumerosDosPosts } from './PainelDoInstagram';
+import { Estudio, enderecoDoEstudio } from './Estudio';
 import type { PostDoInstagram } from '../dominio/instagram';
 
 /**
@@ -119,35 +120,32 @@ async function copiar(texto: string): Promise<boolean> {
 /* ── A tela ──────────────────────────────────────────────────────────────── */
 
 /**
- * A Criação tem duas abas: as peças (o que eu escrevo) e o Instagram (o que
- * aconteceu com o que saiu). A aba vai na consulta, `?aba=instagram`, porque
+ * A Criação tem três abas: as peças (o que eu escrevo), o Estúdio (referências
+ * e o prompt do próximo post) e o Instagram (o que aconteceu com o que saiu). A aba vai na consulta, `?aba=instagram`, porque
  * as rotas do produto são `/app/:pilar` — e assim ela tem endereço próprio.
  */
+type Aba = 'pecas' | 'estudio' | 'instagram';
+
 export function Criacao() {
   const [parametros, setParametros] = useSearchParams();
-  const aba = parametros.get('aba') === 'instagram' ? 'instagram' : 'pecas';
-  const ir = (destino: 'pecas' | 'instagram') =>
-    setParametros(destino === 'instagram' ? { aba: 'instagram' } : {}, { replace: true });
+  const pedida = parametros.get('aba');
+  const aba: Aba = pedida === 'instagram' || pedida === 'estudio' ? pedida : 'pecas';
+  const ir = (destino: Aba) => setParametros(destino === 'pecas' ? {} : { aba: destino }, { replace: true });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--card-gap)' }}>
-      <div role="group" aria-label="Abas da Criação" style={{ display: 'flex', gap: 'var(--sp-4)' }}>
-        <Button
-          variant={aba === 'pecas' ? 'primary' : 'ghost'}
-          iconLeft="pencil"
-          onClick={() => ir('pecas')}
-        >
+      <div role="group" aria-label="Abas da Criação" style={{ display: 'flex', gap: 'var(--sp-4)', flexWrap: 'wrap' }}>
+        <Button variant={aba === 'pecas' ? 'primary' : 'ghost'} iconLeft="pencil" onClick={() => ir('pecas')}>
           Peças
         </Button>
-        <Button
-          variant={aba === 'instagram' ? 'primary' : 'ghost'}
-          iconLeft="camera"
-          onClick={() => ir('instagram')}
-        >
+        <Button variant={aba === 'estudio' ? 'primary' : 'ghost'} iconLeft="sparkles" onClick={() => ir('estudio')}>
+          Estúdio
+        </Button>
+        <Button variant={aba === 'instagram' ? 'primary' : 'ghost'} iconLeft="camera" onClick={() => ir('instagram')}>
           Instagram
         </Button>
       </div>
-      {aba === 'instagram' ? <PainelDoInstagram /> : <Pecas />}
+      {aba === 'instagram' ? <PainelDoInstagram /> : aba === 'estudio' ? <Estudio /> : <Pecas />}
     </div>
   );
 }
@@ -384,6 +382,7 @@ function LinhaDaPeca({
 }) {
   const atrasada = estaAtrasada(peca, hoje);
   const c = contar(peca);
+  const navegar = useNavigate();
 
   return (
     <div
@@ -453,6 +452,17 @@ function LinhaDaPeca({
       </Badge>
 
       <span style={{ display: 'flex', gap: 'var(--sp-3)', flex: '0 0 auto' }}>
+        {peca.estado === 'semente' && (
+          <IconButton
+            icon="sparkles"
+            label={`Montar prompt: ${peca.titulo}`}
+            variant="ghost"
+            size={34}
+            onClick={() =>
+              navegar(enderecoDoEstudio(peca.corpo.trim() ? `${peca.titulo}\n${peca.corpo}` : peca.titulo, peca.tipo === 'carrossel' ? 'carrossel' : 'reel'))
+            }
+          />
+        )}
         {!peca.publicadoEm && peca.estado === 'pronto' && (
           <IconButton
             icon="send"

@@ -7,7 +7,7 @@
  */
 
 /** Sobe a cada mudança de formato. Nunca reutilize um número. */
-export const VERSAO_ESQUEMA = 19;
+export const VERSAO_ESQUEMA = 20;
 
 /** Todo item do sistema carrega isto. */
 export interface Registro {
@@ -510,6 +510,38 @@ export interface Peca extends Registro {
    * envelhece. Guardar o ID é o que basta para achá-los.
    */
   instagramPostId?: string;
+  /** veio de uma resposta de IA colada no Estúdio; eu posso ter mexido depois */
+  geradaPorIa?: boolean;
+  /** ids das `Referencia` que entraram na geração */
+  referenciasUsadas?: string[];
+}
+
+/* ── Estúdio ─────────────────────────────────────────────────────────────── */
+
+/** Um @ de outro criador que eu acompanho como referência. */
+export interface PerfilDeReferencia extends Registro {
+  /** sem arroba, minúsculo */
+  usuario: string;
+}
+
+/**
+ * Um post de outro criador que eu guardei, com o porquê.
+ *
+ * Copiado no momento em que guardo: se o criador apagar o post, a referência
+ * fica. Os números são os daquele momento, não os de hoje.
+ */
+export interface Referencia extends Registro {
+  usuario: string;
+  postId: string;
+  link: string;
+  legenda: string;
+  formato: 'reels' | 'carrossel' | 'imagem';
+  curtidas: number;
+  comentarios: number;
+  seguidoresDoPerfil: number;
+  miniatura?: string;
+  /** por que funciona, nas minhas palavras — é o que mais pesa na geração */
+  porQue: string;
 }
 
 /* ── Regras ──────────────────────────────────────────────────────────────── */
@@ -663,6 +695,8 @@ export interface Banco {
   pecas: Peca[];
   rotulos: Rotulo[];
   marcacoes: MarcacaoDeEvento[];
+  perfisDeReferencia: PerfilDeReferencia[];
+  referencias: Referencia[];
   preferencias?: Preferencias;
   /** o que foi apagado, para a junção entre aparelhos não ressuscitar nada */
   removidos?: Removido[];
@@ -681,6 +715,8 @@ export const COLECOES = [
   'pecas',
   'rotulos',
   'marcacoes',
+  'perfisDeReferencia',
+  'referencias',
 ] as const;
 export type NomeColecao = (typeof COLECOES)[number];
 
@@ -704,6 +740,8 @@ export const ROTULO_COLECAO: Record<NomeColecao, [string, string]> = {
   pecas: ['peça', 'peças'],
   rotulos: ['rótulo', 'rótulos'],
   marcacoes: ['marcação', 'marcações'],
+  perfisDeReferencia: ['perfil de referência', 'perfis de referência'],
+  referencias: ['referência', 'referências'],
 };
 
 /** `1 rotina`, `25 execuções` — o número e o nome concordando. */
@@ -727,6 +765,8 @@ export function bancoVazio(): Banco {
     pecas: [],
     rotulos: [],
     marcacoes: [],
+    perfisDeReferencia: [],
+    referencias: [],
     removidos: [],
   };
 }

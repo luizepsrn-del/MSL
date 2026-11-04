@@ -112,7 +112,7 @@ interface ErroDaGraph {
 }
 
 /** Uma chamada GET à Graph. Aceita um caminho ou um endereço inteiro (a paginação). */
-async function graph<T>(
+export async function graph<T>(
   caminhoOuUrl: string,
   parametros: Record<string, string>,
   token: string | undefined,
@@ -258,7 +258,7 @@ export async function desconectar(armazem: Armazem, usuarioId: string): Promise<
 
 /* ── A leitura ───────────────────────────────────────────────────────────── */
 
-interface Midia {
+export interface Midia {
   id: string;
   caption?: string;
   media_type?: string;
@@ -271,14 +271,14 @@ interface Midia {
   comments_count?: number;
 }
 
-function formatoDe(m: Midia): FormatoDoPost {
+export function formatoDe(m: Midia): FormatoDoPost {
   if (m.media_product_type === 'REELS') return 'reels';
   if (m.media_type === 'CAROUSEL_ALBUM') return 'carrossel';
   return 'imagem';
 }
 
 /** `2026-11-03T15:20:54+0000` → ISO com `Z`. */
-const instante = (t: string) => new Date(t.replace(/([+-]\d{2})(\d{2})$/, '$1:$2')).toISOString();
+export const instante = (t: string) => new Date(t.replace(/([+-]\d{2})(\d{2})$/, '$1:$2')).toISOString();
 
 async function metrica(
   midiaId: string,

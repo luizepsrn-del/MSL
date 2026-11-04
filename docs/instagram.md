@@ -48,3 +48,16 @@ volte. Se a tela pedir o *ID da conta*, o do perfil é `17841400224855713`.
 - **"faltam as variáveis da Meta"** — passo 2 ou 3.
 - **A Meta reclama do redirect_uri** — passo 1, o endereço precisa ser idêntico.
 - **"A Meta deixou de aceitar a conexão"** — o token caiu; conecte de novo.
+
+## Estúdio (referências e prompt)
+
+- **Perfis de referência:** `GET /api/instagram-referencia?usuario=<@>` lê pela
+  `business_discovery` da Graph (só funciona com o login do Facebook, que é o
+  do MSL) o perfil e até 25 posts de outra conta **profissional**. Fica 6 h em
+  cache (`estudio-ref:<usuario>`). Se a Meta recusar com código 10/200, falta
+  `pages_read_engagement` na configuração do Login para Empresas: adicione e
+  reconecte em Ajustes.
+- **Prompt:** montado no navegador por `textoDoPrompt` (`src/dominio/estudio.ts`)
+  com os seus melhores posts do formato, o gargalo do funil e as referências
+  com o porquê. O MSL **não chama IA nenhuma**: eu copio o prompt, colo na IA
+  que quiser e trago a resposta de volta em "Colar a resposta", que vira peça.

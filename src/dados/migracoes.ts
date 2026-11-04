@@ -202,6 +202,19 @@ export const MIGRACOES: Record<number, Migracao> = {
    * Um campo opcional e nada para preencher: peça sem post continua igual.
    */
   18: (dados) => ({ ...dados, versao: 19 }),
+
+  /**
+   * 19 → 20: o Estúdio — perfis de referência e posts guardados.
+   *
+   * Duas coleções novas, vazias, e dois campos opcionais na peça. Nada do que
+   * existe muda: é aditiva como a 15.
+   */
+  19: (dados) => ({
+    ...dados,
+    perfisDeReferencia: Array.isArray(dados.perfisDeReferencia) ? dados.perfisDeReferencia : [],
+    referencias: Array.isArray(dados.referencias) ? dados.referencias : [],
+    versao: 20,
+  }),
 };
 
 export class ErroDeMigracao extends Error {
