@@ -81,6 +81,8 @@ describe('falarComInstagram', () => {
       '/api/instagram-conectar': 'POST',
       '/api/instagram-conta': 'POST',
       '/api/instagram-desconectar': 'POST',
+      '/api/instagram-referencia': 'GET',
+      '/api/instagram-gerar': 'POST',
     });
   });
 });
