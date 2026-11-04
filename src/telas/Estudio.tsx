@@ -3,12 +3,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, Button, Badge, Icon, IconButton, Field, TextInput } from '../../design-system';
 import { useBanco } from '../dados/BancoContexto';
 import { useInstagram } from '../dados/instagram';
-import { lerReferencia, gerarPost } from '../dados/estudio';
+import { lerReferencia } from '../dados/estudio';
 import type { Referencia } from '../dados/esquema';
 import {
   normalizarUsuario,
   ordenarReferencia,
   corpoDaPeca,
+  textoDoPrompt,
+  lerGerado,
   MAXIMO_DE_REFERENCIAS,
   type FormatoDoEstudio,
   type Gerado,
@@ -21,12 +23,12 @@ import { useLarguraDesktop } from '../casca/useLarguraDesktop';
 import { Pilulas } from './Pilulas';
 
 /**
- * O Estúdio: guardar posts de referência e gerar o próximo post com o Claude.
+ * O Estúdio: guardar posts de referência e montar o prompt do próximo post.
  *
- * O que fica no banco são os perfis acompanhados, os posts guardados com o
- * porquê e a peça que eu salvar. O resultado da geração vive só na tela até
- * eu salvar — gerar de novo custa centavos, guardar rascunho de IA que eu
- * nunca abri custaria atenção.
+ * O MSL não chama IA nenhuma (DECISOES.md, d). Ele monta o prompt com os meus
+ * números e as referências; eu copio, levo para a IA que quiser e colo a
+ * resposta de volta, que vira peça. O que fica no banco são os perfis, os
+ * posts guardados com o porquê e a peça que eu salvar.
  */
 
 const TEXTO: React.CSSProperties = { font: 'var(--type-body)', color: 'var(--text-muted)', lineHeight: 'var(--lh-normal)' };
@@ -91,21 +93,25 @@ export function Estudio() {
 /* ── Gerar ───────────────────────────────────────────────────────────────── */
 
 function Gerar({ inicial }: { inicial: { tema: string; formato: FormatoDoEstudio } }) {
-  const { banco, criarPeca } = useBanco();
+  const { banco, hoje, criarPeca } = useBanco();
   const navegar = useNavigate();
   const instagram = useInstagram();
   const [formato, setFormato] = React.useState<FormatoDoEstudio>(inicial.formato);
   const [tema, setTema] = React.useState(inicial.tema);
   const [escolhidas, setEscolhidas] = React.useState<string[]>([]);
-  const [gerando, setGerando] = React.useState(false);
+  const [prompt, setPrompt] = React.useState<string | null>(null);
+  const [copiado, setCopiado] = React.useState<string | null>(null);
+  const [resposta, setResposta] = React.useState('');
   const [erro, setErro] = React.useState<string | null>(null);
   const [gerado, setGerado] = React.useState<Gerado | null>(null);
   const [gancho, setGancho] = React.useState(0);
   const [ajuste, setAjuste] = React.useState('');
   const salvando = React.useRef(false);
+  const campoDoPrompt = React.useRef<HTMLTextAreaElement>(null);
 
   const referencias = banco.referencias;
   const usadas = referencias.filter((r) => escolhidas.includes(r.id));
+  const dados = instagram.estado === 'pronto' ? (instagram.dados ?? null) : null;
 
   function alternar(id: string) {
     setEscolhidas((atual) =>
@@ -117,38 +123,62 @@ function Gerar({ inicial }: { inicial: { tema: string; formato: FormatoDoEstudio
     );
   }
 
-  async function gerar(comAjuste?: string) {
+  function montar(comAjuste?: string) {
     if (!tema.trim()) {
       setErro('Escreva o tema do post.');
       return;
     }
-    setGerando(true);
+    // Ajustar é sobre o que está na tela: se troquei a pílula de formato depois
+    // de colar a resposta, o ajuste ainda é do formato que veio.
+    const ajustando = comAjuste && gerado ? { pedido: comAjuste, anterior: gerado } : undefined;
     setErro(null);
+    setCopiado(null);
+    setPrompt(
+      textoDoPrompt(
+        {
+          formato: ajustando ? ajustando.anterior.formato : formato,
+          tema: tema.trim(),
+          referencias: usadas.map((r) => ({
+            usuario: r.usuario,
+            legenda: r.legenda,
+            formato: r.formato,
+            curtidas: r.curtidas,
+            comentarios: r.comentarios,
+            porQue: r.porQue,
+          })),
+          ...(ajustando ? { ajuste: ajustando } : {}),
+        },
+        dados,
+        hoje,
+      ),
+    );
+    if (ajustando) setAjuste('');
+  }
+
+  async function copiar() {
+    if (!prompt) return;
     try {
-      // Ajustar é sobre o que está na tela: se eu troquei a pílula de formato
-      // depois de gerar, o ajuste ainda é do formato gerado.
-      const ajustando = Boolean(comAjuste && gerado);
-      const resultado = await gerarPost({
-        formato: ajustando && gerado ? gerado.formato : formato,
-        tema: tema.trim(),
-        referencias: usadas.map((r) => ({
-          usuario: r.usuario,
-          legenda: r.legenda,
-          formato: r.formato,
-          curtidas: r.curtidas,
-          comentarios: r.comentarios,
-          porQue: r.porQue,
-        })),
-        ...(comAjuste && gerado ? { ajuste: { pedido: comAjuste, anterior: gerado } } : {}),
-      });
-      setGerado(resultado);
-      setGancho(0);
-      setAjuste('');
-    } catch (e) {
-      setErro(mensagemDe(e));
-    } finally {
-      setGerando(false);
+      await navigator.clipboard.writeText(prompt);
+      setCopiado('Prompt copiado.');
+    } catch {
+      // Sem permissão de área de transferência: seleciono e deixo o atalho
+      // do teclado fazer o resto.
+      campoDoPrompt.current?.select();
+      setCopiado('Selecionei o prompt: copie com Ctrl+C ou ⌘C.');
     }
+  }
+
+  function lerResposta() {
+    // A resposta tem o formato do prompt que montei por último.
+    const pedido = prompt?.includes('"blocos"') ? 'reel' : prompt?.includes('"cards"') ? 'carrossel' : formato;
+    const lido = lerGerado(resposta, pedido);
+    if (!lido) {
+      setErro('Não reconheci a resposta. Cole o texto inteiro que a IA devolveu, com as chaves { }.');
+      return;
+    }
+    setErro(null);
+    setGerado(lido);
+    setGancho(0);
   }
 
   async function salvar() {
@@ -179,10 +209,10 @@ function Gerar({ inicial }: { inicial: { tema: string; formato: FormatoDoEstudio
 
   return (
     <>
-      <Card title="Novo post" subtitle="O Claude escreve a partir do tema, dos seus números e das referências">
+      <Card title="Novo post" subtitle="O MSL monta o prompt com o tema, seus números e as referências; você leva para a IA que quiser">
         <div style={COLUNA}>
           {semNumeros && (
-            <p style={TEXTO}>Gerando sem os seus números do Instagram. Conecte em Ajustes para o texto aprender com o que já funciona com você.</p>
+            <p style={TEXTO}>Montando sem os seus números do Instagram. Conecte em Ajustes para o prompt usar o que já funciona com você.</p>
           )}
           <Pilulas rotulo="Formato" opcoes={FORMATOS} valor={formato} aoEscolher={setFormato} />
           <Field label="Tema" htmlFor="estudio-tema">
@@ -224,18 +254,67 @@ function Gerar({ inicial }: { inicial: { tema: string; formato: FormatoDoEstudio
             </div>
           )}
 
-          {erro && (
-            <p role="alert" style={{ ...FORTE, color: 'var(--orange-500)' }}>
-              {erro}
-            </p>
-          )}
           <div>
-            <Button variant="primary" size="lg" iconLeft="sparkles" disabled={gerando} onClick={() => void gerar()}>
-              {gerando ? 'Gerando…' : 'Gerar post'}
+            <Button variant="primary" size="lg" iconLeft="sparkles" onClick={() => montar()}>
+              Montar prompt
             </Button>
           </div>
         </div>
       </Card>
+
+      {prompt && (
+        <Card title="Prompt" subtitle="Copie, cole na IA e traga a resposta de volta aqui">
+          <div style={COLUNA}>
+            <Field label="Prompt" htmlFor="estudio-prompt">
+              <textarea
+                id="estudio-prompt"
+                ref={campoDoPrompt}
+                readOnly
+                value={prompt}
+                rows={8}
+                style={{
+                  width: '100%',
+                  resize: 'vertical',
+                  padding: 'var(--sp-5)',
+                  borderRadius: 'var(--r-control)',
+                  border: 'var(--bw-hairline) solid var(--border-default)',
+                  background: 'var(--surface-input)',
+                  color: 'var(--text-body)',
+                  font: 'var(--type-body)',
+                }}
+              />
+            </Field>
+            <div style={{ display: 'flex', gap: 'var(--sp-4)', alignItems: 'center', flexWrap: 'wrap' }}>
+              <Button variant="primary" iconLeft="copy" onClick={() => void copiar()}>
+                Copiar prompt
+              </Button>
+              {copiado && <span style={{ ...TEXTO, color: 'var(--green-500)' }}>{copiado}</span>}
+            </div>
+            <Field label="Colar a resposta" htmlFor="estudio-resposta">
+              <TextInput
+                id="estudio-resposta"
+                type="multiline"
+                rows={4}
+                value={resposta}
+                onChange={setResposta}
+                placeholder="Cole aqui o que a IA respondeu"
+                fullWidth
+              />
+            </Field>
+            <div>
+              <Button variant="secondary" iconLeft="clipboard-paste" disabled={!resposta.trim()} onClick={lerResposta}>
+                Ler resposta
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {erro && (
+        <p role="alert" style={{ ...FORTE, color: 'var(--orange-500)' }}>
+          {erro}
+        </p>
+      )}
 
       {gerado && (
         <Resultado
@@ -244,8 +323,7 @@ function Gerar({ inicial }: { inicial: { tema: string; formato: FormatoDoEstudio
           aoEscolherGancho={setGancho}
           ajuste={ajuste}
           aoMudarAjuste={setAjuste}
-          gerando={gerando}
-          aoAjustar={() => void gerar(ajuste.trim())}
+          aoAjustar={() => montar(ajuste.trim())}
           aoSalvar={() => void salvar()}
         />
       )}
@@ -259,7 +337,6 @@ function Resultado({
   aoEscolherGancho,
   ajuste,
   aoMudarAjuste,
-  gerando,
   aoAjustar,
   aoSalvar,
 }: {
@@ -268,7 +345,6 @@ function Resultado({
   aoEscolherGancho: (i: number) => void;
   ajuste: string;
   aoMudarAjuste: (v: string) => void;
-  gerando: boolean;
   aoAjustar: () => void;
   aoSalvar: () => void;
 }) {
@@ -328,10 +404,10 @@ function Resultado({
               <TextInput id="estudio-ajuste" value={ajuste} onChange={aoMudarAjuste} placeholder="mais curto, mais polêmico…" fullWidth />
             </Field>
           </div>
-          <Button variant="secondary" iconLeft="refresh-cw" disabled={gerando || !ajuste.trim()} onClick={aoAjustar}>
-            Ajustar
+          <Button variant="secondary" iconLeft="refresh-cw" disabled={!ajuste.trim()} onClick={aoAjustar}>
+            Montar prompt de ajuste
           </Button>
-          <Button variant="primary" iconLeft="save" disabled={gerando} onClick={aoSalvar}>
+          <Button variant="primary" iconLeft="save" onClick={aoSalvar}>
             Salvar como peça
           </Button>
         </div>

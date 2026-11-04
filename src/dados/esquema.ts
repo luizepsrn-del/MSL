@@ -510,7 +510,7 @@ export interface Peca extends Registro {
    * envelhece. Guardar o ID é o que basta para achá-los.
    */
   instagramPostId?: string;
-  /** escrita pelo Estúdio, com o Claude; eu posso ter mexido depois */
+  /** veio de uma resposta de IA colada no Estúdio; eu posso ter mexido depois */
   geradaPorIa?: boolean;
   /** ids das `Referencia` que entraram na geração */
   referenciasUsadas?: string[];

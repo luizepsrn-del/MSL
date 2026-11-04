@@ -1,5 +1,12 @@
 # Estúdio — referências e geração de posts na Criação
 
+> **Mudança depois da implementação (2026-11-03):** o Luiz decidiu não ter IA
+> dentro do sistema. A geração pelo Claude (rota `instagram-gerar`, chave
+> `ANTHROPIC_API_KEY`, limite diário) saiu. No lugar: **Montar prompt** →
+> **Copiar prompt** → **Colar a resposta** → os mesmos ganchos e "Salvar como
+> peça". "Pedir ajuste" monta um novo prompt. As referências não mudaram.
+
+
 ## O pedido
 
 Criar posts mais rápido e com mais chance de dar resultado, a partir do que o

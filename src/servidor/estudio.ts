@@ -1,33 +1,18 @@
 import type { Armazem } from './armazem.ts';
 import { graph, formatoDe, instante, ErroDoInstagram, type Midia } from './instagram.ts';
-import {
-  montarPedido,
-  lerGerado,
-  type Gerado,
-  type Pedido,
-  type PerfilLido,
-} from '../dominio/estudio.ts';
-import type { DadosDoInstagram } from '../dominio/instagram.ts';
+import type { PerfilLido } from '../dominio/estudio.ts';
 
 /**
- * O Estúdio no servidor: ler perfis de outros criadores na Meta e gerar posts
- * com o Claude.
+ * O Estúdio no servidor: ler perfis de outros criadores na Meta.
  *
- * A chave do Claude mora só aqui, em variável de ambiente. Prompt e resposta
- * não são guardados: o que fica é a peça que eu salvar.
+ * O MSL não fala com modelo de IA nenhum (DECISOES.md, d): o prompt é montado
+ * no navegador e eu levo para a IA que quiser.
  */
 
-export const LIMITE_DIARIO = 30;
-const MODELO_PADRAO = 'claude-sonnet-5-5';
-const LIMITE_DO_CLAUDE_MS = 45_000;
 const CACHE_DA_REFERENCIA_S = 6 * 60 * 60;
-const CONTADOR_S = 2 * 24 * 60 * 60;
 const POSTS_POR_PERFIL = 25;
 
 export type CodigoDoEstudio =
-  | 'sem-chave'
-  | 'limite-do-dia'
-  | 'ia-falhou'
   | 'perfil-nao-encontrado'
   | 'perfil-nao-profissional'
   | 'permissao-faltando'
@@ -44,10 +29,6 @@ export class ErroDoEstudio extends Error {
   }
 }
 
-export interface AmbienteDoEstudio {
-  ANTHROPIC_API_KEY?: string;
-  ESTUDIO_MODELO?: string;
-}
 
 /* ── Referências ─────────────────────────────────────────────────────────── */
 
@@ -133,79 +114,4 @@ function traduzir(erro: unknown): unknown {
     );
   }
   return erro;
-}
-
-/* ── Geração ─────────────────────────────────────────────────────────────── */
-
-/**
- * Gera um post com o Claude.
- *
- * O contador do dia é ler-somar-gravar, não atômico: duas abas no limite
- * podem passar dele por uma geração. É limite de segurança contra conta
- * disparada, não de cobrança — a corrida não vale uma trava.
- */
-export async function gerar(
-  pedido: Pedido,
-  dados: DadosDoInstagram | null,
-  dia: string,
-  usuarioId: string,
-  armazem: Armazem,
-  ambiente: AmbienteDoEstudio,
-  buscar: typeof fetch = fetch,
-): Promise<Gerado> {
-  const chave = ambiente.ANTHROPIC_API_KEY;
-  if (!chave) {
-    throw new ErroDoEstudio('A geração precisa da chave do Claude na Vercel (ANTHROPIC_API_KEY).', 503, 'sem-chave');
-  }
-  const contador = `estudio:${dia}:${usuarioId}`;
-  const feitas = Number((await armazem.ler(contador)) ?? 0) || 0;
-  if (feitas >= LIMITE_DIARIO) {
-    throw new ErroDoEstudio(`Você chegou às ${LIMITE_DIARIO} gerações de hoje.`, 429, 'limite-do-dia');
-  }
-  await armazem.gravar(contador, String(feitas + 1), CONTADOR_S);
-
-  const { sistema, mensagem } = montarPedido(pedido, dados, dia);
-  for (let tentativa = 0; tentativa < 2; tentativa++) {
-    const texto = await chamarClaude(sistema, mensagem, chave, ambiente.ESTUDIO_MODELO || MODELO_PADRAO, buscar);
-    const gerado = lerGerado(texto, pedido.formato);
-    if (gerado) return gerado;
-  }
-  throw new ErroDoEstudio('O Claude não devolveu um post no formato esperado. Tente de novo.', 502, 'ia-falhou');
-}
-
-async function chamarClaude(
-  sistema: string,
-  mensagem: string,
-  chave: string,
-  modelo: string,
-  buscar: typeof fetch,
-): Promise<string> {
-  let resposta: Response;
-  try {
-    resposta = await buscar('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': chave,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: modelo,
-        max_tokens: 2000,
-        system: sistema,
-        messages: [{ role: 'user', content: mensagem }],
-      }),
-      signal: AbortSignal.timeout(LIMITE_DO_CLAUDE_MS),
-    });
-  } catch {
-    throw new ErroDoEstudio('O Claude não respondeu a tempo. Tente de novo.', 504, 'ia-falhou');
-  }
-  if (!resposta.ok) {
-    throw new ErroDoEstudio(`O Claude respondeu ${resposta.status}. Tente de novo.`, 502, 'ia-falhou');
-  }
-  const corpo = (await resposta.json().catch(() => ({}))) as { content?: { type?: string; text?: string }[] };
-  return (corpo.content ?? [])
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text ?? '')
-    .join('');
 }

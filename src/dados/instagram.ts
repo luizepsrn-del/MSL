@@ -20,7 +20,6 @@ export const METODO_INSTAGRAM: Record<string, 'GET' | 'POST'> = {
   '/api/instagram-conta': 'POST',
   '/api/instagram-desconectar': 'POST',
   '/api/instagram-referencia': 'GET',
-  '/api/instagram-gerar': 'POST',
 };
 
 const LIMITE_DE_ESPERA_MS = 45_000;

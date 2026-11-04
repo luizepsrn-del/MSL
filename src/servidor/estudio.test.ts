@@ -1,12 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { lerReferencia, gerar, ErroDoEstudio, LIMITE_DIARIO } from './estudio';
-import { rotaEstudioReferencia, rotaEstudioGerar } from './rotasEstudio';
+import { lerReferencia } from './estudio';
+import { rotaEstudioReferencia } from './rotasEstudio';
 import { ArmazemMemoria } from './armazem';
 import { cadastrar } from './contas';
-import { montarPedido, type Pedido } from '../dominio/estudio';
 
 const CONTA = '17841400224855713';
-const DIA = '2026-11-03';
 
 interface Chamada {
   url: URL;
@@ -48,11 +46,6 @@ const DESCOBERTA = {
   },
 };
 
-const REEL_OK = JSON.stringify({ ganchos: ['a', 'b', 'c'], blocos: [{ fala: 'f', tela: 't' }], cta: 'x' });
-const claude = (texto: string) => ({ corpo: { content: [{ type: 'text', text: texto }] } });
-const PEDIDO: Pedido = { formato: 'reel', tema: 'honorários', referencias: [] };
-const AMBIENTE = { ANTHROPIC_API_KEY: 'sk-teste' };
-
 describe('lerReferencia', () => {
   it('lê o perfil pela business_discovery e guarda em cache', async () => {
     const armazem = new ArmazemMemoria();
@@ -81,69 +74,6 @@ describe('lerReferencia', () => {
   });
 });
 
-describe('gerar', () => {
-  it('sem chave não chama ninguém', async () => {
-    const { buscar, chamadas } = falso(() => claude(REEL_OK));
-    const erro = await gerar(PEDIDO, null, DIA, 'u1', new ArmazemMemoria(), {}, buscar).catch((e) => e);
-    expect(erro).toBeInstanceOf(ErroDoEstudio);
-    expect(erro.codigo).toBe('sem-chave');
-    expect(chamadas).toHaveLength(0);
-  });
-
-  it('chama a Messages API com o pedido montado e devolve o gerado', async () => {
-    const { buscar, chamadas } = falso(() => claude(REEL_OK));
-    const g = await gerar(PEDIDO, null, DIA, 'u1', new ArmazemMemoria(), AMBIENTE, buscar);
-    expect(g.ganchos).toEqual(['a', 'b', 'c']);
-    const c = chamadas[0];
-    expect(c.url.toString()).toBe('https://api.anthropic.com/v1/messages');
-    const cabecalhos = new Headers(c.init?.headers);
-    expect(cabecalhos.get('x-api-key')).toBe('sk-teste');
-    expect(cabecalhos.get('anthropic-version')).toBe('2023-06-01');
-    const corpo = JSON.parse(String(c.init?.body));
-    expect(corpo.model).toBe('claude-sonnet-5-5');
-    expect(corpo.system).toBe(montarPedido(PEDIDO, null, DIA).sistema);
-    expect(corpo.messages[0].content).toBe(montarPedido(PEDIDO, null, DIA).mensagem);
-  });
-
-  it('ESTUDIO_MODELO troca o modelo', async () => {
-    const { buscar, chamadas } = falso(() => claude(REEL_OK));
-    await gerar(PEDIDO, null, DIA, 'u1', new ArmazemMemoria(), { ...AMBIENTE, ESTUDIO_MODELO: 'outro' }, buscar);
-    expect(JSON.parse(String(chamadas[0].init?.body)).model).toBe('outro');
-  });
-
-  it('JSON inválido na primeira, válido na segunda: sucesso', async () => {
-    let n = 0;
-    const { buscar, chamadas } = falso(() => claude(n++ === 0 ? 'não sei' : REEL_OK));
-    const g = await gerar(PEDIDO, null, DIA, 'u1', new ArmazemMemoria(), AMBIENTE, buscar);
-    expect(g.formato).toBe('reel');
-    expect(chamadas).toHaveLength(2);
-  });
-
-  it('inválido duas vezes ou erro do servidor: ia-falhou', async () => {
-    const duas = falso(() => claude('nada'));
-    expect((await gerar(PEDIDO, null, DIA, 'u1', new ArmazemMemoria(), AMBIENTE, duas.buscar).catch((e) => e)).codigo).toBe('ia-falhou');
-    const quinhentos = falso(() => ({ status: 500, corpo: { error: { message: 'x' } } }));
-    expect((await gerar(PEDIDO, null, DIA, 'u1', new ArmazemMemoria(), AMBIENTE, quinhentos.buscar).catch((e) => e)).codigo).toBe('ia-falhou');
-  });
-
-  it('a geração além do limite do dia não chama o Claude', async () => {
-    const armazem = new ArmazemMemoria();
-    await armazem.gravar(`estudio:${DIA}:u1`, String(LIMITE_DIARIO));
-    const { buscar, chamadas } = falso(() => claude(REEL_OK));
-    const erro = await gerar(PEDIDO, null, DIA, 'u1', armazem, AMBIENTE, buscar).catch((e) => e);
-    expect(erro.codigo).toBe('limite-do-dia');
-    expect(chamadas).toHaveLength(0);
-  });
-
-  it('conta as gerações do dia', async () => {
-    const armazem = new ArmazemMemoria();
-    const { buscar } = falso(() => claude(REEL_OK));
-    await gerar(PEDIDO, null, DIA, 'u1', armazem, AMBIENTE, buscar);
-    await gerar(PEDIDO, null, DIA, 'u1', armazem, AMBIENTE, buscar);
-    expect(await armazem.ler(`estudio:${DIA}:u1`)).toBe('2');
-  });
-});
-
 describe('rotas do Estúdio', () => {
   const BASE = 'https://msl-delta.vercel.app';
   async function comSessao() {
@@ -166,7 +96,6 @@ describe('rotas do Estúdio', () => {
   it('sem sessão: 401', async () => {
     const armazem = new ArmazemMemoria();
     expect((await rotaEstudioReferencia(pedir('/api/instagram-referencia?usuario=x', undefined, undefined, 'GET'), armazem)).status).toBe(401);
-    expect((await rotaEstudioGerar(pedir('/api/instagram-gerar', undefined, PEDIDO), armazem, AMBIENTE)).status).toBe(401);
   });
 
   it('@ inválido: 400 pedido-invalido', async () => {
@@ -184,43 +113,4 @@ describe('rotas do Estúdio', () => {
     expect((await r.json()).usuario).toBe('fulano.adv');
   });
 
-  it('pedido de geração fora da forma: 400', async () => {
-    const { armazem, token } = await comSessao();
-    const ref = { usuario: 'u', legenda: 'l', formato: 'carrossel', curtidas: 1, comentarios: 1, porQue: 'p' };
-    const quatro = { ...PEDIDO, referencias: [ref, ref, ref, ref] };
-    expect((await rotaEstudioGerar(pedir('/api/instagram-gerar', token, quatro), armazem, AMBIENTE)).status).toBe(400);
-    expect((await rotaEstudioGerar(pedir('/api/instagram-gerar', token, { ...PEDIDO, formato: 'story' }), armazem, AMBIENTE)).status).toBe(400);
-    expect((await rotaEstudioGerar(pedir('/api/instagram-gerar', token, { ...PEDIDO, tema: '' }), armazem, AMBIENTE)).status).toBe(400);
-  });
-
-  it('gera mesmo sem conseguir ler o Instagram', async () => {
-    const { armazem, token } = await comSessao();
-    const { buscar } = falso((c) =>
-      c.url.hostname === 'api.anthropic.com' ? claude(REEL_OK) : { status: 400, corpo: { error: { message: 'x', code: 1 } } },
-    );
-    const r = await rotaEstudioGerar(pedir('/api/instagram-gerar', token, PEDIDO), armazem, AMBIENTE, buscar);
-    expect(r.status).toBe(200);
-    expect((await r.json()).ganchos).toEqual(['a', 'b', 'c']);
-  });
-
-  it('sem chave: 503 sem-chave', async () => {
-    const { armazem, token } = await comSessao();
-    const r = await rotaEstudioGerar(pedir('/api/instagram-gerar', token, PEDIDO), armazem, {});
-    expect(r.status).toBe(503);
-    expect((await r.json()).erro).toBe('sem-chave');
-  });
-});
-
-describe('ajuste', () => {
-  it('ajuste com anterior fora da forma: 400', async () => {
-    const armazem = new ArmazemMemoria();
-    const entrada = await cadastrar(armazem, { email: 'eu@exemplo.com', senha: 'uma senha longa' }, { EMAILS_PERMITIDOS: 'eu@exemplo.com' });
-    if (!entrada.ok) throw new Error('cadastro');
-    const pedido = new Request('https://msl-delta.vercel.app/api/instagram-gerar', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${entrada.valor.token}` },
-      body: JSON.stringify({ ...PEDIDO, ajuste: { pedido: 'mais curto', anterior: { lixo: true } } }),
-    });
-    expect((await rotaEstudioGerar(pedido, armazem, AMBIENTE)).status).toBe(400);
-  });
 });

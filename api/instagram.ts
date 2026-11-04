@@ -6,7 +6,7 @@ import {
   rotaInstagramDesconectar,
   rotaInstagramEstado,
 } from '../src/servidor/rotasInstagram.ts';
-import { rotaEstudioReferencia, rotaEstudioGerar } from '../src/servidor/rotasEstudio.ts';
+import { rotaEstudioReferencia } from '../src/servidor/rotasEstudio.ts';
 import { despachar, type TabelaDeRotas } from '../src/servidor/despacho.ts';
 import { armazem, proteger } from '../src/servidor/vercel.ts';
 
@@ -23,9 +23,8 @@ const ROTAS: TabelaDeRotas = {
   conta: { POST: (p) => rotaInstagramConta(p, armazem()) },
   desconectar: { POST: (p) => rotaInstagramDesconectar(p, armazem()) },
   estado: { GET: (p) => rotaInstagramEstado(p, armazem()) },
-  // O Estúdio: perfis de referência e geração de posts.
+  // O Estúdio: perfis de referência de outros criadores.
   referencia: { GET: (p) => rotaEstudioReferencia(p, armazem()) },
-  gerar: { POST: (p) => rotaEstudioGerar(p, armazem(), process.env) },
 };
 
 const tratar = proteger((pedido: Request) => despachar(pedido, 'instagram', ROTAS));

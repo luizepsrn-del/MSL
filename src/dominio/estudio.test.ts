@@ -4,6 +4,7 @@ import {
   ordenarReferencia,
   instrucaoDoGargalo,
   montarPedido,
+  textoDoPrompt,
   lerGerado,
   corpoDaPeca,
   REGRAS_DE_ESCRITA,
@@ -170,6 +171,16 @@ describe('montarPedido', () => {
   it('o gargalo do funil vira instrução, quando há funil', () => {
     const { mensagem } = montarPedido({ formato: 'carrossel', tema: 't', referencias: [] }, DADOS, HOJE);
     expect(mensagem).toMatch(/Ponto fraco do funil/);
+  });
+});
+
+describe('textoDoPrompt', () => {
+  it('junta as instruções e o pedido num texto só, para colar em qualquer IA', () => {
+    const pedido = { formato: 'carrossel' as const, tema: 'honorários', referencias: [] };
+    const { sistema, mensagem } = montarPedido(pedido, DADOS, HOJE);
+    const texto = textoDoPrompt(pedido, DADOS, HOJE);
+    expect(texto.startsWith(sistema)).toBe(true);
+    expect(texto.endsWith(mensagem)).toBe(true);
   });
 });
 

@@ -120,8 +120,8 @@ async function copiar(texto: string): Promise<boolean> {
 /* ── A tela ──────────────────────────────────────────────────────────────── */
 
 /**
- * A Criação tem três abas: as peças (o que eu escrevo), o Estúdio (onde a IA
- * me ajuda a escrever) e o Instagram (o que aconteceu com o que saiu). A aba vai na consulta, `?aba=instagram`, porque
+ * A Criação tem três abas: as peças (o que eu escrevo), o Estúdio (referências
+ * e o prompt do próximo post) e o Instagram (o que aconteceu com o que saiu). A aba vai na consulta, `?aba=instagram`, porque
  * as rotas do produto são `/app/:pilar` — e assim ela tem endereço próprio.
  */
 type Aba = 'pecas' | 'estudio' | 'instagram';
@@ -455,7 +455,7 @@ function LinhaDaPeca({
         {peca.estado === 'semente' && (
           <IconButton
             icon="sparkles"
-            label={`Criar com IA: ${peca.titulo}`}
+            label={`Montar prompt: ${peca.titulo}`}
             variant="ghost"
             size={34}
             onClick={() =>

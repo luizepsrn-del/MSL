@@ -1066,7 +1066,7 @@ function LinhaDaRecomendacao({
       </div>
       <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
         <Button variant="ghost" iconLeft="sparkles" onClick={() => navegar(enderecoDoEstudio(`${rec.texto}\n${rec.evidencia}`))}>
-          Criar com IA
+          Montar prompt
         </Button>
         <Button variant="ghost" iconLeft="plus" onClick={aoCriarSemente}>
           Criar semente

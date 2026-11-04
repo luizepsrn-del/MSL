@@ -49,7 +49,7 @@ volte. Se a tela pedir o *ID da conta*, o do perfil é `17841400224855713`.
 - **A Meta reclama do redirect_uri** — passo 1, o endereço precisa ser idêntico.
 - **"A Meta deixou de aceitar a conexão"** — o token caiu; conecte de novo.
 
-## Estúdio (referências e geração)
+## Estúdio (referências e prompt)
 
 - **Perfis de referência:** `GET /api/instagram-referencia?usuario=<@>` lê pela
   `business_discovery` da Graph (só funciona com o login do Facebook, que é o
@@ -57,12 +57,7 @@ volte. Se a tela pedir o *ID da conta*, o do perfil é `17841400224855713`.
   cache (`estudio-ref:<usuario>`). Se a Meta recusar com código 10/200, falta
   `pages_read_engagement` na configuração do Login para Empresas: adicione e
   reconecte em Ajustes.
-- **Geração:** `POST /api/instagram-gerar` com `{ formato, tema, referencias, ajuste? }`.
-  Chama a Messages API do Claude com o contexto montado por
-  `src/dominio/estudio.ts` (seus melhores posts do formato, o gargalo do
-  funil, as referências com o porquê).
-- **Variáveis na Vercel:** `ANTHROPIC_API_KEY` (obrigatória para gerar) e
-  `ESTUDIO_MODELO` (opcional; padrão `claude-sonnet-5-5`).
-- **Limite:** 30 gerações por dia por usuário (`estudio:AAAA-MM-DD:<usuarioId>`).
-- **Nada de prompt nem resposta é guardado.** Só a peça que eu salvar, com
-  `geradaPorIa` e `referenciasUsadas`.
+- **Prompt:** montado no navegador por `textoDoPrompt` (`src/dominio/estudio.ts`)
+  com os seus melhores posts do formato, o gargalo do funil e as referências
+  com o porquê. O MSL **não chama IA nenhuma**: eu copio o prompt, colo na IA
+  que quiser e trago a resposta de volta em "Colar a resposta", que vira peça.

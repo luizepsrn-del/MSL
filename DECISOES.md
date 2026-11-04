@@ -311,16 +311,13 @@ confortável de vazar meu financeiro num prompt sem perceber.
 ---
 
 
-### Adendo (novembro de 2026): o Estúdio fala com o Claude
+### Confirmado (novembro de 2026): o Estúdio também não fala com IA
 
-A decisão acima continua valendo para o compositor de pedidos ao sistema. A
-**geração de posts do Estúdio** é a exceção, escolhida conscientemente: ali o
-valor está em devolver o texto pronto, e o custo de um passo manual por post
-pesa mais que o custo da API. As salvaguardas que tornam a exceção aceitável:
-
-- a chave (`ANTHROPIC_API_KEY`) mora só no servidor, nunca no navegador;
-- 30 gerações por dia por usuário;
-- prompt e resposta crua não são guardados — só a peça que eu salvar.
+O Estúdio monta o prompt do próximo post (com os meus números e as
+referências guardadas), eu copio e levo para a IA que quiser, e colo a resposta
+de volta para virar peça. Chegou a existir uma versão que chamava o Claude pela
+API; foi descartada antes de publicar, por escolha do Luiz: nenhuma IA dentro
+do sistema.
 
 ## (e) Não existe campo de formulário — e isso é bloqueio
 

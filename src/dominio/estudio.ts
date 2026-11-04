@@ -15,8 +15,9 @@ import { formatarNumero } from '../formato/index.ts';
 /**
  * O Estúdio: referências de outros criadores e a geração de posts.
  *
- * Tudo aqui é puro. O servidor chama `montarPedido` para falar com o Claude e
- * `lerGerado` para entender a resposta; a tela chama `corpoDaPeca` para salvar.
+ * Tudo aqui é puro e roda no navegador: `textoDoPrompt` monta o que eu copio
+ * para a IA, `lerGerado` entende a resposta que eu colo de volta e
+ * `corpoDaPeca` vira a peça salva.
  * O pedido carrega os números do próprio perfil porque "o que já funciona com
  * você" é a melhor pista do que vai funcionar de novo — referências de fora
  * dão forma, os seus números dão direção.
@@ -143,7 +144,7 @@ const ESQUEMA: Record<FormatoDoEstudio, string> = {
 };
 
 /**
- * O pedido ao Claude: `sistema` (quem escreve e as regras) e `mensagem` (os
+ * O pedido à IA: `sistema` (quem escreve e as regras) e `mensagem` (os
  * números, as referências, o tema e o formato da resposta).
  */
 export function montarPedido(
@@ -225,10 +226,19 @@ function linhaDoProprio(post: PostDoInstagram, alcance: number, razao: number | 
   );
 }
 
+/**
+ * O prompt inteiro num texto só, para copiar e colar na IA que eu quiser.
+ * O MSL não chama modelo nenhum: quem leva o texto até a IA sou eu.
+ */
+export function textoDoPrompt(pedido: Pedido, dados: DadosDoInstagram | null, dia: string): string {
+  const { sistema, mensagem } = montarPedido(pedido, dados, dia);
+  return `${sistema}\n\n${mensagem}`;
+}
+
 const textos = (x: unknown, minimo: number): x is string[] =>
   Array.isArray(x) && x.length >= minimo && x.every((s) => typeof s === 'string' && s.trim() !== '');
 
-/** A resposta do Claude virada objeto; qualquer coisa fora da forma é nula. */
+/** A resposta colada da IA virada objeto; qualquer coisa fora da forma é nula. */
 export function lerGerado(texto: string, formato: FormatoDoEstudio): Gerado | null {
   const inicio = texto.indexOf('{');
   const fim = texto.lastIndexOf('}');

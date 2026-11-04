@@ -2,10 +2,10 @@ import { test, expect, type Page } from '@playwright/test';
 import { VERSAO_ESQUEMA } from '../src/dados/esquema';
 
 /**
- * O Estúdio, com a Meta e o Claude de mentira.
+ * O Estúdio, com a Meta de mentira. O MSL não chama IA nenhuma: o prompt é
+ * copiado, e a resposta da IA é colada de volta.
  *
- * As rotas são interceptadas: aqui se prova a tela. A montagem do pedido e a
- * leitura da resposta têm testes em Vitest.
+ * A montagem do prompt e a leitura da resposta têm testes em Vitest.
  */
 
 const dias = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
@@ -50,12 +50,10 @@ async function semear(page: Page) {
 
 interface Opcoes {
   conectado?: boolean;
-  gerar?: (corpo: Record<string, unknown>) => { status?: number; json: unknown };
   referencia?: { status?: number; json: unknown };
 }
 
 async function servidorFalso(page: Page, o: Opcoes = {}) {
-  const pedidos: Record<string, unknown>[] = [];
   const conectado = o.conectado ?? true;
   await page.route('**/api/instagram', (r) =>
     conectado
@@ -68,13 +66,13 @@ async function servidorFalso(page: Page, o: Opcoes = {}) {
   await page.route('**/api/instagram-referencia?**', (r) =>
     r.fulfill(o.referencia ? { status: o.referencia.status ?? 200, json: o.referencia.json } : { json: PERFIL_REF }),
   );
-  await page.route('**/api/instagram-gerar', (r) => {
-    const corpo = JSON.parse(r.request().postData() ?? '{}');
-    pedidos.push(corpo);
-    const resposta = o.gerar ? o.gerar(corpo) : { json: corpo.formato === 'reel' ? REEL : CARROSSEL };
-    return r.fulfill({ status: resposta.status ?? 200, json: resposta.json });
+  // Nenhuma chamada a IA pode sair do MSL.
+  const ia: string[] = [];
+  await page.route(/anthropic|openai|instagram-gerar/, (r) => {
+    ia.push(r.request().url());
+    return r.abort();
   });
-  return pedidos;
+  return ia;
 }
 
 async function guardarReferencia(page: Page) {
@@ -87,6 +85,19 @@ async function guardarReferencia(page: Page) {
   await page.getByRole('button', { name: 'Salvar referência' }).click();
 }
 
+const prompt = (page: Page) => page.getByLabel('Prompt', { exact: true });
+
+async function montar(page: Page, tema: string) {
+  await page.getByLabel('Tema', { exact: true }).fill(tema);
+  await page.getByRole('button', { name: 'Montar prompt' }).click();
+  await expect(prompt(page)).toBeVisible();
+}
+
+async function colar(page: Page, resposta: unknown) {
+  await page.getByLabel('Colar a resposta').fill(`Aqui está:\n${JSON.stringify(resposta)}`);
+  await page.getByRole('button', { name: 'Ler resposta' }).click();
+}
+
 test('adicionar perfil e guardar post com o porquê', async ({ page }) => {
   await semear(page);
   await servidorFalso(page);
@@ -96,21 +107,35 @@ test('adicionar perfil e guardar post com o porquê', async ({ page }) => {
   await expect(minhas.getByText(/Pare de perder clientes/)).toBeVisible();
 });
 
-test('gerar carrossel com uma referência, escolher o segundo gancho e salvar', async ({ page }) => {
-  const erros: string[] = [];
-  page.on('pageerror', (e) => erros.push(String(e)));
+test('montar o prompt com uma referência e copiar', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await semear(page);
-  const pedidos = await servidorFalso(page);
+  const ia = await servidorFalso(page);
   await guardarReferencia(page);
   await page.getByRole('button', { name: 'Gerar', exact: true }).first().click();
   await page.getByRole('button', { name: 'Carrossel', exact: true }).click();
-  await page.getByLabel('Tema', { exact: true }).fill('Como responder lead no WhatsApp');
   await page.getByRole('button', { name: /Usar referência: Pare de perder/ }).click();
-  await page.getByRole('button', { name: 'Gerar post' }).click();
-  await expect(page.getByText('Primeiro card')).toBeVisible();
-  expect(pedidos[0]).toMatchObject({ formato: 'carrossel', tema: 'Como responder lead no WhatsApp' });
-  expect((pedidos[0].referencias as { porQue: string }[])[0].porQue).toBe('gancho com número');
+  await montar(page, 'Como responder lead no WhatsApp');
+  await expect(prompt(page)).toHaveValue(/Como responder lead no WhatsApp/);
+  await expect(prompt(page)).toHaveValue(/gancho com número/);
+  await expect(prompt(page)).toHaveValue(/@_luizpereira_/);
+  await expect(prompt(page)).toHaveValue(/"cards"/);
+  await page.getByRole('button', { name: 'Copiar prompt' }).click();
+  await expect(page.getByText('Prompt copiado.')).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('Como responder lead no WhatsApp');
+  expect(ia).toEqual([]);
+});
 
+test('colar a resposta, escolher o segundo gancho e salvar o carrossel', async ({ page }) => {
+  const erros: string[] = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+  await semear(page);
+  await servidorFalso(page);
+  await page.goto('/app/criacao?aba=estudio');
+  await page.getByRole('button', { name: 'Carrossel', exact: true }).click();
+  await montar(page, 'Como responder lead no WhatsApp');
+  await colar(page, CARROSSEL);
+  await expect(page.getByText('Primeiro card', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Gancho dois' }).click();
   await page.getByRole('button', { name: 'Salvar como peça' }).click();
   await expect(page).toHaveURL(/\/app\/criacao(\?|$)(?!.*aba=estudio)/);
@@ -119,53 +144,52 @@ test('gerar carrossel com uma referência, escolher o segundo gancho e salvar', 
   expect(erros).toEqual([]);
 });
 
-test('Reel salvo vira roteiro', async ({ page }) => {
+test('Reel colado e salvo vira roteiro', async ({ page }) => {
   await semear(page);
   await servidorFalso(page);
   await page.goto('/app/criacao?aba=estudio');
-  await page.getByLabel('Tema', { exact: true }).fill('honorários');
-  await page.getByRole('button', { name: 'Gerar post' }).click();
-  await expect(page.getByText('Fala um')).toBeVisible();
+  await montar(page, 'honorários');
+  await colar(page, REEL);
+  await expect(page.getByText('Fala um', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Salvar como peça' }).click();
   await page.getByRole('button', { name: 'Abrir Abre forte' }).click();
   await expect(page.locator('#cri-tipo-form')).toContainText('Roteiro');
   await expect(page.locator('textarea').first()).toHaveValue(/^Gancho \(0–3 s\): Abre forte/);
 });
 
-test('pedir ajuste reenvia com o anterior', async ({ page }) => {
+test('resposta que não é do formato pedido avisa e não quebra', async ({ page }) => {
   await semear(page);
-  const pedidos = await servidorFalso(page);
+  await servidorFalso(page);
   await page.goto('/app/criacao?aba=estudio');
-  await page.getByLabel('Tema', { exact: true }).fill('honorários');
-  await page.getByRole('button', { name: 'Gerar post' }).click();
-  await expect(page.getByText('Fala um')).toBeVisible();
-  await page.getByLabel('Pedir ajuste').fill('mais curto');
-  await page.getByRole('button', { name: 'Ajustar' }).click();
-  await expect.poll(() => pedidos.length).toBe(2);
-  expect(pedidos[1]).toMatchObject({ ajuste: { pedido: 'mais curto', anterior: { ganchos: REEL.ganchos } } });
+  await montar(page, 'honorários');
+  await colar(page, { qualquer: 'coisa' });
+  await expect(page.getByText(/Não reconheci a resposta/)).toBeVisible();
 });
 
-test('Criar com IA no "O que fazer" leva o tema para o Estúdio', async ({ page }) => {
+test('pedir ajuste monta um novo prompt com a versão anterior, no formato dela', async ({ page }) => {
+  await semear(page);
+  await servidorFalso(page);
+  await page.goto('/app/criacao?aba=estudio');
+  await montar(page, 'honorários');
+  await colar(page, REEL);
+  await expect(page.getByText('Fala um', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Carrossel', exact: true }).click();
+  await page.getByLabel('Pedir ajuste').fill('mais curto');
+  await page.getByRole('button', { name: 'Montar prompt de ajuste' }).click();
+  await expect(prompt(page)).toHaveValue(/mais curto/);
+  await expect(prompt(page)).toHaveValue(/Abre forte/);
+  await expect(prompt(page)).toHaveValue(/"blocos"/);
+});
+
+test('Montar prompt no "O que fazer" leva o tema para o Estúdio', async ({ page }) => {
   await semear(page);
   await servidorFalso(page);
   await page.goto('/app/criacao?aba=instagram&v=1');
   await page.getByRole('button', { name: '90 dias' }).click();
-  await page.getByRole('button', { name: 'Criar com IA' }).first().click();
+  await page.getByRole('button', { name: 'Montar prompt' }).first().click();
   await expect(page).toHaveURL(/aba=estudio/);
   await expect(page.getByLabel('Tema', { exact: true })).not.toHaveValue('');
   await expect(page).not.toHaveURL(/tema=/);
-});
-
-test('sem chave do Claude, o Estúdio avisa', async ({ page }) => {
-  await semear(page);
-  await servidorFalso(page, {
-    gerar: () => ({ status: 503, json: { erro: 'sem-chave', mensagem: 'A geração precisa da chave do Claude na Vercel (ANTHROPIC_API_KEY).' } }),
-  });
-  await page.goto('/app/criacao?aba=estudio');
-  await page.getByLabel('Tema', { exact: true }).fill('honorários');
-  await page.getByRole('button', { name: 'Gerar post' }).click();
-  await expect(page.getByText(/ANTHROPIC_API_KEY/)).toBeVisible();
-  await expect(page.getByLabel('Tema', { exact: true })).toHaveValue('honorários');
 });
 
 test('perfil que não é profissional mostra o aviso', async ({ page }) => {
@@ -179,37 +203,22 @@ test('perfil que não é profissional mostra o aviso', async ({ page }) => {
   await expect(page.getByText(/não é conta profissional/)).toBeVisible();
 });
 
-test('Instagram desconectado: gera e avisa que não usou seus números', async ({ page }) => {
+test('Instagram desconectado: monta o prompt e avisa que não usou seus números', async ({ page }) => {
   await semear(page);
   await servidorFalso(page, { conectado: false });
   await page.goto('/app/criacao?aba=estudio');
   await expect(page.getByText(/sem os seus números do Instagram/)).toBeVisible();
-  await page.getByLabel('Tema', { exact: true }).fill('honorários');
-  await page.getByRole('button', { name: 'Gerar post' }).click();
-  await expect(page.getByText('Fala um')).toBeVisible();
-});
-
-test('ajustar depois de trocar o formato ajusta o que está na tela', async ({ page }) => {
-  await semear(page);
-  const pedidos = await servidorFalso(page);
-  await page.goto('/app/criacao?aba=estudio');
-  await page.getByLabel('Tema', { exact: true }).fill('honorários');
-  await page.getByRole('button', { name: 'Gerar post' }).click();
-  await expect(page.getByText('Fala um')).toBeVisible();
-  await page.getByRole('button', { name: 'Carrossel', exact: true }).click();
-  await page.getByLabel('Pedir ajuste').fill('mais curto');
-  await page.getByRole('button', { name: 'Ajustar' }).click();
-  await expect.poll(() => pedidos.length).toBe(2);
-  expect(pedidos[1]).toMatchObject({ formato: 'reel', ajuste: { pedido: 'mais curto' } });
+  await montar(page, 'honorários');
+  await expect(prompt(page)).not.toHaveValue(/O que funciona com você/);
 });
 
 test('toque duplo em salvar cria uma peça só', async ({ page }) => {
   await semear(page);
   await servidorFalso(page);
   await page.goto('/app/criacao?aba=estudio');
-  await page.getByLabel('Tema', { exact: true }).fill('honorários');
-  await page.getByRole('button', { name: 'Gerar post' }).click();
-  await expect(page.getByText('Fala um')).toBeVisible();
+  await montar(page, 'honorários');
+  await colar(page, REEL);
+  await expect(page.getByText('Fala um', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Salvar como peça' }).dblclick();
   await expect(page.getByRole('button', { name: 'Abrir Abre forte' })).toHaveCount(1);
 });
